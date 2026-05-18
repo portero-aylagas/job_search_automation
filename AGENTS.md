@@ -30,6 +30,42 @@ Prefer simple working code over abstract architecture.
 
 Use JSON file storage first unless explicitly asked otherwise.
 
+## Development Workflow
+
+Use `main` as the stable submission branch.
+
+For implementation work, create one short-lived branch per GitHub task:
+
+```text
+task/<issue-number>-short-name
+```
+
+Example:
+
+```text
+task/23-app-scaffold
+```
+
+Open a pull request back to `main` and reference the issue in the PR body:
+
+```text
+Closes #<issue-number>
+```
+
+Small docs-only changes may be pushed directly to `main`.
+
+Use the repository-local Python environment for local commands:
+
+```bash
+PATH="$PWD/.conda/bin:$PATH"
+```
+
+Before pushing code or opening a pull request, run:
+
+```bash
+PATH="$PWD/.conda/bin:$PATH" make verify
+```
+
 ## Skills Boundary
 
 Use skills only when they are directly relevant to the task.
