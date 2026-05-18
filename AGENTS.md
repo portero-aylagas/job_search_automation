@@ -3,8 +3,11 @@
 This repository contains a Python application for a controlled human-in-the-loop
 job application workflow.
 
-Use the available skills to support writing, refactoring, testing, and
-documentation work in this repository.
+Use skills only when they are directly relevant to the task.
+
+For normal feature implementation, follow the project specification and implementation plan.
+
+Use `skills/safe_project_improvement_system/` only when explicitly asked to review, refactor, audit, add verification, or improve project quality safely.
 
 ## Skills Boundary
 
