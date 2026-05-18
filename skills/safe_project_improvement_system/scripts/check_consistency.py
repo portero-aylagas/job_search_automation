@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = "inspect -> characterize -> verify setup -> audit -> backlog -> one patch -> verify"
 
