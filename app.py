@@ -118,18 +118,29 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
 
 
 def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
-    path = base_dir / "data" / "jobs" / job_id / "normalized_job.json"
-    return load_model(path, JobListing, default=None)
+    runtime_path = base_dir / "data" / "runtime" / "jobs" / job_id / "normalized_job.json"
+    template_path = base_dir / "data" / "jobs" / job_id / "normalized_job.json"
+    if runtime_path.exists():
+        return load_model(runtime_path, JobListing, default=None)
+    if template_path.exists():
+        return load_model(template_path, JobListing, default=None)
+    return None
 
 
 def load_jobs_index(base_dir: Path) -> list[TrackerRecord]:
-    jobs_index_path = base_dir / "data" / "jobs.json"
-    tracker_path = base_dir / "data" / "tracker.json"
-    return load_model(jobs_index_path, list[TrackerRecord], default=None) or load_model(
-        tracker_path,
-        list[TrackerRecord],
-        default=[],
-    )
+    runtime_jobs_index = base_dir / "data" / "runtime" / "jobs.json"
+    template_jobs_index = base_dir / "data" / "jobs.json"
+    runtime_tracker = base_dir / "data" / "runtime" / "tracker.json"
+    template_tracker = base_dir / "data" / "tracker.json"
+    if runtime_jobs_index.exists():
+        return load_model(runtime_jobs_index, list[TrackerRecord], default=[])
+    if runtime_tracker.exists():
+        return load_model(runtime_tracker, list[TrackerRecord], default=[])
+    if template_jobs_index.exists():
+        return load_model(template_jobs_index, list[TrackerRecord], default=[])
+    if template_tracker.exists():
+        return load_model(template_tracker, list[TrackerRecord], default=[])
+    return []
 
 
 def job_option_label(record: TrackerRecord) -> str:

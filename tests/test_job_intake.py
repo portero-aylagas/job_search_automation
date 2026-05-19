@@ -28,6 +28,7 @@ def test_persist_job_listing_creates_job_folder_and_normalized_json(tmp_path: Pa
     assert job_path == (
         tmp_path
         / "data"
+        / "runtime"
         / "jobs"
         / "job-20260519123000-example-co-automation-engineer"
         / "normalized_job.json"
@@ -56,7 +57,10 @@ def test_persist_job_listing_appends_new_tracker_record(tmp_path: Path) -> None:
 
     persist_job_listing(tmp_path, first_job)
     persist_job_listing(tmp_path, second_job)
-    tracker_records = load_model(tmp_path / "data" / "jobs.json", list[TrackerRecord])
+    tracker_records = load_model(
+        tmp_path / "data" / "runtime" / "jobs.json",
+        list[TrackerRecord],
+    )
 
     assert len(tracker_records) == 2
     assert tracker_records[0].job_id == first_job.id

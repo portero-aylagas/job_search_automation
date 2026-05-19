@@ -62,3 +62,6 @@ lab_source/
 # Claude Code
 .claude/
 CLAUDE.local.md
+
+# Local runtime job state
+data/runtime/

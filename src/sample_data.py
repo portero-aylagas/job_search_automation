@@ -148,6 +148,9 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
         root / "data/experience_units.json": get_sample_experience_units(),
         root / "data/jobs.json": get_sample_tracker_records(),
         root / "data/tracker.json": get_sample_tracker_records(),
+        root / "data/runtime/jobs.json": get_sample_tracker_records(),
+        root / "data/runtime/tracker.json": get_sample_tracker_records(),
+        root / "data/runtime/jobs/job-001/normalized_job.json": get_sample_job_listing(),
         root / "data/jobs/job-001/normalized_job.json": get_sample_job_listing(),
     }
 

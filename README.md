@@ -108,6 +108,15 @@ job_search_automation/
 │   ├── experience_units.json
 │   ├── jobs.json
 │   ├── tracker.json
+│   ├── runtime/
+│   │   ├── jobs.json
+│   │   ├── tracker.json
+│   │   └── jobs/
+│   │       └── <job_id>/
+│   │           ├── normalized_job.json
+│   │           ├── analysis.json
+│   │           ├── application_requirements.json
+│   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
@@ -171,8 +180,9 @@ and stored separately as `source_job_id`.
 discovered later from `apply_url` and stored separately in
 `application_requirements.json`.
 
-`data/jobs.json` is the shared job index used by both the Tracker page and the
-Jobs page. `data/tracker.json` remains as a compatibility mirror.
+`data/runtime/jobs.json` is the shared job index used by both the Tracker page
+and the Jobs page. The tracked `data/jobs.json` and `data/tracker.json` files
+remain templates and bootstrap mirrors.
 
 The Job Intake screen starts with only a job URL. After AI extraction, the app
 shows a review form with fixed fields and any dynamic extracted details. Dynamic
@@ -239,7 +249,7 @@ Application tracking information:
 
 The sidebar includes a `Jobs` page. It lists opportunities from the tracker and
 opens a per-job workspace. The current version shows saved Job Intake data from
-`data/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
+`data/runtime/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
 summary, requirements, responsibilities, nice-to-have skills, and dynamic
 extracted details.
 

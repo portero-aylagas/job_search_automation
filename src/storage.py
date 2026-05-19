@@ -9,7 +9,13 @@ from pydantic import BaseModel, TypeAdapter
 
 def ensure_data_dirs(base_dir: Path | str = ".") -> None:
     root = Path(base_dir)
-    for relative_path in ("data", "data/jobs", "outputs"):
+    for relative_path in (
+        "data",
+        "data/jobs",
+        "data/runtime",
+        "data/runtime/jobs",
+        "outputs",
+    ):
         (root / relative_path).mkdir(parents=True, exist_ok=True)
 
 

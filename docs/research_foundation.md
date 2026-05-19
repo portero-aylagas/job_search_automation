@@ -90,12 +90,12 @@ Costs and rate limits should be documented when a live provider is added. Until 
 Core outputs:
 
 - normalized job JSON in `data/jobs/<job_id>/normalized_job.json`
-- shared job index in `data/jobs.json`
+- shared job index in `data/runtime/jobs.json`
 - application requirements JSON in `data/jobs/<job_id>/application_requirements.json`
 - match analysis JSON in `data/jobs/<job_id>/analysis.json`
 - application package JSON in `data/jobs/<job_id>/application_package.json`
 - generated Markdown exports in `outputs/<job_id>/`
-- tracker state in `data/tracker.json`
+- tracker state in `data/runtime/tracker.json`
 
 Runtime `data/` files are the source of truth. Markdown files in `outputs/` are
 derived from structured JSON. Test, mock, example, and template-style data
@@ -106,8 +106,9 @@ is created later from `apply_url` and captures required documents, motivation
 letter requirements, screening questions, form fields, and any missing
 information that needs human review.
 
-`data/jobs.json` is the canonical shared index for the Tracker and Jobs views.
-`data/tracker.json` can be treated as a compatibility mirror if needed.
+`data/runtime/jobs.json` is the canonical shared index for the Tracker and Jobs
+views. The tracked `data/jobs.json` and `data/tracker.json` files can be treated
+as templates and bootstrap mirrors.
 
 The core pipeline remains:
 
