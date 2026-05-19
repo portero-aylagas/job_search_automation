@@ -408,9 +408,9 @@ Actions:
 
 Purpose: give every tracked opportunity its own workspace.
 
-The Jobs page starts from `data/tracker.json`, lets the user select a tracked
-job, and displays the saved intake data from
-`data/jobs/<job_id>/normalized_job.json` when available.
+The Jobs page starts from `data/jobs.json`, lets the user select a tracked job,
+and displays the saved intake data from `data/jobs/<job_id>/normalized_job.json`
+when available.
 
 Initial displays:
 
@@ -510,6 +510,7 @@ Suggested structure:
 data/
 ├── profile.json
 ├── experience_units.json
+├── jobs.json
 ├── tracker.json
 ├── jobs/
 │   └── job_001/
@@ -533,6 +534,10 @@ The `data/` directory stores runtime application state. The `outputs/`
 directory stores derived human-readable exports generated from JSON. Test,
 mock, example, and template-style artifacts belong in `tests/fixtures/`, not in
 runtime `data/`.
+
+`data/jobs.json` is the shared job index and the canonical source for the Jobs
+and Tracker views. `data/tracker.json` may be kept as a compatibility mirror,
+but the app reads the shared index first.
 
 A database can be added later if JSON files become limiting.
 

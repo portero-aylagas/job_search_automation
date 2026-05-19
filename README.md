@@ -106,6 +106,7 @@ job_search_automation/
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
+│   ├── jobs.json
 │   ├── tracker.json
 │   └── jobs/
 │       └── <job_id>/
@@ -169,6 +170,9 @@ and stored separately as `source_job_id`.
 `normalized_job.json` describes the job offer. Apply-page requirements are
 discovered later from `apply_url` and stored separately in
 `application_requirements.json`.
+
+`data/jobs.json` is the shared job index used by both the Tracker page and the
+Jobs page. `data/tracker.json` remains as a compatibility mirror.
 
 The Job Intake screen starts with only a job URL. After AI extraction, the app
 shows a review form with fixed fields and any dynamic extracted details. Dynamic

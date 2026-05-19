@@ -8,6 +8,7 @@ def test_bootstrap_sample_data_creates_expected_files(tmp_path: Path) -> None:
 
     assert (tmp_path / "data/profile.json").is_file()
     assert (tmp_path / "data/experience_units.json").is_file()
+    assert (tmp_path / "data/jobs.json").is_file()
     assert (tmp_path / "data/tracker.json").is_file()
     assert (tmp_path / "data/jobs").is_dir()
     assert (tmp_path / "data/jobs/job-001/normalized_job.json").is_file()

@@ -102,7 +102,7 @@ normalized job offer.
 
 ```text
 data/jobs/<job_id>/normalized_job.json
-data/tracker.json
+data/jobs.json
 ```
 
 ### Acceptance Criteria
@@ -397,6 +397,7 @@ job_search_automation/
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
+│   ├── jobs.json
 │   ├── tracker.json
 │   └── jobs/
 │       └── <job_id>/

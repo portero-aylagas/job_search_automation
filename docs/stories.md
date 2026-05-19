@@ -341,6 +341,7 @@ Completed in the current branch:
 - Extracted fields appear in a human review form only after AI extraction.
 - Dynamic extracted details are displayed as normal name/value fields and saved in `job_details.dynamic_fields`.
 - `apply_url` is blocked if missing or not an `http(s)` URL.
+- Tracker and Jobs now read from the shared `data/jobs.json` index.
 
 Open follow-ups:
 

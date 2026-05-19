@@ -56,7 +56,7 @@ def test_persist_job_listing_appends_new_tracker_record(tmp_path: Path) -> None:
 
     persist_job_listing(tmp_path, first_job)
     persist_job_listing(tmp_path, second_job)
-    tracker_records = load_model(tmp_path / "data" / "tracker.json", list[TrackerRecord])
+    tracker_records = load_model(tmp_path / "data" / "jobs.json", list[TrackerRecord])
 
     assert len(tracker_records) == 2
     assert tracker_records[0].job_id == first_job.id

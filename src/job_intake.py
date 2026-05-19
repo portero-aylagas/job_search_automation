@@ -7,6 +7,8 @@ from pathlib import Path
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model, save_model
 
+JOBS_INDEX_FILENAME = "jobs.json"
+
 
 def require_text(value: str, field_name: str) -> str:
     normalized = value.strip()
@@ -84,12 +86,10 @@ def save_normalized_job(base_dir: Path | str, job_listing: JobListing) -> Path:
 
 
 def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list[TrackerRecord]:
-    tracker_path = Path(base_dir) / "data" / "tracker.json"
-    tracker_records = load_model(
-        tracker_path,
-        list[TrackerRecord],
-        default=[],
-    )
+    root = Path(base_dir)
+    jobs_index_path = root / "data" / JOBS_INDEX_FILENAME
+    tracker_path = root / "data" / "tracker.json"
+    tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
 
     new_record = TrackerRecord(
         job_id=job_listing.id,
@@ -110,6 +110,7 @@ def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list
     else:
         tracker_records[existing_index] = new_record
 
+    save_model(jobs_index_path, tracker_records)
     save_model(tracker_path, tracker_records)
     return tracker_records
 

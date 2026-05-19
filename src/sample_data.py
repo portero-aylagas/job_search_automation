@@ -146,6 +146,7 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
     files_to_seed = {
         root / "data/profile.json": get_sample_candidate_profile(),
         root / "data/experience_units.json": get_sample_experience_units(),
+        root / "data/jobs.json": get_sample_tracker_records(),
         root / "data/tracker.json": get_sample_tracker_records(),
         root / "data/jobs/job-001/normalized_job.json": get_sample_job_listing(),
     }

@@ -90,6 +90,7 @@ Costs and rate limits should be documented when a live provider is added. Until 
 Core outputs:
 
 - normalized job JSON in `data/jobs/<job_id>/normalized_job.json`
+- shared job index in `data/jobs.json`
 - application requirements JSON in `data/jobs/<job_id>/application_requirements.json`
 - match analysis JSON in `data/jobs/<job_id>/analysis.json`
 - application package JSON in `data/jobs/<job_id>/application_package.json`
@@ -104,6 +105,9 @@ belong in `tests/fixtures/`.
 is created later from `apply_url` and captures required documents, motivation
 letter requirements, screening questions, form fields, and any missing
 information that needs human review.
+
+`data/jobs.json` is the canonical shared index for the Tracker and Jobs views.
+`data/tracker.json` can be treated as a compatibility mirror if needed.
 
 The core pipeline remains:
 
