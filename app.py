@@ -5,6 +5,11 @@ from pathlib import Path
 import streamlit as st
 from pydantic import ValidationError
 
+from src.application_requirements import (
+    run_requirements_discovery_graph,
+    save_application_page_snapshot,
+    save_application_requirements,
+)
 from src.job_intake import (
     choose_valid_apply_url,
     create_job_listing,
@@ -18,7 +23,13 @@ from src.llm_job_extraction import (
     resolve_apply_url_from_url,
 )
 from src.sample_data import bootstrap_sample_data
-from src.schemas import CandidateProfile, ExperienceUnit, JobListing, TrackerRecord
+from src.schemas import (
+    ApplicationRequirements,
+    CandidateProfile,
+    ExperienceUnit,
+    JobListing,
+    TrackerRecord,
+)
 from src.storage import load_model
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -125,6 +136,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
         return
 
     render_job_intake_summary(job_listing)
+    render_application_requirements_panel(base_dir, job_listing)
 
 
 def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
@@ -134,6 +146,26 @@ def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
         return load_model(runtime_path, JobListing, default=None)
     if template_path.exists():
         return load_model(template_path, JobListing, default=None)
+    return None
+
+
+def load_application_requirements(
+    base_dir: Path,
+    job_id: str,
+) -> ApplicationRequirements | None:
+    runtime_path = (
+        base_dir
+        / "data"
+        / "runtime"
+        / "jobs"
+        / job_id
+        / "application_requirements.json"
+    )
+    template_path = base_dir / "data" / "jobs" / job_id / "application_requirements.json"
+    if runtime_path.exists():
+        return load_model(runtime_path, ApplicationRequirements, default=None)
+    if template_path.exists():
+        return load_model(template_path, ApplicationRequirements, default=None)
     return None
 
 
@@ -193,6 +225,123 @@ def render_job_intake_summary(job: JobListing) -> None:
     render_list("Responsibilities", job.responsibilities)
     render_list("Nice-to-have Skills", job.nice_to_have_skills)
     render_additional_details(job.job_details)
+
+
+def render_application_requirements_panel(base_dir: Path, job: JobListing) -> None:
+    st.divider()
+    st.subheader("Application Requirements")
+    requirements = load_application_requirements(base_dir, job.id)
+
+    if job.apply_url is None:
+        st.warning("Apply URL is missing. Requirements discovery is blocked.")
+        return
+
+    if st.button("Discover Requirements From Apply URL"):
+        try:
+            with st.spinner("Inspecting apply page requirements..."):
+                discovery_state = run_requirements_discovery_graph(job)
+                requirements = discovery_state["requirements"]
+                save_application_page_snapshot(base_dir, job.id, discovery_state["snapshot"])
+                save_application_requirements(base_dir, requirements)
+        except (RuntimeError, ValueError) as exc:
+            st.error(str(exc))
+            return
+        st.success("Application requirements were saved for review.")
+
+    if requirements is None:
+        st.info("No application requirements have been discovered yet.")
+        return
+
+    render_application_requirements(requirements)
+
+
+def render_application_requirements(requirements: ApplicationRequirements) -> None:
+    status_columns = st.columns(3)
+    status_columns[0].metric("Status", requirements.status)
+    status_columns[1].metric("Job Preserving", "Yes" if requirements.job_preserving else "No")
+    status_columns[2].metric("Confidence", requirements.confidence)
+
+    if requirements.blocked_reason:
+        st.warning(requirements.blocked_reason)
+
+    render_requirement_findings("Required Documents", requirements.required_documents)
+    render_requirement_findings("Upload Expectations", requirements.upload_expectations)
+    render_form_fields("Profile Fields Requested", requirements.profile_fields)
+    render_screening_questions("Screening Questions", requirements.screening_questions)
+    render_form_fields("Custom Form Fields", requirements.custom_form_fields)
+
+    if requirements.motivation_letter:
+        render_requirement_findings(
+            "Motivation / Cover Letter",
+            [requirements.motivation_letter],
+        )
+
+    render_requirement_findings("Consent Requirements", requirements.consent_requirements)
+    render_requirement_findings(
+        "Privacy, Login, and ATS Gates",
+        requirements.privacy_login_ats_gates,
+    )
+    render_requirement_findings("Deadlines", requirements.deadlines)
+    render_requirement_findings("Contact / Fallback Info", requirements.contact_or_fallback)
+
+    if requirements.missing_or_uncertain:
+        st.markdown("**Missing Or Uncertain**")
+        for item in requirements.missing_or_uncertain:
+            st.write(f"- {item}")
+
+    if requirements.source_evidence:
+        with st.expander("Source Evidence", expanded=False):
+            for evidence in requirements.source_evidence:
+                st.write(f"- {evidence}")
+
+
+def render_requirement_findings(
+    label: str,
+    findings: list,
+) -> None:
+    if not findings:
+        return
+    st.markdown(f"**{label}**")
+    for finding in findings:
+        required = "required" if finding.required else "optional or unclear"
+        constraints = (
+            f" Constraints: {', '.join(finding.constraints)}" if finding.constraints else ""
+        )
+        st.write(f"- {finding.label} ({required}, confidence: {finding.confidence}).{constraints}")
+        if finding.evidence:
+            st.caption(finding.evidence)
+
+
+def render_form_fields(label: str, fields: list) -> None:
+    if not fields:
+        return
+    st.markdown(f"**{label}**")
+    for field in fields:
+        required = "required" if field.required else "optional or unclear"
+        options = f" Options: {', '.join(field.options)}" if field.options else ""
+        st.write(
+            f"- {field.label} ({field.input_type or 'field'}, {required}, "
+            f"confidence: {field.confidence}).{options}"
+        )
+        if field.evidence:
+            st.caption(field.evidence)
+
+
+def render_screening_questions(
+    label: str,
+    questions: list,
+) -> None:
+    if not questions:
+        return
+    st.markdown(f"**{label}**")
+    for question in questions:
+        required = "required" if question.required else "optional or unclear"
+        st.write(
+            f"- {question.question} ({question.input_type or 'field'}, {required}, "
+            f"confidence: {question.confidence})"
+        )
+        if question.evidence:
+            st.caption(question.evidence)
 
 
 def render_field(label: str, value: str | None) -> None:

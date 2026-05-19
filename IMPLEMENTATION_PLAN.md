@@ -6,7 +6,7 @@ Build the application incrementally.
 
 The first goal is a working controlled workflow using local sample data and JSON storage.
 
-Do not start with web search, browser automation, external APIs, or LangGraph. Those should be added after the core data model and UI are stable.
+Do not start new feature phases with web search, browser automation, or external APIs unless the current phase needs them. LangGraph is the intended whole-app orchestration architecture now that the core data model and UI scaffold exist; add only the graph slice needed by the current task.
 
 ---
 
@@ -168,19 +168,34 @@ data/jobs/<job_id>/analysis.json
 
 ---
 
-## Phase 4 — Application Package Generation
+## Phase 4 — Apply Requirements Discovery and Application Package Generation
 
 ### Goal
 
-Generate application material from candidate profile + experience units + job
-data, guided by apply-page requirements when those have been discovered.
+Inspect a validated `apply_url` first, store the application contract for human
+review, then generate application material from candidate profile + experience
+units + job data guided by those requirements.
 
 ### Implement
 
-- application-requirements discovery from `apply_url` before or inside package generation
+- initial read-only LLM/agent application-requirements discovery from `apply_url`
+- LangGraph requirements-discovery slice:
+  `application page inspection -> requirements extraction`
+- read-only `inspect_application_page_agent` node that gathers a structured
+  apply-page snapshot before LLM interpretation
 - validate that `apply_url` is usable before requirements discovery
+- stop requirements discovery when `apply_url` is missing, invalid, unreachable,
+  points back to the job-offer page, or does not preserve the selected job
+- use the LLM/agent to interpret multilingual, ATS-specific, and dynamic apply
+  pages; local code must not infer requirements through fixed regex or
+  hard-coded form heuristics
 - preserve job-preserving resolution evidence and rejected candidates for review
 - preserve human review of discovered application requirements
+- store required documents, upload expectations, file constraints, screening
+  questions, custom form fields, requested profile fields, cover-letter or
+  motivation-letter requirements, consent requirements, privacy/login/ATS gates,
+  deadlines, contact/fallback information, missing items, source evidence, and
+  confidence
 - OpenAI API wrapper
 - prompt templates
 - manifest-driven application artifact generation
@@ -192,10 +207,17 @@ data, guided by apply-page requirements when those have been discovered.
 ### Generated Outputs
 
 ```text
+data/jobs/<job_id>/application_page_snapshot.json
 data/jobs/<job_id>/application_requirements.json
 data/jobs/<job_id>/application_package.json
 outputs/<job_id>/application_package.md
 ```
+
+`application_requirements.json` is the first Phase 4 output contract. It is
+created from a stored `application_page_snapshot.json` by an LLM interpretation
+step and remains
+read-only with respect to package generation: no cover letter, generated
+answers, or final package is created by this discovery step.
 
 The package JSON is the source of truth. Markdown output is a derived review or
 export file generated from the full package.
@@ -207,6 +229,10 @@ form fields discovered later from `apply_url`.
 
 - user can select an analyzed job
 - app can record application requirements when an apply URL is available
+- unreachable, missing, email-only, same-page, or generic career-page apply URLs
+  block requirements discovery
+- application requirements are saved separately from `normalized_job.json`
+- UI displays discovered application requirements clearly for review
 - app generates an application package
 - package generation uses `application_requirements.json` when present
 - generated material is visible in UI
@@ -215,8 +241,14 @@ form fields discovered later from `apply_url`.
 
 ### Follow-up Tickets
 
+- #34 implements apply-page requirements discovery as the current core Phase 4
+  task using the first LangGraph slice: snapshot-first page inspection followed
+  by requirements extraction.
 - #35 validates `apply_url` reachability and job-identity preservation before downstream workflow continues.
 - #36 adds source-grounding checks for AI-extracted content and rejected apply-link candidates to reduce hallucinated or unsupported fields.
+- #27 generates the later application package from reviewed job, candidate, and
+  application-requirements data.
+- #28 adds downstream human review work for generated material.
 - #37 adds duplicate handling and a proper applied-jobs view.
 
 ---
@@ -262,7 +294,7 @@ manually_edited
 
 ### Goal
 
-Move the workflow into a clear state machine.
+Expand the existing graph pattern into the full workflow state machine.
 
 ### Implement
 
@@ -274,6 +306,8 @@ Move the workflow into a clear state machine.
   - human_validate_job
   - analyze_match
   - human_validate_analysis
+  - inspect_application_page_agent
+  - extract_application_requirements
   - generate_application_package
   - human_review_application
   - revise_application_package
@@ -295,6 +329,8 @@ START
   -> human_validate_job
   -> analyze_match
   -> human_validate_analysis
+  -> inspect_application_page_agent
+  -> extract_application_requirements
   -> generate_application_package
   -> human_review_application
       -> approved -> save_application_package -> update_tracker -> END
@@ -409,12 +445,14 @@ job_search_automation/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
 │   │           ├── analysis.json
+│   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
 │   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
 │           ├── analysis.json
+│           ├── application_page_snapshot.json
 │           ├── application_requirements.json
 │           └── application_package.json
 ├── outputs/
@@ -462,7 +500,7 @@ Implement Phase 1 only.
 
 Do not implement OpenAI calls.
 Do not implement web search.
-Do not implement LangGraph.
+Do not expand LangGraph beyond the requested phase.
 Do not add a database.
 
 After changes, report:

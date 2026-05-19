@@ -93,6 +93,7 @@ Core outputs:
 
 - normalized job JSON in `data/jobs/<job_id>/normalized_job.json`
 - shared job index in `data/runtime/jobs.json`
+- application page snapshot JSON in `data/jobs/<job_id>/application_page_snapshot.json`
 - application requirements JSON in `data/jobs/<job_id>/application_requirements.json`
 - match analysis JSON in `data/jobs/<job_id>/analysis.json`
 - application package JSON in `data/jobs/<job_id>/application_package.json`
@@ -103,10 +104,12 @@ Runtime `data/` files are the source of truth. Markdown files in `outputs/` are
 derived from structured JSON. Test, mock, example, and template-style data
 belong in `tests/fixtures/`.
 
-`normalized_job.json` describes the job offer only. `application_requirements.json`
-is created later from `apply_url` and captures required documents, motivation
-letter requirements, screening questions, form fields, and any missing
-information that needs human review.
+`normalized_job.json` describes the job offer only. The working apply-page
+requirements flow first stores `application_page_snapshot.json` from a read-only
+inspection of `apply_url`, then creates `application_requirements.json` from
+that snapshot. The requirements artifact captures required documents,
+motivation letter requirements, screening questions, form fields, and any
+missing information that needs human review.
 
 `data/runtime/jobs.json` is the canonical shared index for the Tracker and Jobs
 views. The tracked `data/jobs.json` and `data/tracker.json` files can be treated

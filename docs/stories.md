@@ -218,6 +218,10 @@ Tasks:
 
 - add LLM wrapper or template fallback
 - discover or record apply-page requirements from `apply_url`
+- implement the first LangGraph slice for requirements discovery:
+  `application page inspection -> requirements extraction`
+- persist page evidence in `application_page_snapshot.json` before interpreting
+  requirements
 - save application requirements in `data/jobs/<job_id>/application_requirements.json`
 - keep discovered requirements human-reviewable
 - generate a manifest-driven application package
@@ -227,6 +231,9 @@ Tasks:
 Definition of done:
 
 - required documents, motivation letter needs, screening questions, and form fields can be captured separately from job-offer normalization
+- apply-page requirements discovery from `apply_url` works in the Jobs UI and
+  stores both `application_page_snapshot.json` and
+  `application_requirements.json`
 - selected job can produce an application package
 - package generation uses `application_requirements.json` when available
 - package material is visible in the UI
