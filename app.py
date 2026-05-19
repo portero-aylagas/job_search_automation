@@ -84,12 +84,13 @@ def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
 
 def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> None:
     st.title("Jobs")
-    if not tracker_records:
+    job_records = load_job_records(base_dir, tracker_records)
+    if not job_records:
         st.info("No jobs have been added yet.")
         return
 
     sorted_records = sorted(
-        tracker_records,
+        job_records,
         key=lambda record: (record.company.lower(), record.title.lower(), record.job_id),
     )
     selected_record = st.selectbox(
@@ -123,6 +124,25 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
 def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
     path = base_dir / "data" / "jobs" / job_id / "normalized_job.json"
     return load_model(path, JobListing, default=None)
+
+
+def load_job_records(base_dir: Path, tracker_records: list[TrackerRecord]) -> list[TrackerRecord]:
+    records_by_id = {record.job_id: record for record in tracker_records}
+    jobs_dir = base_dir / "data" / "jobs"
+    for job_path in jobs_dir.glob("*/normalized_job.json"):
+        job_listing = load_model(job_path, JobListing, default=None)
+        if job_listing is None or job_listing.id in records_by_id:
+            continue
+        records_by_id[job_listing.id] = TrackerRecord(
+            job_id=job_listing.id,
+            title=job_listing.title,
+            company=job_listing.company,
+            source_url=job_listing.source_url,
+            location=job_listing.location,
+            retrieval_mode=job_listing.retrieval_mode,
+            status="new",
+        )
+    return list(records_by_id.values())
 
 
 def job_option_label(record: TrackerRecord) -> str:
