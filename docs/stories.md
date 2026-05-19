@@ -159,12 +159,14 @@ Definition of done:
 - retrieval mode and the generated app job ID are saved internally but not shown as editable UI fields
 - source job ID is optional when the job source exposes one
 - dynamic extracted details are shown as normal name/value review fields and saved with metadata
-- apply URL is validated as an http(s) workflow gate before downstream steps
+- apply URL is resolved as a job-preserving HTTP(s) workflow gate before downstream steps
 - normalized job JSON is saved
 - tracker shows the new job
 
 The market-pattern baseline is: normalize the public job-offer page first, then
-discover apply-page requirements later from `apply_url`.
+discover apply-page requirements later from `apply_url`. The apply-link
+resolver must reject the original job page, mailto links, and generic career
+pages when they do not preserve the specific job identity.
 
 ### 6. Job Search / Discovery Integration
 
@@ -340,11 +342,11 @@ Completed in the current branch:
 - Job Intake first screen now shows only the job URL and extraction action.
 - Extracted fields appear in a human review form only after AI extraction.
 - Dynamic extracted details are displayed as normal name/value fields and saved in `job_details.dynamic_fields`.
-- `apply_url` is blocked if missing or not an `http(s)` URL.
+- `apply_url` is blocked if missing, not an `http(s)` URL, or not job-preserving.
 - Tracker and Jobs now read from the shared `data/runtime/jobs.json` index.
 
 Open follow-ups:
 
-- #35: stricter apply URL reachability validation before downstream workflow steps.
-- #36: source-grounding checks for hallucinated or unsupported AI extraction content.
+- #35: stricter apply URL reachability and job-identity validation before downstream workflow steps.
+- #36: source-grounding checks for hallucinated or unsupported AI extraction content, including rejected apply-link candidates.
 - #37: duplicate management and a proper applied-jobs tracker view.

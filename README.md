@@ -315,20 +315,22 @@ For AI generation features, create a `.env` file:
 
 ```text
 OPENAI_API_KEY=...
-OPENAI_JOB_EXTRACTION_MODEL=gpt-4o-mini
 ```
-
-`OPENAI_JOB_EXTRACTION_MODEL` is optional and defaults to `gpt-4o-mini`.
 
 The application should still support non-AI sample/demo flows without requiring
 an API key during early phases.
+
+The active LLM extraction configuration is defined in
+`src/llm_job_extraction.py`. That file currently pins the extraction model and
+uses the project-local web search tool for both job-offer extraction and apply
+URL resolution.
 
 ---
 
 ## Current Follow-ups
 
-- #35: validate Apply URL reachability before downstream workflow steps.
-- #36: validate AI-extracted content against the source to reduce hallucinated or unsupported fields.
+- #35: validate Apply URL reachability and job-identity preservation before downstream workflow steps.
+- #36: validate AI-extracted content against the source to reduce hallucinated or unsupported fields, including rejected apply-link candidates.
 - #37: add duplicate management and a proper applied-jobs view.
 
 ---

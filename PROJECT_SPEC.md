@@ -179,10 +179,12 @@ IDs are stored only when available as `source_job_id`. `retrieval_mode` records
 how the workflow obtained the job and is not shown as an editable UI field.
 
 `apply_url` is optional as job-offer metadata, but it becomes a required workflow
-gate before application requirements discovery and package generation. It must
-be a real `http` or `https` application action URL. Email addresses, `mailto:`
-links, contact people, and phone numbers should be preserved as dynamic job
-details, not as `apply_url`.
+gate before application requirements discovery and package generation. The app
+uses a dedicated apply-link resolution step to find the final job-preserving
+HTTP or HTTPS destination behind an apply button or application link. Email
+addresses, `mailto:` links, contact people, phone numbers, and generic job-offer
+URLs are rejected as valid `apply_url` values and should be preserved as dynamic
+job details instead.
 
 `job_details` stores dynamic extracted fields that do not fit the fixed schema.
 Each dynamic field should preserve at least:
@@ -196,10 +198,11 @@ later validation. The UI should show dynamic fields as normal review fields
 using the extracted `name` as the label and `value` as the editable value,
 without exposing raw JSON to normal users.
 
-Job-offer normalization does not include application-form requirements. Required
-documents, motivation-letter prompts, screening questions, and form fields are
-captured later in `application_requirements.json` after the system or user
-follows `apply_url`.
+Job-offer normalization does not include application-form requirements.
+Required documents, motivation-letter prompts, screening questions, and form
+fields are captured later in `application_requirements.json` after the system or
+user follows `apply_url`. The apply-link resolver should surface rejected
+candidates and confidence when the destination cannot be verified cleanly.
 
 ### Match Analysis
 

@@ -84,7 +84,7 @@ def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
     )
     st.dataframe(
         [record.model_dump(mode="json") for record in sorted_records],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 

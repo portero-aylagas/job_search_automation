@@ -17,7 +17,8 @@ Public job discovery is a useful add-on, but it should not block the core
 workflow.
 
 AI extraction must be treated as assisted drafting, not ground truth. Issue #36
-tracks source-grounding checks for hallucinated or unsupported extracted facts.
+tracks source-grounding checks for hallucinated or unsupported extracted facts,
+including rejected apply-link candidates and other unsupported URLs.
 
 ## Discovery Approach
 
@@ -39,9 +40,10 @@ later follows or inspects `apply_url` to discover whether the application form
 requires a CV, motivation letter, screening answers, portfolio links, or other
 fields.
 
-The application URL is a workflow gate. Email-only contact paths and contact
-people are useful dynamic details, but they are not a valid `apply_url`. Issue
-#35 tracks stricter reachability validation before downstream workflow steps.
+The application URL is a workflow gate. Email-only contact paths, contact
+people, and the original job-offer URL are useful facts to preserve, but they
+are not valid `apply_url` values. Issue #35 tracks stricter reachability and
+job-identity validation before downstream workflow steps continue.
 
 ## Job Discovery Decision Notes
 

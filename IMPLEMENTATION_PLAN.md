@@ -94,6 +94,7 @@ normalized job offer.
 - optional external/source job ID
 - dynamic extracted fields saved in `job_details.dynamic_fields`
 - Apply URL validation before the workflow can continue past reviewed intake
+- dedicated apply-link resolution with job-identity validation and rejected candidates
 - save normalized job as JSON
 - create/update tracker record with status `new`
 - Jobs page that lets the user open each tracked job as its own workspace
@@ -115,6 +116,7 @@ data/runtime/jobs.json
 - external/source job ID is optional
 - dynamic extracted details render as normal name/value review fields and are saved with dynamic metadata
 - the workflow blocks continuation when apply_url is missing or not an http(s) URL
+- the workflow blocks continuation when apply_url is not job-preserving or matches the source page
 - job listing is saved as JSON
 - tracker is updated
 - job appears in the Tracker page
@@ -177,6 +179,7 @@ data, guided by apply-page requirements when those have been discovered.
 
 - application-requirements discovery from `apply_url` before or inside package generation
 - validate that `apply_url` is usable before requirements discovery
+- preserve job-preserving resolution evidence and rejected candidates for review
 - preserve human review of discovered application requirements
 - OpenAI API wrapper
 - prompt templates
@@ -212,8 +215,8 @@ form fields discovered later from `apply_url`.
 
 ### Follow-up Tickets
 
-- #35 validates `apply_url` reachability and blocks downstream workflow when it is invalid.
-- #36 adds source-grounding checks for AI-extracted content to reduce hallucinated or unsupported fields.
+- #35 validates `apply_url` reachability and job-identity preservation before downstream workflow continues.
+- #36 adds source-grounding checks for AI-extracted content and rejected apply-link candidates to reduce hallucinated or unsupported fields.
 - #37 adds duplicate handling and a proper applied-jobs view.
 
 ---
