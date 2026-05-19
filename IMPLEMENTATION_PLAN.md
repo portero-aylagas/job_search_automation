@@ -77,7 +77,7 @@ normalized job offer.
 
 - Job Intake page
 - first-screen Job URL input
-- LLM-assisted extraction into review fields
+- snapshot-first page inspection before LLM-assisted extraction into review fields
 - review UI that appears only after extraction
 - manual review fallback fields:
   - title
@@ -95,6 +95,7 @@ normalized job offer.
 - dynamic extracted fields saved in `job_details.dynamic_fields`
 - Apply URL validation before the workflow can continue past reviewed intake
 - dedicated apply-link resolution with job-identity validation and rejected candidates
+- `job_page_snapshot.json` runtime evidence artifact for inspected job pages
 - save normalized job as JSON
 - create/update tracker record with status `new`
 - Jobs page that lets the user open each tracked job as its own workspace
@@ -110,6 +111,9 @@ data/runtime/jobs.json
 
 - user can create one job listing from a URL
 - the initial intake UI shows only the job URL and extraction action
+- the app inspects the job URL with deterministic read-only page tools before LLM interpretation
+- primary job extraction consumes `JobPageSnapshot` evidence without listing OpenAI `web_search`
+- OpenAI `web_search` is used only as a fallback when local inspection is empty, blocked, JavaScript-only, or too uncertain
 - required visible fields are title, company, and source URL
 - app generates its own internal job ID
 - retrieval mode is saved as internal workflow metadata and not shown as an editable field
@@ -117,6 +121,7 @@ data/runtime/jobs.json
 - dynamic extracted details render as normal name/value review fields and are saved with dynamic metadata
 - the workflow blocks continuation when apply_url is missing or not an http(s) URL
 - the workflow blocks continuation when apply_url is not job-preserving or matches the source page
+- apply URL resolution uses snapshot links and buttons before web-search fallback
 - job listing is saved as JSON
 - tracker is updated
 - job appears in the Tracker page
@@ -444,6 +449,7 @@ job_search_automation/
 │   │   └── jobs/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
+│   │           ├── job_page_snapshot.json
 │   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
@@ -451,6 +457,7 @@ job_search_automation/
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
+│           ├── job_page_snapshot.json
 │           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json

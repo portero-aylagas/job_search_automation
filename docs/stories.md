@@ -347,6 +347,16 @@ Completed in the current branch:
 
 - Phase 2 direction changed from form-first intake to URL-only LLM-assisted extraction.
 - Job Intake first screen now shows only the job URL and extraction action.
+- Job Intake now follows a snapshot-first flow:
+  `inspect_job_page_agent -> extract_job_data -> resolve_apply_url`.
+- Deterministic job-page inspection captures visible text, headings, links,
+  buttons, forms, controls, embedded JSON summaries, apply-link candidates,
+  job identity signals, and structured errors before LLM interpretation.
+- OpenAI `web_search` is now limited to fallback extraction or apply-link
+  resolution when the local snapshot is empty, blocked, JavaScript-only, or too
+  uncertain.
+- Runtime evidence can be saved as `job_page_snapshot.json` beside
+  `normalized_job.json`.
 - Extracted fields appear in a human review form only after AI extraction.
 - Dynamic extracted details are displayed as normal name/value fields and saved in `job_details.dynamic_fields`.
 - `apply_url` is blocked if missing, not an `http(s)` URL, or not job-preserving.

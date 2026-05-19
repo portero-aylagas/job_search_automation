@@ -21,7 +21,7 @@ candidate profile
     +
 job URL
     ↓
-LLM-assisted extraction and human review
+read-only job-page snapshot, LLM interpretation, and human review
     ↓
 normalized job listing
     ↓
@@ -42,8 +42,9 @@ application tracking
 
 - candidate profile management
 - reusable experience units
-- URL-only job intake with LLM-assisted extraction and manual review
+- URL-only job intake with snapshot-first LLM-assisted extraction and manual review
 - job normalization
+- job-page evidence persistence in `job_page_snapshot.json`
 - working apply-page requirements discovery from `apply_url` through a LangGraph
   inspection/extraction slice
 - per-job workspace for saved intake data
@@ -101,10 +102,10 @@ job_search_automation/
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
-│   ├── scoring.py
-│   ├── llm.py
-│   ├── workflow.py
-│   └── job_search.py
+│   ├── job_intake.py
+│   ├── llm_job_extraction.py
+│   ├── page_inspection.py
+│   └── application_requirements.py
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
@@ -116,6 +117,7 @@ job_search_automation/
 │   │   └── jobs/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
+│   │           ├── job_page_snapshot.json
 │   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
@@ -123,6 +125,7 @@ job_search_automation/
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
+│           ├── job_page_snapshot.json
 │           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json
@@ -180,10 +183,16 @@ The visible stable job core is `title`, `company`, and `source_url`.
 UI field. The app generates its own `id`; external job board IDs are optional
 and stored separately as `source_job_id`.
 
-`normalized_job.json` describes the job offer. Apply-page requirements are
-discovered later from `apply_url`. The app first stores read-only page evidence
-in `application_page_snapshot.json`, then stores interpreted requirements in
-`application_requirements.json`.
+`normalized_job.json` describes the job offer. The job intake flow first
+inspects the supplied URL with deterministic read-only page tools and can save
+that runtime evidence as `job_page_snapshot.json`. The LLM interprets the
+snapshot to produce reviewable job fields. OpenAI `web_search` is reserved as an
+internal fallback when local inspection is empty, blocked, JavaScript-only, or
+too uncertain.
+
+Apply-page requirements are discovered later from `apply_url`. The app first
+stores read-only apply-page evidence in `application_page_snapshot.json`, then
+stores interpreted requirements in `application_requirements.json`.
 
 `data/runtime/jobs.json` is the shared job index used by both the Tracker page
 and the Jobs page. The tracked `data/jobs.json` and `data/tracker.json` files
@@ -210,12 +219,18 @@ Apply-page requirements discovered after job-offer normalization:
 - portfolio fields
 - missing information for human review
 
-This is implemented as the first LangGraph slice of the larger workflow:
+This is implemented as a LangGraph slice of the larger workflow:
 `application page inspection -> requirements extraction`. The
 `inspect_application_page_agent` node uses read-only fetch, parsing, regex
 evidence, embedded JSON inspection, and optional Playwright fallback to build a
 snapshot before the LLM interprets requirements. It does not submit forms,
 upload files, log in, or enter personal data.
+
+Job intake follows the same snapshot-first architecture:
+`job page inspection -> job data extraction -> apply URL resolution`. The
+`inspect_job_page_agent` node captures title, headings, visible text, links,
+buttons, forms, controls, embedded JSON summaries, apply-link candidates, job
+identity signals, and structured errors before any LLM interpretation.
 
 ### Job Analysis
 

@@ -137,13 +137,22 @@ Supported intake modes:
 The core intake mode is:
 
 ```text
-job URL -> LLM-assisted extraction -> human review -> normalized job listing
+job URL -> read-only page snapshot -> LLM-assisted extraction -> human review -> normalized job listing
 ```
 
 The first Job Intake screen should show only the job URL input and an extraction
 action. Fixed and dynamic review fields appear only after extraction, because
 the user goal is to generate useful application data from a URL rather than fill
 out a normalization form manually.
+
+Job intake should inspect the supplied job URL before asking an LLM to interpret
+the page. The inspection step captures deterministic evidence such as final URL,
+fetch status, content type, title, headings, visible text, links, buttons,
+forms, inputs, labels, select options, textareas, `data-*` attributes, embedded
+JSON summaries, apply-link candidates, job identity signals, and structured
+errors. This evidence can be saved as `job_page_snapshot.json` beside the
+runtime job artifacts. OpenAI `web_search` is an internal fallback only when
+local inspection is empty, blocked, JavaScript-only, or too uncertain.
 
 ### Job Normalization
 
@@ -202,8 +211,11 @@ Job-offer normalization does not include application-form requirements.
 Required documents, motivation-letter prompts, screening questions, and form
 fields are captured later by first storing `application_page_snapshot.json`,
 then interpreting it into `application_requirements.json`. The apply-link
-resolver should surface rejected candidates and confidence when the destination
-cannot be verified cleanly.
+resolver should use job-page snapshot links and buttons first, ask the LLM to
+choose or validate the best job-preserving apply URL from that evidence, and
+use `web_search` fallback only when local evidence does not expose a usable
+candidate. It should surface rejected candidates and confidence when the
+destination cannot be verified cleanly.
 
 ### Match Analysis
 
@@ -415,6 +427,9 @@ Purpose: give every tracked opportunity its own workspace.
 The Jobs page starts from `data/runtime/jobs.json`, lets the user select a
 tracked job, and displays the saved intake data from
 `data/runtime/jobs/<job_id>/normalized_job.json` when available.
+Runtime job-page evidence may also be stored in
+`data/runtime/jobs/<job_id>/job_page_snapshot.json` for debugging and source
+traceability.
 
 Initial displays:
 
