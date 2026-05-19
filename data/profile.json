@@ -1,0 +1,37 @@
+{
+  "id": "candidate-001",
+  "full_name": "Alex Mercer",
+  "professional_summary": "Python-focused operations and automation specialist with experience building internal tools, streamlining manual workflows, and translating business requirements into reliable data products.",
+  "target_roles": [
+    "Python Developer",
+    "Automation Engineer",
+    "Data Analyst"
+  ],
+  "target_locations": [
+    "Berlin",
+    "Remote",
+    "Madrid"
+  ],
+  "skills": [
+    "Python",
+    "SQL",
+    "Streamlit",
+    "APIs",
+    "Automation",
+    "Git",
+    "Pandas"
+  ],
+  "languages": [
+    "English",
+    "Spanish"
+  ],
+  "salary_expectation": "EUR 55,000 - 65,000",
+  "constraints": [
+    "Prefer hybrid or remote-friendly roles",
+    "No visa sponsorship needed"
+  ],
+  "documents_used": [
+    "CV_2026.pdf",
+    "portfolio.md"
+  ]
+}
