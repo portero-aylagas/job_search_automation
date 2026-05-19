@@ -65,3 +65,6 @@ CLAUDE.local.md
 
 # Local runtime job state
 data/runtime/
+
+# Local candidate profile contains CV-derived personal data
+data/candidate_profile.json

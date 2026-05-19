@@ -2,26 +2,52 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.schemas import CandidateProfile, ExperienceUnit, JobListing, TrackerRecord
+from src.schemas import (
+    CandidateProfile,
+    ExperienceUnit,
+    JobListing,
+    TrackerRecord,
+)
 from src.storage import ensure_data_dirs, save_model
 
 
 def get_sample_candidate_profile() -> CandidateProfile:
     return CandidateProfile(
-        id="candidate-001",
-        full_name="Alex Mercer",
-        professional_summary=(
-            "Python-focused operations and automation specialist with experience "
-            "building internal tools, streamlining manual workflows, and translating "
-            "business requirements into reliable data products."
-        ),
-        target_roles=["Python Developer", "Automation Engineer", "Data Analyst"],
-        target_locations=["Berlin", "Remote", "Madrid"],
-        skills=["Python", "SQL", "Streamlit", "APIs", "Automation", "Git", "Pandas"],
-        languages=["English", "Spanish"],
-        salary_expectation="EUR 55,000 - 65,000",
-        constraints=["Prefer hybrid or remote-friendly roles", "No visa sponsorship needed"],
-        documents_used=["CV_2026.pdf", "portfolio.md"],
+        candidate_profile={
+            "profile_status": "draft",
+            "source_documents": {
+                "cv": {"file_path": "", "parsed": False},
+                "optional_documents": [],
+            },
+            "cv_extracted": {
+                "identity": {
+                    "full_name": "",
+                    "email": "",
+                    "phone": "",
+                    "location": "",
+                    "linkedin_url": "",
+                    "github_url": "",
+                    "portfolio_url": "",
+                },
+                "work_experience": [],
+                "education": [],
+                "skills": [],
+                "languages": [],
+                "certifications": [],
+                "projects": [],
+            },
+            "candidate_preferences": {
+                "target_roles": [],
+                "target_locations": [],
+                "remote_preference": [],
+                "employment_type": [],
+                "seniority_level": [],
+                "availability": "",
+                "salary_min_eur": None,
+                "salary_max_eur": None,
+                "work_authorization": "",
+            },
+        },
     )
 
 
@@ -144,7 +170,7 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
     ensure_data_dirs(root)
 
     files_to_seed = {
-        root / "data/profile.json": get_sample_candidate_profile(),
+        root / "data/candidate_profile.json": get_sample_candidate_profile(),
         root / "data/experience_units.json": get_sample_experience_units(),
         root / "data/jobs.json": get_sample_tracker_records(),
         root / "data/tracker.json": get_sample_tracker_records(),

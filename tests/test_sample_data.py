@@ -6,7 +6,7 @@ from src.sample_data import bootstrap_sample_data
 def test_bootstrap_sample_data_creates_expected_files(tmp_path: Path) -> None:
     bootstrap_sample_data(tmp_path)
 
-    assert (tmp_path / "data/profile.json").is_file()
+    assert (tmp_path / "data/candidate_profile.json").is_file()
     assert (tmp_path / "data/experience_units.json").is_file()
     assert (tmp_path / "data/jobs.json").is_file()
     assert (tmp_path / "data/tracker.json").is_file()
@@ -20,7 +20,7 @@ def test_bootstrap_sample_data_creates_expected_files(tmp_path: Path) -> None:
 
 
 def test_bootstrap_sample_data_does_not_overwrite_existing_files(tmp_path: Path) -> None:
-    profile_path = tmp_path / "data/profile.json"
+    profile_path = tmp_path / "data/candidate_profile.json"
     profile_path.parent.mkdir(parents=True, exist_ok=True)
     original = "{\"id\": \"existing-profile\"}\n"
     profile_path.write_text(original, encoding="utf-8")
