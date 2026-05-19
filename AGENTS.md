@@ -52,6 +52,10 @@ Open a pull request back to `main` and reference the issue in the PR body:
 Closes #<issue-number>
 ```
 
+When merging pull requests, do not delete the task branch by default.
+
+Keep the remote branch available after merge unless the user explicitly asks to delete it.
+
 Small docs-only changes may be pushed directly to `main`.
 
 Use the repository-local Python environment for local commands:
