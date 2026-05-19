@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ExtractedJobData, extract_job_data_from_url
 from src.sample_data import bootstrap_sample_data
-from src.schemas import CandidateProfile, ExperienceUnit, TrackerRecord
+from src.schemas import CandidateProfile, ExperienceUnit, JobListing, TrackerRecord
 from src.storage import load_model
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -80,6 +80,136 @@ def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+
+def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> None:
+    st.title("Jobs")
+    if not tracker_records:
+        st.info("No jobs have been added yet.")
+        return
+
+    sorted_records = sorted(
+        tracker_records,
+        key=lambda record: (record.company.lower(), record.title.lower(), record.job_id),
+    )
+    selected_record = st.selectbox(
+        "Job",
+        sorted_records,
+        format_func=job_option_label,
+    )
+    job_listing = load_normalized_job(base_dir, selected_record.job_id)
+
+    st.header(f"{selected_record.title}")
+    st.caption(selected_record.company)
+
+    status_left, status_right, status_third = st.columns(3)
+    status_left.metric("Status", selected_record.status)
+    if selected_record.match_score is None:
+        match_score = "Not analyzed"
+    else:
+        match_score = f"{selected_record.match_score:g}"
+    status_right.metric("Match Score", match_score)
+    status_third.metric("Retrieval", selected_record.retrieval_mode)
+
+    st.divider()
+    if job_listing is None:
+        render_tracker_job_summary(selected_record)
+        st.warning("Full intake data is not available for this job yet.")
+        return
+
+    render_job_intake_summary(job_listing)
+
+
+def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
+    path = base_dir / "data" / "jobs" / job_id / "normalized_job.json"
+    return load_model(path, JobListing, default=None)
+
+
+def job_option_label(record: TrackerRecord) -> str:
+    return f"{record.company} / {record.title}"
+
+
+def render_tracker_job_summary(record: TrackerRecord) -> None:
+    st.subheader("Job Summary")
+    summary = {
+        "Company": record.company,
+        "Title": record.title,
+        "Location": record.location or "Not specified",
+        "Source URL": str(record.source_url),
+        "Notes": record.notes or "None",
+    }
+    for label, value in summary.items():
+        st.markdown(f"**{label}**")
+        st.write(value)
+
+
+def render_job_intake_summary(job: JobListing) -> None:
+    st.subheader("Intake Data")
+    left, right = st.columns(2)
+    with left:
+        render_field("Company", job.company)
+        render_field("Location", job.location)
+        render_field("Remote Policy", job.remote_policy)
+        render_field("Salary", job.salary)
+    with right:
+        render_field("Source URL", str(job.source_url))
+        render_field("Apply URL", str(job.apply_url) if job.apply_url else None)
+        render_field("Posted Date", job.posted_date)
+        render_field("Source Job ID", job.source_job_id)
+
+    if job.description:
+        st.markdown("**Role Summary**")
+        st.write(job.description)
+
+    render_list("Requirements", job.requirements)
+    render_list("Responsibilities", job.responsibilities)
+    render_list("Nice-to-have Skills", job.nice_to_have_skills)
+    render_additional_details(job.job_details)
+
+
+def render_field(label: str, value: str | None) -> None:
+    st.markdown(f"**{label}**")
+    st.write(value or "Not specified")
+
+
+def render_list(label: str, values: list[str]) -> None:
+    if not values:
+        return
+    st.markdown(f"**{label}**")
+    for value in values:
+        st.write(f"- {value}")
+
+
+def render_additional_details(job_details: dict[str, object]) -> None:
+    dynamic_fields = job_details.get("dynamic_fields")
+    rendered_any = False
+
+    if isinstance(dynamic_fields, list):
+        st.markdown("**Additional Extracted Details**")
+        for field in dynamic_fields:
+            if not isinstance(field, dict):
+                continue
+            name = str(field.get("name") or "Additional Detail")
+            value = field.get("value")
+            render_field(name, str(value) if value is not None else None)
+            rendered_any = True
+
+    remaining_details = {
+        key: value
+        for key, value in job_details.items()
+        if key not in {"dynamic_fields", "extraction_confidence"} and value
+    }
+    if remaining_details:
+        if not rendered_any:
+            st.markdown("**Additional Extracted Details**")
+        for key, value in remaining_details.items():
+            render_field(key.replace("_", " ").title(), format_detail_value(value))
+
+
+def format_detail_value(value: object) -> str:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
 
 
 def render_job_intake_page(base_dir: Path) -> None:
@@ -238,12 +368,14 @@ def main() -> None:
     profile, experience_units, tracker_records = load_app_data()
 
     st.sidebar.title("Job Search Automation")
-    page = st.sidebar.radio("Navigate", ["Candidate Profile", "Job Intake", "Tracker"])
+    page = st.sidebar.radio("Navigate", ["Candidate Profile", "Job Intake", "Jobs", "Tracker"])
 
     if page == "Candidate Profile":
         render_candidate_profile_page(profile, experience_units)
     elif page == "Job Intake":
         render_job_intake_page(BASE_DIR)
+    elif page == "Jobs":
+        render_jobs_page(BASE_DIR, tracker_records)
     else:
         render_tracker_page(tracker_records)
 

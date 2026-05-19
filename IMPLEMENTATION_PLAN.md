@@ -96,6 +96,7 @@ normalized job offer.
 - Apply URL validation before the workflow can continue past reviewed intake
 - save normalized job as JSON
 - create/update tracker record with status `new`
+- Jobs page that lets the user open each tracked job as its own workspace
 
 ### Data Output
 
@@ -117,6 +118,7 @@ data/tracker.json
 - job listing is saved as JSON
 - tracker is updated
 - job appears in the Tracker page
+- job appears in the Jobs page with saved intake data displayed clearly
 
 ---
 

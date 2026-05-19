@@ -44,6 +44,7 @@ application tracking
 - reusable experience units
 - URL-only job intake with LLM-assisted extraction and manual review
 - job normalization
+- per-job workspace for saved intake data
 - candidate/job match analysis
 - tailored application package generation
 - editable AI-generated material
@@ -229,6 +230,14 @@ Application tracking information:
 - status
 - notes
 - generated package path
+
+### Jobs View
+
+The sidebar includes a `Jobs` page. It lists opportunities from the tracker and
+opens a per-job workspace. The current version shows saved Job Intake data from
+`data/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
+summary, requirements, responsibilities, nice-to-have skills, and dynamic
+extracted details.
 
 ---
 

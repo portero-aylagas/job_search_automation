@@ -404,6 +404,34 @@ Actions:
 - regenerate analysis
 - reject job
 
+### Jobs
+
+Purpose: give every tracked opportunity its own workspace.
+
+The Jobs page starts from `data/tracker.json`, lets the user select a tracked
+job, and displays the saved intake data from
+`data/jobs/<job_id>/normalized_job.json` when available.
+
+Initial displays:
+
+- job title
+- company
+- status
+- match score
+- retrieval mode
+- source URL
+- apply URL
+- location and remote policy
+- description
+- requirements
+- responsibilities
+- nice-to-have skills
+- dynamic extracted details
+
+Later phases can add analysis, package artifacts, application requirements,
+notes, history, duplicate resolution, and applied-job management to this same
+per-job space.
+
 ### Application Generator
 
 Purpose: generate tailored material for an approved job.
