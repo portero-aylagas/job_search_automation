@@ -19,9 +19,13 @@ The system is designed to keep the user in control. AI can assist with extractio
 ```text
 candidate profile
     +
-job URL or job description
+job URL
+    ↓
+LLM-assisted extraction and human review
     ↓
 normalized job listing
+    ↓
+application requirements discovery when apply_url is available
     ↓
 candidate/job match analysis
     ↓
@@ -38,7 +42,7 @@ application tracking
 
 - candidate profile management
 - reusable experience units
-- job URL or job description intake
+- URL-only job intake with LLM-assisted extraction and manual review
 - job normalization
 - candidate/job match analysis
 - tailored application package generation
@@ -102,14 +106,25 @@ job_search_automation/
 │   ├── profile.json
 │   ├── experience_units.json
 │   ├── tracker.json
-│   ├── jobs/
-│   └── applications/
+│   └── jobs/
+│       └── <job_id>/
+│           ├── normalized_job.json
+│           ├── analysis.json
+│           ├── application_requirements.json
+│           └── application_package.json
 ├── outputs/
+│   └── <job_id>/
+│       └── application_package.md
 ├── tests/
+│   └── fixtures/
 └── skills/
 ```
 
 The `skills/` directory contains development-support skills used during implementation and project improvement. It is not part of the runtime application unless explicitly integrated.
+
+The `data/` directory stores structured runtime state. The `outputs/` directory
+stores derived human-readable exports generated from JSON. Test, mock, example,
+and template-style assets belong in `tests/fixtures/`.
 
 ---
 
@@ -138,17 +153,42 @@ Normalized job data:
 
 - title
 - company
-- location
-- remote policy
-- apply URL
-- description
-- requirements
-- responsibilities
-- nice-to-have skills
-- salary
-- posted date
-- source
-- retrieval mode
+- source URL
+- generated internal job ID
+- hidden internal retrieval mode
+- optional external/source job ID
+- optional role details such as location, remote policy, description, requirements, responsibilities, nice-to-have skills, salary, posted date, and apply URL
+- flexible job details metadata
+
+The visible stable job core is `title`, `company`, and `source_url`.
+`retrieval_mode` is required internal workflow metadata and is not an editable
+UI field. The app generates its own `id`; external job board IDs are optional
+and stored separately as `source_job_id`.
+
+`normalized_job.json` describes the job offer. Apply-page requirements are
+discovered later from `apply_url` and stored separately in
+`application_requirements.json`.
+
+The Job Intake screen starts with only a job URL. After AI extraction, the app
+shows a review form with fixed fields and any dynamic extracted details. Dynamic
+details are shown as normal name/value fields in the UI and are saved in
+`job_details.dynamic_fields` with metadata for later validation.
+
+`apply_url` must be a real `http` or `https` application action URL before the
+workflow can continue to application requirements discovery or package
+generation. Email addresses, `mailto:` links, contact names, and phone numbers
+belong in dynamic details instead.
+
+### Application Requirements
+
+Apply-page requirements discovered after job-offer normalization:
+
+- required documents
+- motivation letter requirement
+- screening questions
+- form fields
+- portfolio fields
+- missing information for human review
 
 ### Job Analysis
 
@@ -165,12 +205,15 @@ Candidate/job comparison:
 
 Generated material:
 
-- cover letter
-- CV tailoring notes
-- recruiter message
-- form answers
+- variable artifacts
+- job-specific form answers
+- missing information checklist
 - selected experience units
 - package status
+
+The package JSON is the source of truth. Markdown exports are generated from the
+full package when needed. When `application_requirements.json` exists, package
+generation uses it to decide which artifacts and answers are needed.
 
 ### Tracker Record
 
@@ -179,8 +222,8 @@ Application tracking information:
 - job ID
 - title
 - company
+- source URL
 - location
-- source
 - retrieval mode
 - match score
 - status
@@ -248,10 +291,22 @@ pytest
 For AI generation features, create a `.env` file:
 
 ```text
-OPENAI_API_KEY=your_api_key_here
+OPENAI_API_KEY=...
+OPENAI_JOB_EXTRACTION_MODEL=gpt-4o-mini
 ```
 
-The application should still support non-AI sample/demo flows without requiring an API key during early phases.
+`OPENAI_JOB_EXTRACTION_MODEL` is optional and defaults to `gpt-4o-mini`.
+
+The application should still support non-AI sample/demo flows without requiring
+an API key during early phases.
+
+---
+
+## Current Follow-ups
+
+- #35: validate Apply URL reachability before downstream workflow steps.
+- #36: validate AI-extracted content against the source to reduce hallucinated or unsupported fields.
+- #37: add duplicate management and a proper applied-jobs view.
 
 ---
 

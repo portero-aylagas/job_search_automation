@@ -66,37 +66,54 @@ streamlit run app.py
 
 ---
 
-## Phase 2 — Job Intake and Normalization
+## Phase 2 — Job URL Intake and Normalization
 
 ### Goal
 
-Allow the user to add a job manually or through pasted text.
+Allow the user to add a job from a URL, review extracted details, and save a
+normalized job offer.
 
 ### Implement
 
 - Job Intake page
-- paste job description input
-- paste job URL field
-- manual fields:
+- first-screen Job URL input
+- LLM-assisted extraction into review fields
+- review UI that appears only after extraction
+- manual review fallback fields:
   - title
   - company
+  - source URL
+- optional extracted role fields:
   - location
   - remote policy
   - apply URL
   - description
+- hidden internal fields:
+  - generated app job ID
+  - retrieval mode
+- optional external/source job ID
+- dynamic extracted fields saved in `job_details.dynamic_fields`
+- Apply URL validation before the workflow can continue past reviewed intake
 - save normalized job as JSON
 - create/update tracker record with status `new`
 
 ### Data Output
 
 ```text
-data/jobs/<job_id>_normalized.json
+data/jobs/<job_id>/normalized_job.json
 data/tracker.json
 ```
 
 ### Acceptance Criteria
 
-- user can create one job listing
+- user can create one job listing from a URL
+- the initial intake UI shows only the job URL and extraction action
+- required visible fields are title, company, and source URL
+- app generates its own internal job ID
+- retrieval mode is saved as internal workflow metadata and not shown as an editable field
+- external/source job ID is optional
+- dynamic extracted details render as normal name/value review fields and are saved with dynamic metadata
+- the workflow blocks continuation when apply_url is missing or not an http(s) URL
 - job listing is saved as JSON
 - tracker is updated
 - job appears in the Tracker page
@@ -134,7 +151,7 @@ completeness/freshness: 5%
 ### Data Output
 
 ```text
-data/jobs/<job_id>_analysis.json
+data/jobs/<job_id>/analysis.json
 ```
 
 ### Acceptance Criteria
@@ -151,35 +168,51 @@ data/jobs/<job_id>_analysis.json
 
 ### Goal
 
-Generate application material from candidate profile + experience units + job data.
+Generate application material from candidate profile + experience units + job
+data, guided by apply-page requirements when those have been discovered.
 
 ### Implement
 
+- application-requirements discovery from `apply_url` before or inside package generation
+- validate that `apply_url` is usable before requirements discovery
+- preserve human review of discovered application requirements
 - OpenAI API wrapper
 - prompt templates
-- cover letter generation
-- CV tailoring notes generation
-- recruiter message generation
+- manifest-driven application artifact generation
+- support for variable job-specific materials
 - application form answer generation
+- markdown package rendering from JSON
 - application package save/load
 
 ### Generated Outputs
 
 ```text
-data/applications/<job_id>_application_package.json
-outputs/<job_id>/cover_letter.md
-outputs/<job_id>/cv_tailoring_notes.md
-outputs/<job_id>/recruiter_message.md
-outputs/<job_id>/application_summary.md
+data/jobs/<job_id>/application_requirements.json
+data/jobs/<job_id>/application_package.json
+outputs/<job_id>/application_package.md
 ```
+
+The package JSON is the source of truth. Markdown output is a derived review or
+export file generated from the full package.
+`normalized_job.json` describes the job offer. `application_requirements.json`
+describes required documents, motivation letter needs, screening questions, and
+form fields discovered later from `apply_url`.
 
 ### Acceptance Criteria
 
 - user can select an analyzed job
+- app can record application requirements when an apply URL is available
 - app generates an application package
+- package generation uses `application_requirements.json` when present
 - generated material is visible in UI
 - package is saved
 - tracker status can move to `application_draft`
+
+### Follow-up Tickets
+
+- #35 validates `apply_url` reachability and blocks downstream workflow when it is invalid.
+- #36 adds source-grounding checks for AI-extracted content to reduce hallucinated or unsupported fields.
+- #37 adds duplicate handling and a proper applied-jobs view.
 
 ---
 
@@ -363,8 +396,12 @@ job_search_automation/
 │   ├── profile.json
 │   ├── experience_units.json
 │   ├── tracker.json
-│   ├── jobs/
-│   └── applications/
+│   └── jobs/
+│       └── <job_id>/
+│           ├── normalized_job.json
+│           ├── analysis.json
+│           ├── application_requirements.json
+│           └── application_package.json
 ├── outputs/
 ├── tests/
 └── skills/

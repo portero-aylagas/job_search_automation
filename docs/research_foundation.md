@@ -2,27 +2,46 @@
 
 ## Baseline Intake
 
-The sprint baseline is manual-first job intake:
+The sprint baseline is URL-only LLM-assisted extraction with manual review fallback:
 
-- pasted job description
-- pasted job URL for source provenance
-- manual fallback fields for title, company, location, remote policy, apply URL, and description
+- first-screen Job URL input
+- LLM or agent extraction into a review form
+- required visible review fields: title, company, source URL
+- optional extracted role fields such as location, remote policy, description, requirements, salary, posted date, and apply URL
+- hidden internal retrieval mode and generated app job ID
+- optional external/source job ID when the source provides one
 
-URL extraction and public job discovery are useful add-ons, but they should not block the core workflow.
+Manual review remains mandatory because extraction can be incomplete. Pasted job
+text is a fallback when a URL cannot be read, not the primary intake baseline.
+Public job discovery is a useful add-on, but it should not block the core
+workflow.
+
+AI extraction must be treated as assisted drafting, not ground truth. Issue #36
+tracks source-grounding checks for hallucinated or unsupported extracted facts.
 
 ## Discovery Approach
 
 Preferred discovery path for this sprint:
 
-- start with manual job intake
+- start with URL-only LLM-assisted extraction and manual review fallback
 - add one lightweight discovery option only after the core workflow works
 - evaluate API, MCP, or web search based on reliability and setup cost
 
 Initial priority:
 
-1. manual intake
-2. structured import or pasted job text
+1. URL-only LLM-assisted extraction with manual review fallback
+2. structured import or pasted job text fallback
 3. public web/API/MCP discovery as an add-on
+
+The common market pattern is a public job-offer page followed by a separate
+application step. The app stores the public offer in `normalized_job.json`, then
+later follows or inspects `apply_url` to discover whether the application form
+requires a CV, motivation letter, screening answers, portfolio links, or other
+fields.
+
+The application URL is a workflow gate. Email-only contact paths and contact
+people are useful dynamic details, but they are not a valid `apply_url`. Issue
+#35 tracks stricter reachability validation before downstream workflow steps.
 
 ## Job Discovery Decision Notes
 
@@ -48,7 +67,7 @@ clients, documented with clear credentials and rate limits, and treated as optio
 The core data model should stay independent of the source:
 
 ```text
-manual entry / pasted text / API result / MCP result -> normalized job listing -> tracker
+job URL / reviewed fallback text / API result / MCP result -> normalized job listing -> tracker
 ```
 
 Similar job-search automation repositories tend to follow the same useful split: ingestion,
@@ -70,11 +89,21 @@ Costs and rate limits should be documented when a live provider is added. Until 
 
 Core outputs:
 
-- normalized job JSON in `data/jobs/`
-- match analysis JSON in `data/jobs/`
-- application package JSON in `data/applications/`
-- generated Markdown artifacts in `outputs/<job_id>/`
+- normalized job JSON in `data/jobs/<job_id>/normalized_job.json`
+- application requirements JSON in `data/jobs/<job_id>/application_requirements.json`
+- match analysis JSON in `data/jobs/<job_id>/analysis.json`
+- application package JSON in `data/jobs/<job_id>/application_package.json`
+- generated Markdown exports in `outputs/<job_id>/`
 - tracker state in `data/tracker.json`
+
+Runtime `data/` files are the source of truth. Markdown files in `outputs/` are
+derived from structured JSON. Test, mock, example, and template-style data
+belong in `tests/fixtures/`.
+
+`normalized_job.json` describes the job offer only. `application_requirements.json`
+is created later from `apply_url` and captures required documents, motivation
+letter requirements, screening questions, form fields, and any missing
+information that needs human review.
 
 The core pipeline remains:
 

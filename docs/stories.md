@@ -30,7 +30,7 @@ Core scope:
 
 - candidate profile and reusable experience data
 - local JSON storage
-- job URL or pasted-text intake
+- URL-only LLM-assisted extraction with manual review fallback
 - normalized job data
 - match analysis
 - application package generation
@@ -91,7 +91,7 @@ Tasks:
 
 Definition of done:
 
-- manual intake is confirmed as the baseline
+- URL-only LLM-assisted extraction with manual review fallback is confirmed as the baseline
 - discovery approach is selected or clearly marked as optional
 - required environment variables are listed
 - output structure is documented
@@ -137,7 +137,7 @@ Definition of done:
 - sample tracker data is visible
 - JSON helpers can save and load data
 
-### 5. Job URL/Text Intake & Normalization
+### 5. Job URL Intake & Normalization
 
 - Estimate: 5
 - Priority: High
@@ -145,31 +145,39 @@ Definition of done:
 
 Tasks:
 
-- add URL and pasted-text intake fields
-- add manual fallback fields
+- add first-screen Job URL intake with no manual detail fields before extraction
+- extract role details into a review form with an LLM or agent
+- add manual review fallback fields
 - normalize job data into the shared schema
 - save normalized jobs locally
 - update the tracker with new jobs
 
 Definition of done:
 
-- user can add a job from text or manual fields
-- URL is stored as source provenance even if extraction is manual
+- user can add a job from a URL
+- title, company, and source URL are the required visible job fields
+- retrieval mode and the generated app job ID are saved internally but not shown as editable UI fields
+- source job ID is optional when the job source exposes one
+- dynamic extracted details are shown as normal name/value review fields and saved with metadata
+- apply URL is validated as an http(s) workflow gate before downstream steps
 - normalized job JSON is saved
 - tracker shows the new job
+
+The market-pattern baseline is: normalize the public job-offer page first, then
+discover apply-page requirements later from `apply_url`.
 
 ### 6. Job Search / Discovery Integration
 
 - Estimate: 5
 - Priority: Medium
-- Dependencies: Job URL/Text Intake & Normalization
+- Dependencies: Job URL Intake & Normalization
 
 Tasks:
 
 - implement a small search/discovery path using API, MCP, or web search
 - show candidate jobs for user review
 - let selected jobs enter the normal intake pipeline
-- keep manual intake available as fallback
+- keep manual review fallback available
 
 Definition of done:
 
@@ -182,7 +190,7 @@ Definition of done:
 
 - Estimate: 3
 - Priority: High
-- Dependencies: Job URL/Text Intake & Normalization
+- Dependencies: Job URL Intake & Normalization
 
 Tasks:
 
@@ -198,7 +206,7 @@ Definition of done:
 - analysis is saved locally
 - tracker can show analyzed status or score
 
-### 8. Application Package Generation
+### 8. Application Requirements Discovery & Package Generation
 
 - Estimate: 5
 - Priority: High
@@ -207,16 +215,20 @@ Definition of done:
 Tasks:
 
 - add LLM wrapper or template fallback
-- generate cover letter draft
-- generate CV tailoring notes
-- generate recruiter message and application answers
+- discover or record apply-page requirements from `apply_url`
+- save application requirements in `data/jobs/<job_id>/application_requirements.json`
+- keep discovered requirements human-reviewable
+- generate a manifest-driven application package
+- support variable job-specific materials and application answers
 - save package outputs locally
 
 Definition of done:
 
+- required documents, motivation letter needs, screening questions, and form fields can be captured separately from job-offer normalization
 - selected job can produce an application package
+- package generation uses `application_requirements.json` when available
 - package material is visible in the UI
-- package is saved as JSON and/or Markdown
+- package is saved as JSON, with optional Markdown export
 - missing information checklist is included
 
 ### 9. UI Review, Tracker & Application Logging
@@ -319,3 +331,19 @@ Definition of done:
 - architecture and workflow are documented
 - final verification has been run
 - demo path is clear
+
+## Current Development Status
+
+Completed in the current branch:
+
+- Phase 2 direction changed from form-first intake to URL-only LLM-assisted extraction.
+- Job Intake first screen now shows only the job URL and extraction action.
+- Extracted fields appear in a human review form only after AI extraction.
+- Dynamic extracted details are displayed as normal name/value fields and saved in `job_details.dynamic_fields`.
+- `apply_url` is blocked if missing or not an `http(s)` URL.
+
+Open follow-ups:
+
+- #35: stricter apply URL reachability validation before downstream workflow steps.
+- #36: source-grounding checks for hallucinated or unsupported AI extraction content.
+- #37: duplicate management and a proper applied-jobs tracker view.

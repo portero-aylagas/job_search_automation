@@ -1,5 +1,6 @@
 streamlit
 pydantic
 python-dotenv
+openai
 pytest
 ruff
