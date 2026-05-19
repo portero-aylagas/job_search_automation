@@ -64,17 +64,20 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
                     "optional category, a short source_text excerpt when available, "
                     "and a confidence level. Dynamic fields are expected and useful; "
                     "do not put them in missing_or_uncertain unless the fact itself "
-                    "is unclear. The apply_url field is mandatory for the workflow "
-                    "when the page exposes an application action. It must be an "
-                    "http or https URL for the action a user would click to apply, "
-                    "such as links or buttons labeled Apply, Apply now, Bewerben, "
-                    "Jetzt bewerben, Online bewerben, Zur Bewerbung, Karriereportal, "
-                    "or Application form. Never put mailto:, email addresses, phone "
-                    "numbers, or contact people in apply_url; place those in "
-                    "dynamic_fields instead. If the only application path is email "
-                    "or the apply action cannot be verified, leave apply_url empty "
-                    "and add a clear missing_or_uncertain item. Do not invent salary, "
-                    "location, apply requirements, or company data."
+                    "is unclear. The apply_url field must be the actual application "
+                    "destination a user would click, not the job offer page URL. "
+                    "Look for the link target behind buttons or links labeled Apply, "
+                    "Apply now, Bewerben, Jetzt bewerben, Online bewerben, Zur "
+                    "Bewerbung, Karriereportal, Application form, or similar text. "
+                    "If the page has a button with a different href or redirect target, "
+                    "use that target URL. Never copy the current offer URL into "
+                    "apply_url just because the button sits on the same page. Never "
+                    "put mailto:, email addresses, phone numbers, or contact people in "
+                    "apply_url; place those in dynamic_fields instead. If the only "
+                    "application path is the same page, email, or the apply action "
+                    "cannot be verified, leave apply_url empty and add a clear "
+                    "missing_or_uncertain item. Do not invent salary, location, apply "
+                    "requirements, or company data."
                 ),
             },
             {
@@ -82,9 +85,10 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
                 "content": (
                     "Extract clear application-preparation data from this job URL:\n"
                     f"{normalized_url}\n\n"
-                    "Focus on the job offer only. Application form requirements "
-                    "such as CV upload, motivation letter, and screening questions "
-                    "will be discovered in a later workflow step."
+                    "Focus on the job offer only. Find the application destination "
+                    "behind the apply button or link if one exists. Application form "
+                    "requirements such as CV upload, motivation letter, and screening "
+                    "questions will be discovered in a later workflow step."
                 ),
             },
         ],

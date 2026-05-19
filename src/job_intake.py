@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model, save_model
@@ -26,6 +27,27 @@ def slugify(value: str) -> str:
 def build_job_id(title: str, company: str, now: datetime | None = None) -> str:
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%d%H%M%S")
     return f"job-{timestamp}-{slugify(company)}-{slugify(title)}"
+
+
+def _normalize_url_for_comparison(value: str) -> tuple[str, str, str]:
+    parsed = urlsplit(value.strip())
+    path = parsed.path.rstrip("/") or "/"
+    return parsed.scheme.lower(), parsed.netloc.lower(), path
+
+
+def validate_apply_url(apply_url: str, source_url: str) -> None:
+    normalized_apply_url = apply_url.strip()
+    if not normalized_apply_url:
+        raise ValueError("Apply URL is required before the workflow can continue.")
+    normalized_source_url = require_text(source_url, "Job URL")
+    if not normalized_apply_url.startswith(("http://", "https://")):
+        raise ValueError("Apply URL must be a working http or https URL, not an email or note.")
+    if _normalize_url_for_comparison(normalized_apply_url) == _normalize_url_for_comparison(
+        normalized_source_url
+    ):
+        raise ValueError(
+            "Apply URL must point to the application destination, not the job offer page."
+        )
 
 
 def create_job_listing(

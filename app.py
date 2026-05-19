@@ -5,7 +5,7 @@ from pathlib import Path
 import streamlit as st
 from pydantic import ValidationError
 
-from src.job_intake import create_job_listing, persist_job_listing
+from src.job_intake import create_job_listing, persist_job_listing, validate_apply_url
 from src.llm_job_extraction import ExtractedJobData, extract_job_data_from_url
 from src.sample_data import bootstrap_sample_data
 from src.schemas import CandidateProfile, ExperienceUnit, JobListing, TrackerRecord
@@ -316,6 +316,11 @@ def render_job_intake_page(base_dir: Path) -> None:
 
         if extracted_data.missing_or_uncertain:
             st.warning("Needs review: " + "; ".join(extracted_data.missing_or_uncertain))
+        if extracted_data.apply_url:
+            try:
+                validate_apply_url(extracted_data.apply_url, source_url)
+            except ValueError as exc:
+                st.error(str(exc))
 
         save_submitted = st.form_submit_button("Add To Application Workflow")
         clear_submitted = st.form_submit_button("Start Over")
@@ -330,7 +335,7 @@ def render_job_intake_page(base_dir: Path) -> None:
 
     try:
         dynamic_fields = [field for field in dynamic_fields if field["name"] or field["value"]]
-        validate_apply_url(apply_url)
+        validate_apply_url(apply_url, source_url)
         job_listing = create_job_listing(
             title=title,
             company=company,
@@ -371,14 +376,6 @@ def render_job_intake_page(base_dir: Path) -> None:
 
 def lines_from_text(value: str) -> list[str]:
     return [line.strip("-• \t") for line in value.splitlines() if line.strip("-• \t")]
-
-
-def validate_apply_url(value: str) -> None:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("Apply URL is required before the workflow can continue.")
-    if not normalized.startswith(("http://", "https://")):
-        raise ValueError("Apply URL must be a working http or https URL, not an email or note.")
 
 
 def main() -> None:

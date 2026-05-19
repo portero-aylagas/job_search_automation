@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.job_intake import create_job_listing, persist_job_listing
+from src.job_intake import create_job_listing, persist_job_listing, validate_apply_url
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model
 
@@ -102,3 +102,33 @@ def test_create_job_listing_rejects_blank_source_url() -> None:
             company="Example Co",
             source_url=" ",
         )
+
+
+def test_validate_apply_url_rejects_blank_value() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Apply URL is required before the workflow can continue.",
+    ):
+        validate_apply_url(" ", "https://example.com/jobs/automation-engineer")
+
+
+def test_validate_apply_url_rejects_apply_url_that_matches_source_url() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Apply URL must point to the application destination, not the job offer page.",
+    ):
+        validate_apply_url(
+            "https://example.com/jobs/automation-engineer/",
+            "https://example.com/jobs/automation-engineer",
+        )
+
+
+def test_create_job_listing_accepts_distinct_apply_url() -> None:
+    job_listing = create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
+    )
+
+    assert str(job_listing.apply_url) == "https://example.com/apply/automation-engineer"
