@@ -44,6 +44,8 @@ application tracking
 - reusable experience units
 - URL-only job intake with LLM-assisted extraction and manual review
 - job normalization
+- working apply-page requirements discovery from `apply_url` through a LangGraph
+  inspection/extraction slice
 - per-job workspace for saved intake data
 - candidate/job match analysis
 - tailored application package generation
@@ -115,12 +117,14 @@ job_search_automation/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
 │   │           ├── analysis.json
+│   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
 │   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
 │           ├── analysis.json
+│           ├── application_page_snapshot.json
 │           ├── application_requirements.json
 │           └── application_package.json
 ├── outputs/
@@ -177,7 +181,8 @@ UI field. The app generates its own `id`; external job board IDs are optional
 and stored separately as `source_job_id`.
 
 `normalized_job.json` describes the job offer. Apply-page requirements are
-discovered later from `apply_url` and stored separately in
+discovered later from `apply_url`. The app first stores read-only page evidence
+in `application_page_snapshot.json`, then stores interpreted requirements in
 `application_requirements.json`.
 
 `data/runtime/jobs.json` is the shared job index used by both the Tracker page
@@ -204,6 +209,13 @@ Apply-page requirements discovered after job-offer normalization:
 - form fields
 - portfolio fields
 - missing information for human review
+
+This is implemented as the first LangGraph slice of the larger workflow:
+`application page inspection -> requirements extraction`. The
+`inspect_application_page_agent` node uses read-only fetch, parsing, regex
+evidence, embedded JSON inspection, and optional Playwright fallback to build a
+snapshot before the LLM interprets requirements. It does not submit forms,
+upload files, log in, or enter personal data.
 
 ### Job Analysis
 
@@ -344,7 +356,7 @@ Development is organized in phases:
 3. deterministic match analysis
 4. application package generation
 5. human review and approval
-6. LangGraph workflow orchestration
+6. expand LangGraph workflow orchestration
 7. optional web search
 8. optional assisted application
 

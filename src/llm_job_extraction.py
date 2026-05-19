@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-MODEL = "gpt-5.5"
+MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
 
 
 class DynamicJobDetail(BaseModel):
