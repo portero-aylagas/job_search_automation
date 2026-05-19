@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,7 +12,17 @@ from src.job_intake import (
     persist_job_listing,
     validate_apply_url,
 )
-from src.schemas import JobListing, TrackerRecord
+from src.llm_job_extraction import (
+    ApplyUrlResolution,
+    ExtractedJobData,
+    build_job_page_snapshot,
+    extract_job_data_with_llm,
+    extract_job_data_with_web_search_fallback,
+    resolve_apply_url_from_snapshot,
+    run_job_intake_graph,
+    save_job_page_snapshot,
+)
+from src.schemas import JobListing, JobPageSnapshot, TrackerRecord
 from src.storage import load_model
 
 
@@ -158,3 +169,162 @@ def test_choose_valid_apply_url_returns_empty_when_all_candidates_are_invalid() 
     )
 
     assert chosen == ""
+
+
+def make_job_snapshot() -> JobPageSnapshot:
+    return build_job_page_snapshot(
+        requested_url="https://example.com/jobs/automation-engineer",
+        final_url="https://example.com/jobs/automation-engineer",
+        html="""
+        <html><head><title>Automation Engineer</title></head><body>
+          <h1>Automation Engineer</h1>
+          <p>Example Co builds automation tools.</p>
+          <a href="/jobs/automation-engineer/apply">Apply now</a>
+        </body></html>
+        """,
+        fetch_status=200,
+        content_type="text/html",
+    )
+
+
+def test_job_intake_graph_invokes_inspection_before_extraction_and_resolution() -> None:
+    calls = []
+    snapshot = make_job_snapshot()
+
+    def fake_inspector(source_url: str) -> JobPageSnapshot:
+        calls.append("inspect_job_page_agent")
+        assert source_url == "https://example.com/jobs/automation-engineer"
+        return snapshot
+
+    def fake_extractor(source_url: str, received_snapshot: JobPageSnapshot) -> ExtractedJobData:
+        calls.append("extract_job_data")
+        assert source_url == "https://example.com/jobs/automation-engineer"
+        assert received_snapshot is snapshot
+        return ExtractedJobData(title="Automation Engineer", company="Example Co")
+
+    def fake_resolver(
+        source_url: str,
+        received_snapshot: JobPageSnapshot,
+        extracted: ExtractedJobData,
+    ) -> ApplyUrlResolution:
+        calls.append("resolve_apply_url")
+        assert received_snapshot is snapshot
+        assert extracted.title == "Automation Engineer"
+        return ApplyUrlResolution(
+            status="resolved",
+            apply_url="https://example.com/jobs/automation-engineer/apply",
+            confidence="high",
+        )
+
+    state = run_job_intake_graph(
+        "https://example.com/jobs/automation-engineer",
+        inspector=fake_inspector,
+        extractor=fake_extractor,
+        apply_resolver=fake_resolver,
+    )
+
+    assert calls == ["inspect_job_page_agent", "extract_job_data", "resolve_apply_url"]
+    assert state["extraction_mode"] == "snapshot"
+    assert state["extracted_job_data"].apply_url == "https://example.com/jobs/automation-engineer/apply"
+
+
+def test_snapshot_llm_extractor_does_not_list_web_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    parse_calls = []
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(
+                output_parsed=ExtractedJobData(
+                    title="Automation Engineer",
+                    company="Example Co",
+                )
+            )
+
+    monkeypatch.setattr(
+        "src.llm_job_extraction._get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    extracted = extract_job_data_with_llm(
+        "https://example.com/jobs/automation-engineer",
+        make_job_snapshot(),
+    )
+
+    assert extracted.title == "Automation Engineer"
+    assert "tools" not in parse_calls[0]
+    assert "tool_choice" not in parse_calls[0]
+
+
+def test_fallback_extractor_lists_web_search(monkeypatch: pytest.MonkeyPatch) -> None:
+    parse_calls = []
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(
+                output_parsed=ExtractedJobData(
+                    title="Automation Engineer",
+                    company="Example Co",
+                )
+            )
+
+    monkeypatch.setattr(
+        "src.llm_job_extraction._get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    extracted = extract_job_data_with_web_search_fallback(
+        "https://example.com/jobs/automation-engineer",
+        JobPageSnapshot(
+            requested_url="https://example.com/jobs/automation-engineer",
+            errors=["No static HTML content was available for inspection."],
+        ),
+    )
+
+    assert extracted.company == "Example Co"
+    assert parse_calls[0]["tools"][0]["type"] == "web_search"
+    assert parse_calls[0]["tool_choice"] == {"type": "web_search"}
+
+
+def test_apply_url_resolver_prefers_snapshot_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parse_calls = []
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(
+                output_parsed=ApplyUrlResolution(
+                    status="resolved",
+                    apply_url="https://example.com/jobs/automation-engineer/apply",
+                    evidence=["Apply now"],
+                    confidence="high",
+                )
+            )
+
+    monkeypatch.setattr(
+        "src.llm_job_extraction._get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    resolution = resolve_apply_url_from_snapshot(
+        "https://example.com/jobs/automation-engineer",
+        make_job_snapshot(),
+        ExtractedJobData(title="Automation Engineer", company="Example Co"),
+    )
+
+    assert resolution.status == "resolved"
+    assert resolution.apply_url == "https://example.com/jobs/automation-engineer/apply"
+    assert "tools" not in parse_calls[0]
+
+
+def test_job_page_snapshot_is_saved_separately_from_normalized_job(tmp_path: Path) -> None:
+    saved_path = save_job_page_snapshot(tmp_path, "job-123", make_job_snapshot())
+    reloaded = load_model(saved_path, JobPageSnapshot)
+
+    assert saved_path.name == "job_page_snapshot.json"
+    assert saved_path.parent.name == "job-123"
+    assert not (saved_path.parent / "normalized_job.json").exists()
+    assert reloaded.page_title == "Automation Engineer"

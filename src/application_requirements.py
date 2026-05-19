@@ -6,12 +6,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
-import requests
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
 from src.job_intake import validate_apply_url
 from src.llm_job_extraction import MODEL, _get_openai_client
+from src.page_inspection import (
+    clip as _shared_clip,
+)
+from src.page_inspection import (
+    fetch_page,
+    page_needs_browser_fallback,
+    parse_page_document,
+)
+from src.page_inspection import (
+    redact as _shared_redact,
+)
 from src.schemas import (
     ApplicationFormField,
     ApplicationPageControl,
@@ -206,48 +216,7 @@ def inspect_application_page_agent(
 
 
 def fetch_application_page(url: str) -> dict[str, Any]:
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.8,de;q=0.7",
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True, stream=True)
-        chunks: list[bytes] = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=8192):
-            if not chunk:
-                continue
-            remaining = MAX_APPLY_PAGE_CHARS - total
-            if remaining <= 0:
-                break
-            chunks.append(chunk[:remaining])
-            total += len(chunk[:remaining])
-        response.close()
-        encoding = response.encoding or "utf-8"
-        html = b"".join(chunks).decode(encoding, errors="replace")
-        return {
-            "requested_url": url,
-            "final_url": response.url or url,
-            "html": html,
-            "fetch_status": response.status_code,
-            "content_type": response.headers.get("content-type", ""),
-            "errors": (
-                [] if response.ok else [f"HTTP fetch returned status {response.status_code}."]
-            ),
-        }
-    except requests.RequestException as exc:
-        return {
-            "requested_url": url,
-            "final_url": url,
-            "html": "",
-            "fetch_status": None,
-            "content_type": "",
-            "errors": [f"HTTP fetch failed: {exc.__class__.__name__}: {exc}"],
-        }
+    return fetch_page(url, byte_limit=MAX_APPLY_PAGE_CHARS)
 
 
 def build_application_page_snapshot(
@@ -261,38 +230,36 @@ def build_application_page_snapshot(
     errors: list[str] | None = None,
     browser_fallback_used: bool = False,
 ) -> ApplicationPageSnapshot:
-    clipped_html = _clip(_redact(html), MAX_APPLY_PAGE_CHARS)
-    soup = BeautifulSoup(clipped_html or "", "html.parser")
-    for element in soup(["script", "style", "noscript"]):
-        element.extract()
-    visible_text = _clip(_redact(soup.get_text(" ", strip=True)), MAX_SNAPSHOT_TEXT_CHARS)
-
-    raw_soup = BeautifulSoup(clipped_html or "", "html.parser")
-    forms = _parse_forms(raw_soup)
-    controls = _parse_controls(raw_soup)
-    embedded_json = _parse_embedded_json(raw_soup)
-    evidence = _extract_evidence_matches(clipped_html, visible_text)
-    job_signals = _find_job_preserving_signals(job, final_url, visible_text)
-
-    title = raw_soup.title.get_text(" ", strip=True) if raw_soup.title else ""
-    snapshot_errors = list(errors or [])
-    if not clipped_html:
-        snapshot_errors.append("No static HTML content was available for inspection.")
+    parsed = parse_page_document(
+        requested_url=requested_url,
+        final_url=final_url,
+        html=html,
+        fetch_status=fetch_status,
+        content_type=content_type,
+        errors=errors,
+        browser_fallback_used=browser_fallback_used,
+    )
+    evidence = _extract_evidence_matches(parsed["raw_html_excerpt"], parsed["visible_text_excerpt"])
+    job_signals = _find_job_preserving_signals(
+        job,
+        final_url,
+        parsed["visible_text_excerpt"],
+    )
 
     return ApplicationPageSnapshot(
         requested_url=requested_url,
         final_url=final_url or requested_url,
         fetch_status=fetch_status,
         content_type=content_type,
-        page_title=_clip(_redact(title), 500),
+        page_title=parsed["page_title"],
         evidence_matches=evidence,
-        forms=forms,
-        controls=controls,
-        embedded_json_summaries=embedded_json,
+        forms=parsed["forms"],
+        controls=parsed["controls"],
+        embedded_json_summaries=parsed["embedded_json_summaries"],
         job_preserving_signals=job_signals,
-        visible_text_excerpt=visible_text,
-        raw_html_excerpt=_clip(clipped_html, MAX_SNAPSHOT_TEXT_CHARS),
-        errors=snapshot_errors,
+        visible_text_excerpt=parsed["visible_text_excerpt"],
+        raw_html_excerpt=parsed["raw_html_excerpt"],
+        errors=parsed["errors"],
         browser_fallback_used=browser_fallback_used,
     )
 
@@ -332,17 +299,11 @@ def inspect_application_page_with_browser(
 
 
 def _needs_browser_fallback(snapshot: ApplicationPageSnapshot) -> bool:
-    if not snapshot.raw_html_excerpt.strip():
-        return True
-    if snapshot.fetch_status in {401, 403, 429, 500, 502, 503}:
-        return True
-    text = snapshot.visible_text_excerpt.lower()
-    has_controls = bool(snapshot.forms or snapshot.controls)
-    js_shell_signals = ("enable javascript", "root", "app", "loading")
-    return (
-        len(text) < 200
-        and not has_controls
-        and any(signal in text for signal in js_shell_signals)
+    return page_needs_browser_fallback(
+        raw_html_excerpt=snapshot.raw_html_excerpt,
+        visible_text_excerpt=snapshot.visible_text_excerpt,
+        fetch_status=snapshot.fetch_status,
+        has_interactive_elements=bool(snapshot.forms or snapshot.controls),
     )
 
 
@@ -493,32 +454,11 @@ def _find_job_preserving_signals(job: JobListing, final_url: str, visible_text: 
 
 
 def _redact(value: str) -> str:
-    redacted = value
-    redacted = re.sub(
-        r"(?i)(name=[\"'][^\"']*(?:csrf|xsrf|token|session|secret|password)[^\"']*[\"']"
-        r"[^>]*value=[\"'])([^\"']+)([\"'])",
-        r"\1[REDACTED]\3",
-        redacted,
-    )
-    redacted = SECRET_VALUE_PATTERN.sub(r"\1\2[REDACTED]", redacted)
-    redacted = re.sub(
-        r"(?i)(value=[\"'])([^\"']+)([\"'][^>]*name=[\"']"
-        r"[^\"']*(?:csrf|xsrf|token|session|secret|password)[^\"']*[\"'])",
-        r"\1[REDACTED]\3",
-        redacted,
-    )
-    redacted = re.sub(
-        r"(?i)(set-cookie|authorization):\s*[^\n\r]+",
-        r"\1: [REDACTED]",
-        redacted,
-    )
-    return redacted
+    return _shared_redact(value)
 
 
 def _clip(value: str, limit: int) -> str:
-    if len(value) <= limit:
-        return value
-    return value[:limit] + "\n[TRUNCATED]"
+    return _shared_clip(value, limit)
 
 
 def normalize_application_requirements(

@@ -19,8 +19,8 @@ from src.job_intake import (
 from src.llm_job_extraction import (
     ApplyUrlResolution,
     ExtractedJobData,
-    extract_job_data_from_url,
-    resolve_apply_url_from_url,
+    run_job_intake_graph,
+    save_job_page_snapshot,
 )
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
@@ -28,6 +28,7 @@ from src.schemas import (
     CandidateProfile,
     ExperienceUnit,
     JobListing,
+    JobPageSnapshot,
     TrackerRecord,
 )
 from src.storage import load_model
@@ -403,19 +404,18 @@ def render_job_intake_page(base_dir: Path) -> None:
 
     if extract_submitted:
         try:
-            with st.spinner("Extracting job data with AI..."):
-                extracted = extract_job_data_from_url(source_url)
-                apply_resolution = resolve_apply_url_from_url(
-                    source_url,
-                    title=extracted.title,
-                    company=extracted.company,
-                )
+            with st.spinner("Inspecting the job page and extracting job data..."):
+                intake_state = run_job_intake_graph(source_url)
+                extracted = intake_state["extracted_job_data"]
+                apply_resolution = intake_state["apply_url_resolution"]
         except (RuntimeError, ValueError) as exc:
             st.error(str(exc))
             return
         st.session_state["job_intake_source_url"] = source_url.strip()
         st.session_state["job_intake_extracted"] = extracted.model_dump(mode="json")
         st.session_state["job_intake_apply_resolution"] = apply_resolution.model_dump(mode="json")
+        st.session_state["job_intake_snapshot"] = intake_state["snapshot"].model_dump(mode="json")
+        st.session_state["job_intake_extraction_mode"] = intake_state.get("extraction_mode", "")
         st.rerun()
 
     extracted_payload = st.session_state.get("job_intake_extracted")
@@ -432,6 +432,9 @@ def render_job_intake_page(base_dir: Path) -> None:
     source_url = st.session_state.get("job_intake_source_url", "")
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
+    extraction_mode = st.session_state.get("job_intake_extraction_mode")
+    if extraction_mode:
+        st.caption(f"Extraction mode: {extraction_mode}")
 
     final_apply_url = choose_valid_apply_url(
         source_url,
@@ -549,9 +552,18 @@ def render_job_intake_page(base_dir: Path) -> None:
         return
 
     persist_job_listing(base_dir, job_listing)
+    snapshot_payload = st.session_state.get("job_intake_snapshot")
+    if snapshot_payload:
+        save_job_page_snapshot(
+            base_dir,
+            job_listing.id,
+            JobPageSnapshot.model_validate(snapshot_payload),
+        )
     st.session_state.pop("job_intake_source_url", None)
     st.session_state.pop("job_intake_extracted", None)
     st.session_state.pop("job_intake_apply_resolution", None)
+    st.session_state.pop("job_intake_snapshot", None)
+    st.session_state.pop("job_intake_extraction_mode", None)
     st.session_state["job_intake_success"] = (
         f"Added {job_listing.company} / {job_listing.title} to the workflow."
     )

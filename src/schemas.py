@@ -127,6 +127,33 @@ class ApplicationPageSnapshot(BaseModel):
     browser_fallback_used: bool = False
 
 
+class JobPageLink(BaseModel):
+    url: str = ""
+    text: str = ""
+    role: str = ""
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobPageSnapshot(BaseModel):
+    requested_url: str
+    final_url: str = ""
+    fetch_status: int | None = None
+    content_type: str = ""
+    page_title: str = ""
+    visible_text_excerpt: str = ""
+    headings: list[str] = Field(default_factory=list)
+    links: list[JobPageLink] = Field(default_factory=list)
+    buttons: list[JobPageLink] = Field(default_factory=list)
+    forms: list[ApplicationPageFormSummary] = Field(default_factory=list)
+    controls: list[ApplicationPageControl] = Field(default_factory=list)
+    embedded_json_summaries: list[dict[str, Any]] = Field(default_factory=list)
+    apply_link_candidates: list[JobPageLink] = Field(default_factory=list)
+    job_identity_signals: list[str] = Field(default_factory=list)
+    raw_html_excerpt: str = ""
+    errors: list[str] = Field(default_factory=list)
+    browser_fallback_used: bool = False
+
+
 class ApplicationRequirements(BaseModel):
     job_id: str
     apply_url: HttpUrl
