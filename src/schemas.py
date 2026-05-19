@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -47,25 +47,27 @@ class JobListing(BaseModel):
     id: str
     title: str
     company: str
-    location: str
+    source_url: HttpUrl
+    retrieval_mode: str
+    source_job_id: str | None = None
+    location: str | None = None
     remote_policy: str | None = None
     apply_url: HttpUrl | None = None
-    description: str
+    description: str | None = None
     requirements: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     nice_to_have_skills: list[str] = Field(default_factory=list)
     salary: str | None = None
     posted_date: str | None = None
-    source: str
-    retrieval_mode: str
+    job_details: dict[str, Any] = Field(default_factory=dict)
 
 
 class TrackerRecord(BaseModel):
     job_id: str
     title: str
     company: str
-    location: str
-    source: str
+    source_url: HttpUrl
+    location: str | None = None
     retrieval_mode: str
     match_score: float | None = None
     status: TrackerStatus = "new"

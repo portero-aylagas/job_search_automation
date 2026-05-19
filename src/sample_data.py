@@ -79,6 +79,9 @@ def get_sample_job_listing() -> JobListing:
         id="job-001",
         title="Python Automation Specialist",
         company="Example Systems",
+        source_url="https://example.com/jobs/python-automation-specialist",
+        retrieval_mode="url",
+        source_job_id="example-python-automation-specialist",
         location="Berlin",
         remote_policy="Hybrid",
         apply_url="https://example.com/jobs/python-automation-specialist",
@@ -94,8 +97,7 @@ def get_sample_job_listing() -> JobListing:
         nice_to_have_skills=["Streamlit", "Data visualization"],
         salary="EUR 60,000",
         posted_date="2026-05-10",
-        source="https://example.com/jobs/python-automation-specialist",
-        retrieval_mode="manual",
+        job_details={"employment_type": "Full-time"},
     )
 
 
@@ -105,9 +107,9 @@ def get_sample_tracker_records() -> list[TrackerRecord]:
             job_id="job-001",
             title="Python Automation Specialist",
             company="Example Systems",
+            source_url="https://example.com/jobs/python-automation-specialist",
             location="Berlin",
-            source="https://example.com/jobs/python-automation-specialist",
-            retrieval_mode="manual",
+            retrieval_mode="url",
             match_score=82.0,
             status="interesting",
             notes="Strong overlap with automation and reporting experience.",
@@ -116,9 +118,9 @@ def get_sample_tracker_records() -> list[TrackerRecord]:
             job_id="job-002",
             title="Data Analyst",
             company="Harbor Metrics",
+            source_url="https://example.com/jobs/data-analyst",
             location="Remote",
-            source="manual",
-            retrieval_mode="manual",
+            retrieval_mode="url",
             match_score=74.0,
             status="analyzed",
             notes="Good fit on analytics, weaker on experimentation tooling.",
@@ -127,9 +129,9 @@ def get_sample_tracker_records() -> list[TrackerRecord]:
             job_id="job-003",
             title="Operations Coordinator",
             company="City Freight",
+            source_url="https://example.com/jobs/operations-coordinator",
             location="Madrid",
-            source="manual",
-            retrieval_mode="manual",
+            retrieval_mode="url",
             match_score=None,
             status="new",
             notes="Saved for later review.",
@@ -144,7 +146,12 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
     files_to_seed = {
         root / "data/profile.json": get_sample_candidate_profile(),
         root / "data/experience_units.json": get_sample_experience_units(),
+        root / "data/jobs.json": get_sample_tracker_records(),
         root / "data/tracker.json": get_sample_tracker_records(),
+        root / "data/runtime/jobs.json": get_sample_tracker_records(),
+        root / "data/runtime/tracker.json": get_sample_tracker_records(),
+        root / "data/runtime/jobs/job-001/normalized_job.json": get_sample_job_listing(),
+        root / "data/jobs/job-001/normalized_job.json": get_sample_job_listing(),
     }
 
     for path, payload in files_to_seed.items():

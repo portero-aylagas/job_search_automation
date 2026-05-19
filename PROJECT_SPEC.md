@@ -24,7 +24,7 @@ The user needs a system that can:
 
 - store structured candidate data
 - store reusable experience units
-- ingest a job position from URL or pasted text
+- ingest a job position from a URL with manual review fallback
 - normalize the job into a consistent schema
 - compare the job against the candidate profile
 - generate tailored application material
@@ -38,8 +38,8 @@ The system should assist, propose, and generate, but the user remains responsibl
 ## Core Workflow
 
 1. User creates or loads candidate profile.
-2. User provides a job URL or job description.
-3. App extracts and normalizes job information.
+2. User provides a job URL.
+3. App extracts and normalizes job-offer information.
 4. User validates normalized job data.
 5. App analyzes candidate/job match.
 6. User validates analysis.
@@ -81,7 +81,7 @@ Every automated step needs a manual fallback.
 
 Examples:
 
-- if URL extraction fails, user can paste the job text
+- if URL extraction fails, user can paste or edit the extracted job text
 - if job search fails, user can manually add a job
 - if AI generation is poor, user can edit or regenerate with feedback
 - if assisted application fails, user can apply manually and update the tracker
@@ -129,36 +129,80 @@ An experience unit is a compact, reusable block of evidence.
 Supported intake modes:
 
 - paste job URL
-- paste job description
-- manual job form
+- review and edit extracted job details
+- paste job description as a fallback when extraction fails
 - import structured JSON
 - optional web search result import
 
 The core intake mode is:
 
 ```text
-job URL or job text -> normalized job listing
+job URL -> LLM-assisted extraction -> human review -> normalized job listing
 ```
+
+The first Job Intake screen should show only the job URL input and an extraction
+action. Fixed and dynamic review fields appear only after extraction, because
+the user goal is to generate useful application data from a URL rather than fill
+out a normalization form manually.
 
 ### Job Normalization
 
 The app converts raw job input into a common schema.
 
-Required normalized fields:
+Required visible normalized fields:
 
 - title
 - company
+- source URL
+
+Required internal workflow fields:
+
+- generated app job ID
+- retrieval mode
+
+Optional source and role fields:
+
+- source job ID from the external provider
 - location
 - remote policy
-- apply URL
 - description
 - requirements
 - responsibilities
 - nice-to-have skills
 - salary
 - posted date
-- source
-- retrieval mode
+- apply URL
+- flexible job details metadata
+
+The generated app job ID is the stable internal identifier. External job board
+IDs are stored only when available as `source_job_id`. `retrieval_mode` records
+how the workflow obtained the job and is not shown as an editable UI field.
+
+`apply_url` is optional as job-offer metadata, but it becomes a required workflow
+gate before application requirements discovery and package generation. The app
+uses a dedicated apply-link resolution step to find the final job-preserving
+HTTP or HTTPS destination behind an apply button or application link. Email
+addresses, `mailto:` links, contact people, phone numbers, and generic job-offer
+URLs are rejected as valid `apply_url` values and should be preserved as dynamic
+job details instead.
+
+`job_details` stores dynamic extracted fields that do not fit the fixed schema.
+Each dynamic field should preserve at least:
+
+- `dynamic: true`
+- `name`
+- `value`
+
+It may also preserve metadata such as category, source text, and confidence for
+later validation. The UI should show dynamic fields as normal review fields
+using the extracted `name` as the label and `value` as the editable value,
+without exposing raw JSON to normal users.
+
+Job-offer normalization does not include application-form requirements.
+Required documents, motivation-letter prompts, screening questions, and form
+fields are captured later in `application_requirements.json` after the system or
+user follows `apply_url`. The apply-link resolver should surface rejected
+candidates and confidence when the destination cannot be verified cleanly.
 
 ### Match Analysis
 
@@ -188,6 +232,16 @@ For a selected job, the app generates:
 - missing information checklist
 
 The generated package must remain editable and reviewable.
+
+Application packages should be stored as structured JSON with a variable list of
+artifacts. Each job can require different materials, such as a CV note, a cover
+letter, custom screening answers, portfolio links, or missing-information
+prompts. Markdown exports are derived review artifacts and are not the source of
+truth.
+
+When present, `application_requirements.json` guides which artifacts and answers
+the package generator should create. Package outputs remain separate from both
+the normalized job offer and the discovered application-form requirements.
 
 ### Review and Approval
 
@@ -321,8 +375,8 @@ Purpose: add a job position to the system.
 Inputs:
 
 - job URL
-- pasted job description
-- manual job fields
+- extracted job detail review fields
+- pasted job description fallback
 - optional JSON import
 
 Actions:
@@ -352,6 +406,34 @@ Actions:
 - edit analysis
 - regenerate analysis
 - reject job
+
+### Jobs
+
+Purpose: give every tracked opportunity its own workspace.
+
+The Jobs page starts from `data/runtime/jobs.json`, lets the user select a
+tracked job, and displays the saved intake data from
+`data/runtime/jobs/<job_id>/normalized_job.json` when available.
+
+Initial displays:
+
+- job title
+- company
+- status
+- match score
+- retrieval mode
+- source URL
+- apply URL
+- location and remote policy
+- description
+- requirements
+- responsibilities
+- nice-to-have skills
+- dynamic extracted details
+
+Later phases can add analysis, package artifacts, application requirements,
+notes, history, duplicate resolution, and applied-job management to this same
+per-job space.
 
 ### Application Generator
 
@@ -394,7 +476,7 @@ Displays:
 - job title
 - company
 - location
-- source
+- source URL
 - retrieval mode
 - match score
 - status
@@ -431,21 +513,35 @@ Suggested structure:
 data/
 ├── profile.json
 ├── experience_units.json
+├── jobs.json
 ├── tracker.json
 ├── jobs/
-│   ├── job_001_raw.txt
-│   ├── job_001_normalized.json
-│   └── job_001_analysis.json
-└── applications/
-    └── job_001_application_package.json
+│   └── job_001/
+│       ├── raw_input.txt
+│       ├── normalized_job.json
+│       ├── analysis.json
+│       ├── application_requirements.json
+│       ├── application_package.json
+│       └── events.jsonl
 
 outputs/
 └── job_001/
-    ├── cover_letter.md
-    ├── cv_tailoring_notes.md
-    ├── recruiter_message.md
-    └── application_summary.md
+    └── application_package.md
+
+tests/
+└── fixtures/
+    └── sample_job_package/
 ```
+
+The `data/runtime/` directory stores runtime application state. The tracked
+files under `data/` are templates and bootstrap fixtures. The `outputs/`
+directory stores derived human-readable exports generated from JSON. Test,
+mock, example, and template-style artifacts belong in `tests/fixtures/`, not in
+runtime `data/`.
+
+`data/runtime/jobs.json` is the shared job index and the canonical source for
+the Jobs and Tracker views. `data/jobs.json` and `data/tracker.json` may be
+kept as templates, but the app reads the runtime index first.
 
 A database can be added later if JSON files become limiting.
 
@@ -476,19 +572,47 @@ A database can be added later if JSON files become limiting.
 ### JobListing
 
 - id
-- source
-- retrieval_mode
 - title
 - company
+- source_url
+- retrieval_mode
+- source_job_id
 - location
 - remote_policy
-- apply_url
 - description
 - requirements
 - responsibilities
-- nice_to_have
+- nice_to_have_skills
 - salary
 - posted_date
+- apply_url
+- job_details
+
+Only `title`, `company`, and `source_url` are required visible fields. `id` is
+generated by the app, and `retrieval_mode` is required internal workflow
+metadata hidden from editable UI forms. The remaining fields are optional role
+details populated by extraction, import, or human review.
+
+### ApplicationRequirements
+
+- job_id
+- source_apply_url
+- required_documents
+- motivation_letter_required
+- screening_questions
+- form_fields
+- portfolio_fields
+- missing_information
+- reviewed_by_user
+
+This entity describes requirements discovered from the apply page after
+following or inspecting `apply_url`. It is stored separately from
+`normalized_job.json` because apply-form requirements are a later workflow stage
+than job-offer normalization.
+
+The workflow must stop before this stage if no valid application URL is
+available. Follow-up issue #35 tracks stricter reachability validation for this
+gate.
 
 ### JobAnalysis
 
@@ -503,20 +627,22 @@ A database can be added later if JSON files become limiting.
 ### ApplicationPackage
 
 - job_id
-- cover_letter
-- cv_tailoring_notes
-- recruiter_message
-- form_answers
+- artifacts
+- missing_information
 - selected_experience_units
 - status
+
+Each artifact should include an id, type, label, required flag, status, and
+content. Artifacts that answer job-specific questions should also preserve the
+source prompt.
 
 ### TrackerRecord
 
 - job_id
 - title
 - company
+- source_url
 - location
-- source
 - retrieval_mode
 - match_score
 - status

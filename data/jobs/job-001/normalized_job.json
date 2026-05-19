@@ -1,0 +1,31 @@
+{
+  "id": "job-001",
+  "title": "Python Automation Specialist",
+  "company": "Example Systems",
+  "source_url": "https://example.com/jobs/python-automation-specialist",
+  "retrieval_mode": "url",
+  "source_job_id": "example-python-automation-specialist",
+  "location": "Berlin",
+  "remote_policy": "Hybrid",
+  "apply_url": "https://example.com/jobs/python-automation-specialist",
+  "description": "Own internal automation tools, improve operational reporting, and support cross-functional teams with lightweight applications.",
+  "requirements": [
+    "Python",
+    "SQL",
+    "APIs",
+    "Workflow automation"
+  ],
+  "responsibilities": [
+    "Build and maintain internal productivity tools",
+    "Translate manual workflows into repeatable automations"
+  ],
+  "nice_to_have_skills": [
+    "Streamlit",
+    "Data visualization"
+  ],
+  "salary": "EUR 60,000",
+  "posted_date": "2026-05-10",
+  "job_details": {
+    "employment_type": "Full-time"
+  }
+}
