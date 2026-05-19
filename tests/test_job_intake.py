@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from src.job_intake import create_job_listing, persist_job_listing, validate_apply_url
+from src.job_intake import (
+    choose_valid_apply_url,
+    create_job_listing,
+    persist_job_listing,
+    validate_apply_url,
+)
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model
 
@@ -132,3 +137,24 @@ def test_create_job_listing_accepts_distinct_apply_url() -> None:
     )
 
     assert str(job_listing.apply_url) == "https://example.com/apply/automation-engineer"
+
+
+def test_choose_valid_apply_url_prefers_distinct_http_url() -> None:
+    chosen = choose_valid_apply_url(
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/jobs/automation-engineer",
+        "mailto:jobs@example.com",
+        "https://example.com/apply/automation-engineer",
+    )
+
+    assert chosen == "https://example.com/apply/automation-engineer"
+
+
+def test_choose_valid_apply_url_returns_empty_when_all_candidates_are_invalid() -> None:
+    chosen = choose_valid_apply_url(
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/jobs/automation-engineer",
+        "mailto:jobs@example.com",
+    )
+
+    assert chosen == ""

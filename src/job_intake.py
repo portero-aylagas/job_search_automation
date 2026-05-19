@@ -50,6 +50,19 @@ def validate_apply_url(apply_url: str, source_url: str) -> None:
         )
 
 
+def choose_valid_apply_url(source_url: str, *candidates: str) -> str:
+    for candidate in candidates:
+        normalized_candidate = candidate.strip()
+        if not normalized_candidate:
+            continue
+        try:
+            validate_apply_url(normalized_candidate, source_url)
+        except ValueError:
+            continue
+        return normalized_candidate
+    return ""
+
+
 def create_job_listing(
     *,
     title: str,

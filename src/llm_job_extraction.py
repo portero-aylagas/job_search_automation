@@ -32,6 +32,13 @@ class ExtractedJobData(BaseModel):
     missing_or_uncertain: list[str] = Field(default_factory=list)
 
 
+class ApplyUrlResolution(BaseModel):
+    status: Literal["resolved", "needs_review", "not_found"] = "not_found"
+    apply_url: str = ""
+    notes: str = ""
+    evidence: list[str] = Field(default_factory=list)
+
+
 def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
     normalized_url = source_url.strip()
     if not normalized_url:
@@ -64,20 +71,10 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
                     "optional category, a short source_text excerpt when available, "
                     "and a confidence level. Dynamic fields are expected and useful; "
                     "do not put them in missing_or_uncertain unless the fact itself "
-                    "is unclear. The apply_url field must be the actual application "
-                    "destination a user would click, not the job offer page URL. "
-                    "Look for the link target behind buttons or links labeled Apply, "
-                    "Apply now, Bewerben, Jetzt bewerben, Online bewerben, Zur "
-                    "Bewerbung, Karriereportal, Application form, or similar text. "
-                    "If the page has a button with a different href or redirect target, "
-                    "use that target URL. Never copy the current offer URL into "
-                    "apply_url just because the button sits on the same page. Never "
-                    "put mailto:, email addresses, phone numbers, or contact people in "
-                    "apply_url; place those in dynamic_fields instead. If the only "
-                    "application path is the same page, email, or the apply action "
-                    "cannot be verified, leave apply_url empty and add a clear "
-                    "missing_or_uncertain item. Do not invent salary, location, apply "
-                    "requirements, or company data."
+                    "is unclear. Do not resolve apply_url here. Leave apply_url empty "
+                    "unless it is accidentally obvious. A separate apply-link resolver "
+                    "handles the application destination. Do not invent salary, "
+                    "location, apply requirements, or company data."
                 ),
             },
             {
@@ -85,10 +82,10 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
                 "content": (
                     "Extract clear application-preparation data from this job URL:\n"
                     f"{normalized_url}\n\n"
-                    "Focus on the job offer only. Find the application destination "
-                    "behind the apply button or link if one exists. Application form "
-                    "requirements such as CV upload, motivation letter, and screening "
-                    "questions will be discovered in a later workflow step."
+                    "Focus on the job offer only. Do not resolve the application "
+                    "destination here. Application form requirements such as CV "
+                    "upload, motivation letter, and screening questions will be "
+                    "discovered in a later workflow step."
                 ),
             },
         ],
@@ -96,4 +93,66 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
     )
     if response.output_parsed is None:
         raise RuntimeError("AI extraction did not return structured job data.")
+    return response.output_parsed
+
+
+def resolve_apply_url_from_url(
+    source_url: str,
+    *,
+    title: str = "",
+    company: str = "",
+) -> ApplyUrlResolution:
+    normalized_url = source_url.strip()
+    if not normalized_url:
+        raise ValueError("Enter a job URL.")
+    if not normalized_url.startswith(("http://", "https://")):
+        raise ValueError("Enter a full job URL, including https://.")
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError("Set OPENAI_API_KEY before extracting job data with AI.")
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise RuntimeError("Install the OpenAI Python package before using AI extraction.") from exc
+
+    client = OpenAI()
+    response = client.responses.parse(
+        model=os.getenv("OPENAI_JOB_EXTRACTION_MODEL", "gpt-4o-mini"),
+        tools=[{"type": "web_search_preview"}],
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You resolve only the real application destination for a job "
+                    "offer. Search the job page and inspect the actual target of "
+                    "apply buttons or links. The apply_url must be the external or "
+                    "internal web URL a candidate would click to start an "
+                    "application. Look for button labels such as Apply, Apply now, "
+                    "Bewerben, Jetzt bewerben, Online bewerben, Zur Bewerbung, "
+                    "Karriereportal, Application form, or similar wording. Return "
+                    "only http or https URLs. Never return the job-offer URL, never "
+                    "return mailto:, email addresses, phone numbers, or contact "
+                    "people. If the only action is email, if the target cannot be "
+                    "verified, or if the destination is the same as the source page, "
+                    "set status to needs_review or not_found and leave apply_url empty. "
+                    "Use evidence snippets from the page when possible."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Resolve the application destination for this job offer.\n"
+                    f"Job URL: {normalized_url}\n"
+                    f"Title: {title.strip() or 'Unknown'}\n"
+                    f"Company: {company.strip() or 'Unknown'}\n\n"
+                    "Return the actual application destination, not the job-offer "
+                    "page. If you cannot verify a distinct destination, leave "
+                    "apply_url empty."
+                ),
+            },
+        ],
+        text_format=ApplyUrlResolution,
+    )
+    if response.output_parsed is None:
+        raise RuntimeError("AI extraction did not return structured apply URL data.")
     return response.output_parsed
