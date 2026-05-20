@@ -202,6 +202,9 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
         if uploaded_cv is not None:
             st.caption(f"Selected file: {uploaded_cv.name}")
 
+        st.caption(
+            "This action uploads the CV to the AI provider and parses it into review fields."
+        )
         if st.button("Parse CV", type="primary"):
             if uploaded_cv is None:
                 st.error("Upload a CV before parsing.")
@@ -257,6 +260,7 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
                 key=f"candidate_profile_optional_documents_upload_{document_type}",
             )
 
+        st.caption("This action uploads each selected document to the AI provider for parsing.")
         if st.button("Upload and parse optional documents"):
             uploaded_document_entries = [
                 (document_type, uploaded_document)
@@ -318,6 +322,10 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
         if not profile_data.source_documents.cv.parsed:
             st.info("Upload and parse a CV to populate these review fields.")
+        render_ai_usage_summary(
+            "CV AI Usage Summary",
+            [extracted.workflow_trace],
+        )
         render_workflow_trace("CV Extraction Trace", extracted.workflow_trace)
 
         with st.form("candidate_profile_review_form"):
@@ -713,6 +721,7 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         st.warning("Apply URL is missing. Requirements discovery is blocked.")
         return
 
+    st.caption("This action fetches the apply page and uses AI to interpret requirements.")
     if st.button("Discover Requirements From Apply URL"):
         try:
             with st.spinner("Inspecting apply page requirements..."):
@@ -729,6 +738,10 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         st.info("No application requirements have been discovered yet.")
         return
 
+    render_ai_usage_summary(
+        "Requirements AI Usage Summary",
+        [requirements.workflow_trace],
+    )
     render_application_requirements(requirements)
     render_requirements_review_actions(base_dir, requirements)
 
@@ -749,6 +762,7 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
         for blocker in package_blockers:
             st.write(f"- {blocker}")
 
+    st.caption("This action uses AI to draft application materials from reviewed data.")
     if st.button("Generate Application Package", disabled=bool(package_blockers)):
         if package_blockers:
             st.error("Complete all package prerequisites before generating application material.")
@@ -772,6 +786,10 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
         st.info("No application package has been generated yet.")
         return
 
+    render_ai_usage_summary(
+        "Package AI Usage Summary",
+        [package.workflow_trace],
+    )
     render_application_package(package)
 
 
@@ -938,6 +956,41 @@ def workflow_trace_payload(trace: AIWorkflowTrace | None) -> dict[str, object] |
     return trace.model_dump(mode="json")
 
 
+def build_ai_usage_summary(
+    traces: list[AIWorkflowTrace | None],
+) -> dict[str, int]:
+    active_traces = [trace for trace in traces if trace is not None]
+    return {
+        "call_count": len(active_traces),
+        "attempt_count": sum(trace.attempt_count for trace in active_traces),
+        "retry_count": sum(max(trace.attempt_count - 1, 0) for trace in active_traces),
+        "output_token_budget": sum(
+            trace.max_output_tokens * trace.attempt_count for trace in active_traces
+        ),
+        "worst_case_output_token_budget": sum(
+            trace.max_output_tokens * (trace.max_retries + 1) for trace in active_traces
+        ),
+        "tool_call_cap": sum(trace.max_tool_calls or 0 for trace in active_traces),
+    }
+
+
+def render_ai_usage_summary(label: str, traces: list[AIWorkflowTrace | None]) -> None:
+    summary = build_ai_usage_summary(traces)
+    if summary["call_count"] == 0:
+        return
+
+    with st.expander(label, expanded=False):
+        st.write(f"AI calls: {summary['call_count']}")
+        st.write(f"Provider attempts: {summary['attempt_count']}")
+        st.write(f"Retries used: {summary['retry_count']}")
+        st.write(f"Output token budget used by attempts: {summary['output_token_budget']}")
+        st.write(
+            "Worst-case output token budget with configured retries: "
+            f"{summary['worst_case_output_token_budget']}"
+        )
+        st.write(f"Tool call cap: {summary['tool_call_cap'] or 'none'}")
+
+
 def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
     if trace is None:
         return
@@ -1086,6 +1139,7 @@ def render_job_intake_page(base_dir: Path) -> None:
 
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
+        st.caption("This action uses AI and may perform web search to resolve the apply URL.")
         extract_submitted = st.form_submit_button("Extract Application Data")
 
     if extract_submitted:
@@ -1120,6 +1174,13 @@ def render_job_intake_page(base_dir: Path) -> None:
     source_url = st.session_state.get("job_intake_source_url", "")
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
+    render_ai_usage_summary(
+        "Job Intake AI Usage Summary",
+        [
+            extracted_data.workflow_trace,
+            apply_resolution.workflow_trace if apply_resolution else None,
+        ],
+    )
     render_workflow_trace("Job Extraction Trace", extracted_data.workflow_trace)
     render_workflow_trace(
         "Apply URL Resolution Trace",

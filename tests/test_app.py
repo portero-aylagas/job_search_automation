@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.job_intake import create_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, RejectedApplyCandidate
-from src.schemas import ApplicationRequirements, CandidateProfile
+from src.schemas import AIWorkflowTrace, ApplicationRequirements, CandidateProfile
 
 
 def test_app_module_imports() -> None:
@@ -300,6 +300,47 @@ def test_apply_url_review_messages_explain_manual_fallback_when_unverified() -> 
         "The extracted apply URL was not verified by the apply-link resolver."
     ]
     assert any("paste the application URL manually" in message for message in messages["info"])
+
+
+def test_build_ai_usage_summary_counts_calls_retries_and_budget() -> None:
+    app = importlib.import_module("app")
+    traces = [
+        AIWorkflowTrace(
+            workflow_name="job_extraction",
+            operation="AI job extraction",
+            model="test-model",
+            profile_name="job_extraction",
+            temperature=0.0,
+            max_output_tokens=5000,
+            timeout_seconds=90,
+            max_retries=2,
+            max_tool_calls=4,
+            attempt_count=2,
+        ),
+        None,
+        AIWorkflowTrace(
+            workflow_name="application_package",
+            operation="AI package generation",
+            model="test-model",
+            profile_name="application_package",
+            temperature=0.6,
+            max_output_tokens=9000,
+            timeout_seconds=90,
+            max_retries=1,
+            attempt_count=1,
+        ),
+    ]
+
+    summary = app.build_ai_usage_summary(traces)
+
+    assert summary == {
+        "call_count": 2,
+        "attempt_count": 3,
+        "retry_count": 1,
+        "output_token_budget": 19000,
+        "worst_case_output_token_budget": 33000,
+        "tool_call_cap": 4,
+    }
 
 
 def make_package_requirements(
