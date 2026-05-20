@@ -661,7 +661,9 @@ redact cookies, auth/session values, CSRF tokens, and similar secrets.
 
 Each artifact should include an id, type, label, required flag, status, and
 content. Artifacts that answer job-specific questions should also preserve the
-source prompt.
+source prompt. Common artifact types include cover letters, CV tailoring notes,
+recruiter messages, form answers, document upload checklists, and missing
+information prompts.
 
 ### TrackerRecord
 
@@ -675,5 +677,5 @@ source prompt.
 - status
 - created_at
 - updated_at
-- application_package_path
+- generated_package_path
 - notes
