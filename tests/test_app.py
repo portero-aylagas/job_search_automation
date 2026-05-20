@@ -1,8 +1,9 @@
 import importlib
 from pathlib import Path
 
+from src.job_intake import create_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, RejectedApplyCandidate
-from src.schemas import CandidateProfile
+from src.schemas import ApplicationRequirements, CandidateProfile
 
 
 def test_app_module_imports() -> None:
@@ -95,6 +96,16 @@ def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfi
                 },
             }
         }
+    )
+
+
+def make_package_job(*, description: str = "Build automation workflows."):
+    return create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
+        description=description,
     )
 
 
@@ -259,6 +270,99 @@ def test_apply_url_review_messages_explain_manual_fallback_when_unverified() -> 
         "The extracted apply URL was not verified by the apply-link resolver."
     ]
     assert any("paste the application URL manually" in message for message in messages["info"])
+
+
+def make_package_requirements(job, *, status: str = "discovered", job_preserving: bool = True):
+    return ApplicationRequirements(
+        job_id=job.id,
+        apply_url=job.apply_url,
+        source_url=job.source_url,
+        status=status,
+        job_preserving=job_preserving,
+    )
+
+
+def test_package_generation_blockers_require_parsed_job_description() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job(description="")
+
+    blockers = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        job,
+        make_package_requirements(job),
+    )
+
+    assert "Parse and save the job description" in " ".join(blockers)
+
+
+def test_package_generation_blockers_require_parsed_cv() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        make_complete_candidate_profile(cv_parsed=False),
+        job,
+        make_package_requirements(job),
+    )
+
+    assert "Parse the candidate CV" in " ".join(blockers)
+
+
+def test_package_generation_blockers_require_mandatory_candidate_fields() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        CandidateProfile(),
+        job,
+        make_package_requirements(job),
+    )
+
+    assert any(blocker.startswith("Complete the candidate profile") for blocker in blockers)
+
+
+def test_package_generation_blockers_require_application_requirements() -> None:
+    app = importlib.import_module("app")
+
+    blockers = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        make_package_job(),
+        None,
+    )
+
+    assert "Discover application requirements" in " ".join(blockers)
+
+
+def test_package_generation_blockers_reject_blocked_or_non_preserving_requirements() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+
+    blocked_status = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        job,
+        make_package_requirements(job, status="blocked", job_preserving=False),
+    )
+    non_preserving = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        job,
+        make_package_requirements(job, job_preserving=False),
+    )
+
+    assert "Resolve application requirements" in " ".join(blocked_status)
+    assert "Resolve application requirements" in " ".join(non_preserving)
+
+
+def test_package_generation_has_no_blockers_when_prerequisites_are_complete() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        job,
+        make_package_requirements(job),
+    )
+
+    assert blockers == []
 
 
 def test_candidate_preferences_migrates_legacy_entry_level_employment_types() -> None:
