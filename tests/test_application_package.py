@@ -9,11 +9,13 @@ from src.application_package import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
     LLMApplicationArtifact,
     LLMApplicationPackageResponse,
+    apply_manual_artifact_edits,
     build_application_artifact_manifest,
     build_missing_information_defaults,
     generate_application_package,
     generate_application_package_with_llm,
     load_application_package,
+    reject_application_package,
     render_application_package_markdown,
     save_application_package,
     update_tracker_for_application_package,
@@ -303,6 +305,63 @@ def test_application_package_adds_artifact_traceability_metadata() -> None:
     assert "Automated weekly KPI reporting" in (
         traceability["source_experience_units"][0]["evidence_points"][0]
     )
+
+
+def test_manual_artifact_edits_mark_artifacts_without_mutating_original() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter",
+                type="cover_letter",
+                label="Cover Letter",
+                content="Draft text.",
+            ),
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Summary",
+                content="Keep this.",
+            ),
+        ],
+    )
+
+    edited = apply_manual_artifact_edits(
+        package,
+        {"cover-letter": "Reviewed text.", "summary": "Keep this."},
+    )
+
+    assert package.artifacts[0].content == "Draft text."
+    assert edited.artifacts[0].content == "Reviewed text."
+    assert edited.artifacts[0].status == "manually_edited"
+    assert edited.artifacts[0].metadata["manual_edit"] is True
+    assert edited.artifacts[1].status == "draft"
+    assert edited.generation_notes == ["Manual edits saved for: Cover Letter"]
+
+
+def test_reject_application_package_preserves_artifacts_and_records_reason() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Summary",
+                content="Draft text.",
+            )
+        ],
+        generation_notes=["Initial generation."],
+    )
+
+    rejected = reject_application_package(package, "Overstates Python experience.")
+
+    assert package.status == "draft"
+    assert rejected.status == "rejected"
+    assert rejected.artifacts[0].content == "Draft text."
+    assert rejected.generation_notes == [
+        "Initial generation.",
+        "Rejected by reviewer: Overstates Python experience.",
+    ]
 
 
 def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:

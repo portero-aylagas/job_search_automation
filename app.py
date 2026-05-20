@@ -6,8 +6,10 @@ import streamlit as st
 from pydantic import ValidationError
 
 from src.application_package import (
+    apply_manual_artifact_edits,
     generate_application_package,
     load_application_package,
+    reject_application_package,
     save_application_package,
     update_tracker_for_application_package,
 )
@@ -790,7 +792,51 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
         "Package AI Usage Summary",
         [package.workflow_trace],
     )
+    package = render_application_package_recovery_actions(base_dir, job, package)
     render_application_package(package)
+
+
+def render_application_package_recovery_actions(
+    base_dir: Path,
+    job: JobListing,
+    package: ApplicationPackage,
+) -> ApplicationPackage:
+    with st.expander("Edit or reject generated package", expanded=False):
+        with st.form(f"application_package_edit_form_{job.id}"):
+            edited_content = {
+                artifact.id: st.text_area(
+                    artifact.label,
+                    value=artifact.content,
+                    key=f"application_package_edit_{job.id}_{artifact.id}",
+                )
+                for artifact in package.artifacts
+            }
+            save_edits = st.form_submit_button("Save manual edits")
+
+        rejection_reason = st.text_area(
+            "Rejection reason",
+            key=f"application_package_reject_reason_{job.id}",
+        )
+        reject_package = st.button(
+            "Reject package",
+            key=f"application_package_reject_{job.id}",
+        )
+
+    if save_edits:
+        edited_package = apply_manual_artifact_edits(package, edited_content)
+        json_path, markdown_path = save_application_package(base_dir, edited_package, job)
+        update_tracker_for_application_package(base_dir, job.id, json_path)
+        st.success(f"Manual edits saved. Markdown export: {markdown_path}")
+        return edited_package
+
+    if reject_package:
+        rejected_package = reject_application_package(package, rejection_reason)
+        json_path, markdown_path = save_application_package(base_dir, rejected_package, job)
+        update_tracker_for_application_package(base_dir, job.id, json_path)
+        st.warning(f"Package rejected and saved. Markdown export: {markdown_path}")
+        return rejected_package
+
+    return package
 
 
 def render_application_package(package: ApplicationPackage) -> None:

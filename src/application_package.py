@@ -339,6 +339,52 @@ def normalize_application_package(
     return ApplicationPackage.model_validate(payload)
 
 
+def apply_manual_artifact_edits(
+    package: ApplicationPackage,
+    edits_by_artifact_id: dict[str, str],
+) -> ApplicationPackage:
+    edited_package = package.model_copy(deep=True)
+    edited_labels: list[str] = []
+
+    for artifact in edited_package.artifacts:
+        if artifact.id not in edits_by_artifact_id:
+            continue
+        edited_content = str(edits_by_artifact_id[artifact.id]).strip()
+        if edited_content == artifact.content:
+            continue
+        artifact.content = edited_content
+        artifact.status = "manually_edited"
+        metadata = dict(artifact.metadata)
+        metadata["manual_edit"] = True
+        artifact.metadata = metadata
+        edited_labels.append(artifact.label)
+
+    if edited_labels:
+        edited_package.generation_notes = _dedupe(
+            [
+                *edited_package.generation_notes,
+                "Manual edits saved for: " + ", ".join(edited_labels),
+            ]
+        )
+    return edited_package
+
+
+def reject_application_package(
+    package: ApplicationPackage,
+    reason: str = "",
+) -> ApplicationPackage:
+    rejected_package = package.model_copy(deep=True)
+    rejected_package.status = "rejected"
+    normalized_reason = reason.strip() or "No reason provided."
+    rejected_package.generation_notes = _dedupe(
+        [
+            *rejected_package.generation_notes,
+            f"Rejected by reviewer: {normalized_reason}",
+        ]
+    )
+    return rejected_package
+
+
 def render_application_package_markdown(
     package: ApplicationPackage,
     job: JobListing,
