@@ -1,3 +1,5 @@
+"""CV and supporting-document upload, inspection, and extraction workflow helpers."""
+
 from __future__ import annotations
 
 import mimetypes
@@ -24,6 +26,8 @@ OPTIONAL_DOCUMENT_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md", ".docx"}
 
 
 class CVDocumentSnapshot(BaseModel):
+    """Provider file reference and metadata for an uploaded document."""
+
     file_path: str
     file_name: str
     file_id: str
@@ -31,6 +35,8 @@ class CVDocumentSnapshot(BaseModel):
 
 
 class LLMCandidateCVIdentityResponse(BaseModel):
+    """LLM-safe nullable identity fields extracted from a CV."""
+
     full_name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -41,6 +47,8 @@ class LLMCandidateCVIdentityResponse(BaseModel):
 
 
 class LLMCandidateCVExtractedResponse(BaseModel):
+    """LLM-safe nullable CV extraction response before normalization."""
+
     identity: LLMCandidateCVIdentityResponse | None = None
     work_experience: list[str] | None = None
     education: list[str] | None = None
@@ -52,6 +60,8 @@ class LLMCandidateCVExtractedResponse(BaseModel):
 
 
 class LLMCandidateSupplementalExtractedResponse(BaseModel):
+    """LLM-safe nullable extraction response for optional documents."""
+
     work_experience: list[str] | None = None
     education: list[str] | None = None
     skills: list[str] | None = None
@@ -68,6 +78,8 @@ SupplementalDataExtractor = Callable[[CVDocumentSnapshot], CandidateSupplemental
 
 
 class CVExtractionState(TypedDict, total=False):
+    """State passed between CV extraction graph nodes."""
+
     cv_path: str
     inspector: CVDocumentInspector | None
     extractor: CVDataExtractor | None
@@ -81,6 +93,8 @@ def run_cv_extraction_task(
     inspector: CVDocumentInspector | None = None,
     extractor: CVDataExtractor | None = None,
 ) -> CandidateCVExtracted:
+    """Run the CV extraction graph and return normalized candidate evidence."""
+
     state = run_cv_extraction_graph(
         cv_path,
         inspector=inspector,
@@ -95,6 +109,8 @@ def run_optional_document_extraction_task(
     inspector: CVDocumentInspector | None = None,
     extractor: SupplementalDataExtractor | None = None,
 ) -> CandidateSupplementalExtracted:
+    """Inspect and extract evidence from one optional supporting document."""
+
     path = _validate_document_path(document_path)
     snapshot = (inspector or inspect_cv_document_agent)(path)
     return (extractor or extract_optional_document_data_with_llm)(snapshot)
@@ -106,6 +122,8 @@ def run_cv_extraction_graph(
     inspector: CVDocumentInspector | None = None,
     extractor: CVDataExtractor | None = None,
 ) -> CVExtractionState:
+    """Run the CV extraction graph with injectable inspector and extractor steps."""
+
     path = _validate_cv_path(cv_path)
     state: CVExtractionState = {
         "cv_path": str(path),
@@ -117,6 +135,8 @@ def run_cv_extraction_graph(
 
 
 def build_cv_extraction_graph():
+    """Build the LangGraph CV extraction graph or a sequential fallback."""
+
     try:
         from langgraph.graph import END, StateGraph
     except ImportError:
@@ -151,6 +171,8 @@ def _extract_cv_data_node(state: CVExtractionState) -> dict[str, CandidateCVExtr
 
 
 def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
+    """Upload a validated CV file and return its provider file reference."""
+
     path = _validate_cv_path(cv_path)
     with path.open("rb") as file:
         uploaded_file = llm_client.upload_user_file(file)
@@ -164,6 +186,8 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
+    """Extract normalized candidate CV evidence using the configured LLM profile."""
+
     workflow_trace: AIWorkflowTrace | None = None
 
     def capture_trace(trace: AIWorkflowTrace) -> None:
@@ -204,6 +228,8 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
+    """Extract normalized supplemental evidence using the configured LLM profile."""
+
     workflow_trace: AIWorkflowTrace | None = None
 
     def capture_trace(trace: AIWorkflowTrace) -> None:
@@ -250,6 +276,8 @@ def extract_optional_document_data_with_llm(
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
+    """Validate and save an uploaded CV file under runtime candidate data."""
+
     safe_name = _validate_uploaded_file(
         original_name,
         file_bytes,
@@ -269,6 +297,8 @@ def save_uploaded_optional_document(
     original_name: str,
     file_bytes: bytes,
 ) -> Path:
+    """Validate and save an uploaded optional document under runtime data."""
+
     safe_name = _validate_uploaded_file(
         original_name,
         file_bytes,
@@ -330,6 +360,8 @@ def _validate_uploaded_file(
 
 
 def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> CandidateCVExtracted:
+    """Convert nullable LLM CV output into the persisted candidate model."""
+
     identity = response.identity or LLMCandidateCVIdentityResponse()
     return CandidateCVExtracted(
         identity=CandidateCVIdentity(
@@ -354,6 +386,8 @@ def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> Candida
 def normalize_optional_document_extracted(
     response: LLMCandidateSupplementalExtractedResponse,
 ) -> CandidateSupplementalExtracted:
+    """Convert nullable supplemental LLM output into the persisted model."""
+
     return CandidateSupplementalExtracted(
         work_experience=_normalize_string_list(response.work_experience),
         education=_normalize_string_list(response.education),

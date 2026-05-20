@@ -1,3 +1,5 @@
+"""OpenAI provider boundary for structured responses and file uploads."""
+
 from __future__ import annotations
 
 import os
@@ -16,6 +18,8 @@ StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 
 
 class LLMCallProfile(BaseModel):
+    """Configuration for one live LLM workflow call."""
+
     name: str = ""
     temperature: float
     max_output_tokens: int
@@ -79,6 +83,8 @@ FILE_UPLOAD_BACKOFF_SECONDS = (1.0,)
 
 @dataclass(slots=True)
 class RetryOutcome:
+    """Result value paired with the number of provider attempts used."""
+
     value: Any
     attempt_count: int
 

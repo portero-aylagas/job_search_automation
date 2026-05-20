@@ -1,3 +1,5 @@
+"""Streamlit UI for the controlled job application workflow."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -119,6 +121,8 @@ CAREER_LEVEL_HELP = {
 
 @dataclass(frozen=True)
 class JobReviewFormState:
+    """Submitted state from the reviewed job-intake form."""
+
     title: str
     company: str
     location: str
@@ -137,6 +141,8 @@ class JobReviewFormState:
 
 
 def get_candidate_profile_draft(base_dir: Path) -> dict:
+    """Load or initialize the candidate profile draft in Streamlit session state."""
+
     draft = st.session_state.get("candidate_profile_draft")
     if draft is None:
         draft = load_candidate_profile(base_dir).model_dump(mode="json")
@@ -145,14 +151,20 @@ def get_candidate_profile_draft(base_dir: Path) -> dict:
 
 
 def set_candidate_profile_draft(draft: dict) -> None:
+    """Replace the candidate profile draft stored in Streamlit session state."""
+
     st.session_state["candidate_profile_draft"] = draft
 
 
 def required_label(label: str) -> str:
+    """Return a UI label marked as required."""
+
     return f"{label} *"
 
 
 def work_authorization_index(value: str) -> int | None:
+    """Return the radio index for the saved work authorization value."""
+
     for index, (option_value, _) in enumerate(WORK_AUTHORIZATION_OPTIONS):
         if option_value == value:
             return index
@@ -160,6 +172,8 @@ def work_authorization_index(value: str) -> int | None:
 
 
 def render_candidate_profile_page(base_dir: Path) -> None:
+    """Render the candidate profile workflow page."""
+
     st.title("Candidate Profile")
     st.write(
         "Upload your CV once, review the extracted data, and fill in the missing "
@@ -181,6 +195,8 @@ def render_candidate_profile_page(base_dir: Path) -> None:
 
 
 def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
+    """Render CV upload controls and update draft data after parsing."""
+
     with st.container(border=True):
         st.subheader("1. CV Upload")
         st.caption("The CV is the source of truth for professional data.")
@@ -224,6 +240,8 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
 
 
 def format_cv_parse_error(saved_path: Path, exc: Exception) -> str:
+    """Return the user-facing error shown when CV parsing fails after upload."""
+
     return (
         f"CV upload was saved to {saved_path}, but AI parsing failed: {exc}. "
         "Check that the Streamlit process has OPENAI_API_KEY and network access, "
@@ -232,6 +250,8 @@ def format_cv_parse_error(saved_path: Path, exc: Exception) -> str:
 
 
 def render_optional_documents_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
+    """Render optional document upload controls and merge parsed evidence."""
+
     with st.container(border=True):
         st.subheader("2. Optional documents")
         st.caption("Upload references, certificates, or other supporting documents.")
@@ -311,6 +331,8 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
 
 
 def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> None:
+    """Render editable CV-extracted fields and save changes into the draft."""
+
     with st.container(border=True):
         st.subheader("3. Extracted data review")
         profile_data = candidate_profile.candidate_profile
@@ -401,6 +423,8 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
 
 def render_candidate_preferences_section(candidate_profile: CandidateProfile) -> None:
+    """Render manual candidate preference inputs and update the draft."""
+
     with st.container(border=True):
         st.subheader("4. Manual candidate preferences")
         profile_data = candidate_profile.candidate_profile
@@ -517,10 +541,14 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
 
 
 def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
+    """Return the current candidate profile draft as a validated model."""
+
     return CandidateProfile.model_validate(get_candidate_profile_draft(base_dir))
 
 
 def render_profile_save_section(base_dir: Path, _candidate_profile: CandidateProfile) -> None:
+    """Render the profile save action and persist a valid reviewed profile."""
+
     st.subheader("Save")
     st.caption("This writes the reviewed profile to data/candidate_profile.json.")
     if st.button("Save profile", type="primary"):
@@ -537,6 +565,8 @@ def render_profile_save_section(base_dir: Path, _candidate_profile: CandidatePro
 
 
 def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
+    """Render the tracker table."""
+
     st.title("Tracker")
     sorted_records = sorted(
         tracker_records,
@@ -550,6 +580,8 @@ def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
 
 
 def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> None:
+    """Render saved jobs and their per-job workflow panels."""
+
     st.title("Jobs")
     if not tracker_records:
         st.info("No jobs have been added yet.")
@@ -590,10 +622,14 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
 
 
 def job_option_label(record: TrackerRecord) -> str:
+    """Return the display label for a job selector option."""
+
     return f"{record.company} / {record.title}"
 
 
 def render_tracker_job_summary(record: TrackerRecord) -> None:
+    """Render fallback tracker-only job details when full intake data is missing."""
+
     st.subheader("Job Summary")
     summary = {
         "Company": record.company,
@@ -608,6 +644,8 @@ def render_tracker_job_summary(record: TrackerRecord) -> None:
 
 
 def render_job_intake_summary(job: JobListing) -> None:
+    """Render reviewed normalized job-intake data."""
+
     st.subheader("Intake Data")
     left, right = st.columns(2)
     with left:
@@ -632,6 +670,8 @@ def render_job_intake_summary(job: JobListing) -> None:
 
 
 def render_application_requirements_panel(base_dir: Path, job: JobListing) -> None:
+    """Render requirements discovery, review status, and save actions."""
+
     st.divider()
     st.subheader("Application Requirements")
     requirements = load_application_requirements(base_dir, job.id)
@@ -666,6 +706,8 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
 
 
 def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
+    """Render application package generation and review controls."""
+
     st.divider()
     st.subheader("Application Package")
     package = load_application_package(base_dir, job.id)
@@ -718,6 +760,8 @@ def render_application_package_recovery_actions(
     job: JobListing,
     package: ApplicationPackage,
 ) -> ApplicationPackage:
+    """Render package edit/reject actions and return the current package state."""
+
     with st.expander("Edit or reject generated package", expanded=False):
         with st.form(f"application_package_edit_form_{job.id}"):
             edited_content = {
@@ -757,6 +801,8 @@ def render_application_package_recovery_actions(
 
 
 def render_application_package(package: ApplicationPackage) -> None:
+    """Render a generated application package for human review."""
+
     status_columns = st.columns(3)
     status_columns[0].metric("Status", package.status)
     status_columns[1].metric("Artifacts", len(package.artifacts))
@@ -796,6 +842,8 @@ def render_application_package(package: ApplicationPackage) -> None:
 
 
 def render_artifact_traceability(metadata: dict[str, object]) -> None:
+    """Render artifact traceability metadata when available."""
+
     traceability = metadata.get("traceability")
     if not isinstance(traceability, dict):
         return
@@ -828,6 +876,8 @@ def render_artifact_traceability(metadata: dict[str, object]) -> None:
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:
+    """Render interpreted application requirements and source evidence."""
+
     status_columns = st.columns(4)
     status_columns[0].metric("Status", requirements.status)
     status_columns[1].metric("Review", requirements.review_status)
@@ -874,6 +924,8 @@ def render_requirements_review_actions(
     base_dir: Path,
     requirements: ApplicationRequirements,
 ) -> None:
+    """Render the action that marks discovered requirements as reviewed."""
+
     if requirements.status != "discovered" or requirements.review_status == "reviewed":
         return
 
@@ -888,6 +940,8 @@ def render_requirement_findings(
     label: str,
     findings: list,
 ) -> None:
+    """Render a list of evidence-backed requirement findings."""
+
     if not findings:
         return
     st.markdown(f"**{label}**")
@@ -902,6 +956,8 @@ def render_requirement_findings(
 
 
 def render_form_fields(label: str, fields: list) -> None:
+    """Render application form fields discovered from the apply page."""
+
     if not fields:
         return
     st.markdown(f"**{label}**")
@@ -920,6 +976,8 @@ def render_screening_questions(
     label: str,
     questions: list,
 ) -> None:
+    """Render discovered screening questions."""
+
     if not questions:
         return
     st.markdown(f"**{label}**")
@@ -934,6 +992,8 @@ def render_screening_questions(
 
 
 def render_field(label: str, value: str | None) -> None:
+    """Render one label/value pair."""
+
     st.markdown(f"**{label}**")
     st.write(value or "Not specified")
 
@@ -941,6 +1001,8 @@ def render_field(label: str, value: str | None) -> None:
 def build_ai_usage_summary(
     traces: list[AIWorkflowTrace | None],
 ) -> dict[str, int]:
+    """Aggregate AI workflow traces into usage counters for review."""
+
     active_traces = [trace for trace in traces if trace is not None]
     return {
         "call_count": len(active_traces),
@@ -957,6 +1019,8 @@ def build_ai_usage_summary(
 
 
 def render_ai_usage_summary(label: str, traces: list[AIWorkflowTrace | None]) -> None:
+    """Render summarized AI usage for visible workflow traceability."""
+
     summary = build_ai_usage_summary(traces)
     if summary["call_count"] == 0:
         return
@@ -974,6 +1038,8 @@ def render_ai_usage_summary(label: str, traces: list[AIWorkflowTrace | None]) ->
 
 
 def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
+    """Render detailed AI workflow trace metadata when present."""
+
     if trace is None:
         return
 
@@ -994,6 +1060,8 @@ def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
 
 
 def render_list(label: str, values: list[str]) -> None:
+    """Render a labeled bullet list when values are available."""
+
     if not values:
         return
     st.markdown(f"**{label}**")
@@ -1002,6 +1070,8 @@ def render_list(label: str, values: list[str]) -> None:
 
 
 def render_additional_details(job_details: dict[str, object]) -> None:
+    """Render dynamic and miscellaneous job details."""
+
     dynamic_fields = job_details.get("dynamic_fields")
     rendered_any = False
 
@@ -1028,12 +1098,16 @@ def render_additional_details(job_details: dict[str, object]) -> None:
 
 
 def format_detail_value(value: object) -> str:
+    """Format an arbitrary job detail value for display."""
+
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
 
 
 def render_job_url_extraction_form() -> tuple[bool, str]:
+    """Render the initial job URL extraction form."""
+
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
         st.caption("This action uses AI and may perform web search to resolve the apply URL.")
@@ -1042,6 +1116,8 @@ def render_job_url_extraction_form() -> tuple[bool, str]:
 
 
 def handle_job_url_extraction(source_url: str) -> bool:
+    """Run job extraction and store review payloads in Streamlit session state."""
+
     try:
         with st.spinner("Extracting job data with AI..."):
             extraction_result = extract_job_intake_data(source_url)
@@ -1060,6 +1136,8 @@ def handle_job_url_extraction(source_url: str) -> bool:
 def load_job_intake_review_state() -> (
     tuple[ExtractedJobData, ApplyUrlResolution | None, str] | None
 ):
+    """Load pending job-intake review state from Streamlit session state."""
+
     extracted_payload = st.session_state.get("job_intake_extracted")
     if not extracted_payload:
         return None
@@ -1080,6 +1158,8 @@ def render_job_intake_review_header(
     apply_resolution: ApplyUrlResolution | None,
     source_url: str,
 ) -> str:
+    """Render job-intake trace metadata and return the verified apply URL."""
+
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
     render_ai_usage_summary(
@@ -1109,6 +1189,8 @@ def render_job_review_form(
     source_url: str,
     final_apply_url: str,
 ) -> JobReviewFormState:
+    """Render the reviewed job-intake form and return submitted values."""
+
     with st.form("job_review_form"):
         left, right = st.columns(2)
         with left:
@@ -1203,6 +1285,8 @@ def build_reviewed_job_listing(
     source_url: str,
     apply_resolution: ApplyUrlResolution | None,
 ) -> JobListing:
+    """Build a persistable job listing from reviewed form state."""
+
     dynamic_fields = [
         field for field in form_state.dynamic_fields if field["name"] or field["value"]
     ]
@@ -1235,12 +1319,16 @@ def build_reviewed_job_listing(
 
 
 def clear_job_intake_session_state() -> None:
+    """Clear pending job-intake review data from Streamlit session state."""
+
     st.session_state.pop("job_intake_source_url", None)
     st.session_state.pop("job_intake_extracted", None)
     st.session_state.pop("job_intake_apply_resolution", None)
 
 
 def render_job_intake_page(base_dir: Path) -> None:
+    """Render the URL-first job intake workflow."""
+
     st.title("Job Intake")
     st.write("Generate application data from a job URL.")
 
@@ -1299,6 +1387,8 @@ def render_job_intake_page(base_dir: Path) -> None:
 
 
 def main() -> None:
+    """Run the Streamlit application."""
+
     st.set_page_config(page_title="Job Search Automation", layout="wide")
     _, tracker_records = load_app_data(BASE_DIR)
 

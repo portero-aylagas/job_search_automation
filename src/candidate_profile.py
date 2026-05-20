@@ -1,3 +1,5 @@
+"""Candidate profile validation and merge helpers."""
+
 from __future__ import annotations
 
 from src.schemas import (
@@ -8,6 +10,12 @@ from src.schemas import (
 
 
 def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
+    """Return user-facing labels for missing or inconsistent profile fields.
+
+    Args:
+        candidate_profile: Candidate profile draft or saved profile to validate.
+    """
+
     profile = candidate_profile.candidate_profile
     errors: list[str] = []
 
@@ -52,6 +60,13 @@ def merge_supplemental_extracted_data(
     target: CandidateCVExtracted,
     supplemental: CandidateSupplementalExtracted,
 ) -> None:
+    """Merge supplemental document evidence into extracted CV data in place.
+
+    Args:
+        target: Existing CV-derived profile data that will be mutated.
+        supplemental: Additional evidence extracted from optional documents.
+    """
+
     target.work_experience = _merge_unique_items(
         target.work_experience,
         supplemental.work_experience,

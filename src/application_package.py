@@ -1,3 +1,5 @@
+"""Application package generation, review recovery, export, and persistence."""
+
 from __future__ import annotations
 
 import json
@@ -41,6 +43,8 @@ PackageGenerator = Callable[
 
 
 class ApplicationArtifactManifestItem(BaseModel):
+    """Artifact request included in the package-generation manifest."""
+
     id: str
     type: str
     label: str
@@ -50,6 +54,8 @@ class ApplicationArtifactManifestItem(BaseModel):
 
 
 class LLMApplicationArtifact(BaseModel):
+    """LLM-safe generated artifact before local package normalization."""
+
     id: str
     type: str
     label: str
@@ -61,6 +67,8 @@ class LLMApplicationArtifact(BaseModel):
 
 
 class LLMApplicationPackageResponse(BaseModel):
+    """LLM-safe application package response before local normalization."""
+
     job_id: str = ""
     status: Literal["draft", "needs_review"] = "draft"
     artifacts: list[LLMApplicationArtifact] = Field(default_factory=list)
@@ -77,6 +85,8 @@ def generate_application_package(
     *,
     generator: PackageGenerator | None = None,
 ) -> ApplicationPackage:
+    """Generate, trace, quality-check, and normalize an application package."""
+
     selected_generator = generator or generate_application_package_with_llm
     package = selected_generator(candidate_profile, experience_units, job, requirements)
     package = attach_application_package_traceability(package, requirements, experience_units)
@@ -92,6 +102,8 @@ def build_application_artifact_manifest(
     job: JobListing,
     requirements: ApplicationRequirements | None = None,
 ) -> list[ApplicationArtifactManifestItem]:
+    """Build the required artifact manifest from job and application requirements."""
+
     manifest = [
         ApplicationArtifactManifestItem(
             id="application-summary",
@@ -202,6 +214,8 @@ def build_missing_information_defaults(
     candidate_profile: CandidateProfile,
     requirements: ApplicationRequirements | None,
 ) -> list[str]:
+    """Return reviewer-facing missing-information defaults for package generation."""
+
     missing: list[str] = []
     profile_data = candidate_profile.candidate_profile
     identity = profile_data.cv_extracted.identity
@@ -242,6 +256,8 @@ def generate_application_package_with_llm(
     job: JobListing,
     requirements: ApplicationRequirements | None = None,
 ) -> ApplicationPackage:
+    """Generate an application package with the configured live LLM profile."""
+
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
     requirements_json = _to_json(requirements) if requirements else "Not discovered."
@@ -295,6 +311,8 @@ def attach_application_package_traceability(
     requirements: ApplicationRequirements | None,
     experience_units: list[ExperienceUnit],
 ) -> ApplicationPackage:
+    """Attach requirement and experience-unit traceability metadata to artifacts."""
+
     traced_package = package.model_copy(deep=True)
     selected_experience = _selected_experience_trace(
         traced_package.selected_experience_units,
@@ -324,6 +342,8 @@ def apply_application_package_quality_checks(
     candidate_profile: CandidateProfile,
     job: JobListing,
 ) -> ApplicationPackage:
+    """Flag generated artifacts that need human review before use."""
+
     checked_package = package.model_copy(deep=True)
     candidate_evidence = _candidate_evidence_text(candidate_profile)
     unsupported_terms = _unsupported_requirement_terms(job, candidate_evidence)
@@ -370,6 +390,8 @@ def normalize_application_package(
     job: JobListing,
     package: ApplicationPackage,
 ) -> ApplicationPackage:
+    """Normalize package IDs, status fields, and duplicate list values."""
+
     payload = package.model_dump(mode="json")
     payload["job_id"] = job.id
     payload["status"] = payload.get("status") or "draft"
@@ -396,6 +418,8 @@ def apply_manual_artifact_edits(
     package: ApplicationPackage,
     edits_by_artifact_id: dict[str, str],
 ) -> ApplicationPackage:
+    """Return a package copy with reviewer edits applied to matching artifacts."""
+
     edited_package = package.model_copy(deep=True)
     edited_labels: list[str] = []
 
@@ -426,6 +450,8 @@ def reject_application_package(
     package: ApplicationPackage,
     reason: str = "",
 ) -> ApplicationPackage:
+    """Return a rejected package copy with the reviewer reason recorded."""
+
     rejected_package = package.model_copy(deep=True)
     rejected_package.status = "rejected"
     normalized_reason = reason.strip() or "No reason provided."
@@ -442,6 +468,8 @@ def render_application_package_markdown(
     package: ApplicationPackage,
     job: JobListing,
 ) -> str:
+    """Render an application package as a human-readable Markdown export."""
+
     lines = [
         f"# Application Package: {job.company} / {job.title}",
         "",
@@ -537,6 +565,8 @@ def save_application_package(
     package: ApplicationPackage,
     job: JobListing,
 ) -> tuple[Path, Path]:
+    """Persist package JSON and Markdown export for one job workspace."""
+
     json_path = runtime_application_package_path(base_dir, package.job_id)
     markdown_path = application_package_markdown_path(base_dir, package.job_id)
     save_model(json_path, package)
@@ -549,6 +579,8 @@ def load_application_package(
     base_dir: Path | str,
     job_id: str,
 ) -> ApplicationPackage | None:
+    """Load a package from runtime data or checked-in templates."""
+
     runtime_path, template_path = application_package_paths(base_dir, job_id)
     if runtime_path.exists():
         return load_model(runtime_path, ApplicationPackage, default=None)
@@ -562,6 +594,8 @@ def update_tracker_for_application_package(
     job_id: str,
     package_path: Path | str,
 ) -> list[TrackerRecord]:
+    """Mark the tracker record as having an application draft package."""
+
     jobs_index_path = runtime_jobs_index_path(base_dir)
     tracker_path = runtime_tracker_path(base_dir)
     tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
@@ -580,6 +614,8 @@ def update_tracker_for_application_package(
 
 
 def slugify(value: str) -> str:
+    """Return a lowercase slug suitable for generated artifact IDs."""
+
     normalized = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return normalized or "artifact"
 

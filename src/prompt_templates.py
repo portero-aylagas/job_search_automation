@@ -1,3 +1,5 @@
+"""Load and render versioned prompt templates from the repository YAML file."""
+
 from __future__ import annotations
 
 from functools import lru_cache

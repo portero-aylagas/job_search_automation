@@ -1,3 +1,5 @@
+"""LLM-assisted job extraction models and provider calls."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -11,6 +13,8 @@ from src.url_validation import validate_source_url
 
 
 class DynamicJobDetail(BaseModel):
+    """Flexible extracted job detail that does not fit the fixed job schema."""
+
     name: str
     value: str
     category: str = ""
@@ -19,6 +23,8 @@ class DynamicJobDetail(BaseModel):
 
 
 class ExtractedJobData(BaseModel):
+    """Normalized job-offer data returned to the intake workflow."""
+
     title: str = ""
     company: str = ""
     location: str = ""
@@ -38,6 +44,8 @@ class ExtractedJobData(BaseModel):
 
 
 class LLMExtractedJobDataResponse(BaseModel):
+    """LLM-safe job extraction schema before local normalization."""
+
     title: str | None = None
     company: str | None = None
     location: str | None = None
@@ -56,12 +64,16 @@ class LLMExtractedJobDataResponse(BaseModel):
 
 
 class RejectedApplyCandidate(BaseModel):
+    """Apply URL candidate rejected during resolution or review."""
+
     url: str = ""
     reason: str = ""
     evidence: str = ""
 
 
 class ApplyUrlResolution(BaseModel):
+    """Resolved apply URL result with evidence and rejected candidates."""
+
     status: Literal["resolved", "needs_review", "not_found"] = "not_found"
     apply_url: str = ""
     notes: str = ""
@@ -72,6 +84,8 @@ class ApplyUrlResolution(BaseModel):
 
 
 class LLMApplyUrlResolutionResponse(BaseModel):
+    """LLM-safe apply URL resolution schema without local trace metadata."""
+
     status: Literal["resolved", "needs_review", "not_found"] = "not_found"
     apply_url: str = ""
     notes: str = ""
@@ -88,6 +102,8 @@ def _web_search_tool() -> dict:
 
 
 def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
+    """Extract structured job-offer data from a source URL with web search."""
+
     normalized_url = validate_source_url(source_url)
     workflow_trace: AIWorkflowTrace | None = None
 
@@ -130,6 +146,8 @@ def resolve_apply_url_from_url(
     title: str = "",
     company: str = "",
 ) -> ApplyUrlResolution:
+    """Resolve the likely application URL for a job source URL with web search."""
+
     normalized_url = validate_source_url(source_url)
     workflow_trace: AIWorkflowTrace | None = None
 
@@ -169,6 +187,8 @@ def resolve_apply_url_from_url(
 
 
 def normalize_extracted_job_data(response: LLMExtractedJobDataResponse) -> ExtractedJobData:
+    """Convert nullable LLM job extraction output into the local intake model."""
+
     return ExtractedJobData(
         title=_normalize_text(response.title),
         company=_normalize_text(response.company),

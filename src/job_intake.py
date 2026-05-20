@@ -1,3 +1,5 @@
+"""Job intake helpers for reviewed job listings and tracker persistence."""
+
 from __future__ import annotations
 
 import re
@@ -15,6 +17,13 @@ from src.storage import load_model, save_model
 
 
 def require_text(value: str, field_name: str) -> str:
+    """Return trimmed text or raise a field-specific required-value error.
+
+    Args:
+        value: Raw text supplied by the user or extraction workflow.
+        field_name: User-facing field name included in the error message.
+    """
+
     normalized = value.strip()
     if not normalized:
         raise ValueError(f"{field_name} is required.")
@@ -22,11 +31,21 @@ def require_text(value: str, field_name: str) -> str:
 
 
 def slugify(value: str) -> str:
+    """Return a lowercase slug suitable for generated local job IDs."""
+
     normalized = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return normalized or "job"
 
 
 def build_job_id(title: str, company: str, now: datetime | None = None) -> str:
+    """Build the stable local job ID from timestamp, company, and title.
+
+    Args:
+        title: Reviewed job title.
+        company: Reviewed company name.
+        now: Optional timestamp used by tests or deterministic callers.
+    """
+
     timestamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%d%H%M%S")
     return f"job-{timestamp}-{slugify(company)}-{slugify(title)}"
 
@@ -38,6 +57,16 @@ def _normalize_url_for_comparison(value: str) -> tuple[str, str, str]:
 
 
 def validate_apply_url(apply_url: str, source_url: str) -> None:
+    """Validate that an apply URL is an HTTP(S) destination distinct from the source.
+
+    Args:
+        apply_url: Candidate application destination URL.
+        source_url: Original job-offer URL used for comparison.
+
+    Raises:
+        ValueError: If the candidate is blank, non-HTTP(S), or the job-offer URL.
+    """
+
     normalized_apply_url = apply_url.strip()
     if not normalized_apply_url:
         raise ValueError("Apply URL is required before the workflow can continue.")
@@ -53,6 +82,13 @@ def validate_apply_url(apply_url: str, source_url: str) -> None:
 
 
 def choose_valid_apply_url(source_url: str, *candidates: str) -> str:
+    """Return the first candidate apply URL that passes workflow validation.
+
+    Args:
+        source_url: Original job-offer URL used to reject same-page candidates.
+        candidates: Ordered candidate application URLs.
+    """
+
     for candidate in candidates:
         normalized_candidate = candidate.strip()
         if not normalized_candidate:
@@ -83,6 +119,26 @@ def create_job_listing(
     job_details: dict[str, object] | None = None,
     now: datetime | None = None,
 ) -> JobListing:
+    """Build a normalized job listing from reviewed intake fields.
+
+    Args:
+        title: Reviewed job title.
+        company: Reviewed company name.
+        source_url: Original job-offer URL.
+        location: Optional reviewed job location.
+        remote_policy: Optional reviewed remote-work policy.
+        apply_url: Optional reviewed application destination.
+        description: Optional reviewed job description.
+        requirements: Optional reviewed requirement list.
+        responsibilities: Optional reviewed responsibility list.
+        nice_to_have_skills: Optional reviewed nice-to-have list.
+        salary: Optional reviewed salary text.
+        posted_date: Optional reviewed posting date text.
+        source_job_id: Optional external job-board identifier.
+        job_details: Optional dynamic extracted job details.
+        now: Optional timestamp used to generate deterministic IDs.
+    """
+
     normalized_title = require_text(title, "Title")
     normalized_company = require_text(company, "Company")
     normalized_source_url = require_text(source_url, "Job URL")
@@ -112,12 +168,26 @@ def create_job_listing(
 
 
 def save_normalized_job(base_dir: Path | str, job_listing: JobListing) -> Path:
+    """Persist a normalized job listing to its runtime job workspace.
+
+    Args:
+        base_dir: Repository or test root where runtime data is stored.
+        job_listing: Reviewed job listing to save.
+    """
+
     target = runtime_normalized_job_path(base_dir, job_listing.id)
     save_model(target, job_listing)
     return target
 
 
 def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list[TrackerRecord]:
+    """Create or replace the tracker entry for a saved job listing.
+
+    Args:
+        base_dir: Repository or test root where runtime tracker files are stored.
+        job_listing: Reviewed job listing used to populate tracker fields.
+    """
+
     jobs_index_path = runtime_jobs_index_path(base_dir)
     tracker_path = runtime_tracker_path(base_dir)
     tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
@@ -147,6 +217,13 @@ def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list
 
 
 def persist_job_listing(base_dir: Path | str, job_listing: JobListing) -> Path:
+    """Save a normalized job and update both runtime tracker index files.
+
+    Args:
+        base_dir: Repository or test root where runtime data is stored.
+        job_listing: Reviewed job listing to persist.
+    """
+
     job_path = save_normalized_job(base_dir, job_listing)
     upsert_tracker_record(base_dir, job_listing)
     return job_path

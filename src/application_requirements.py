@@ -1,3 +1,5 @@
+"""Read-only application-page inspection and requirements discovery workflow."""
+
 from __future__ import annotations
 
 import json
@@ -66,6 +68,8 @@ EVIDENCE_PATTERN = re.compile(
 
 
 class RequirementsDiscoveryState(TypedDict, total=False):
+    """State passed between application-requirements discovery graph nodes."""
+
     job: JobListing
     page_content: str | None
     final_url: str | None
@@ -77,10 +81,14 @@ class RequirementsDiscoveryState(TypedDict, total=False):
 
 @dataclass(frozen=True)
 class BrowserInspectionFailure:
+    """Browser fallback failure details preserved in snapshot errors."""
+
     error: str
 
 
 class LLMApplicationRequirementsResponse(BaseModel):
+    """LLM-safe requirements extraction response before local normalization."""
+
     job_id: str
     apply_url: str
     source_url: str
@@ -110,6 +118,8 @@ def discover_application_requirements(
     extractor: RequirementsExtractor | None = None,
     inspector: SnapshotInspector | None = None,
 ) -> ApplicationRequirements:
+    """Discover application requirements from a job-specific apply page."""
+
     state = run_requirements_discovery_graph(
         job,
         page_content=page_content,
@@ -128,6 +138,8 @@ def run_requirements_discovery_graph(
     extractor: RequirementsExtractor | None = None,
     inspector: SnapshotInspector | None = None,
 ) -> RequirementsDiscoveryState:
+    """Run the requirements discovery graph with injectable inspection steps."""
+
     _validate_requirements_discovery_input(job)
     state: RequirementsDiscoveryState = {
         "job": job,
@@ -142,6 +154,8 @@ def run_requirements_discovery_graph(
 
 
 def build_requirements_discovery_graph():
+    """Build the LangGraph requirements discovery graph or sequential fallback."""
+
     try:
         from langgraph.graph import END, StateGraph
     except ImportError:
@@ -206,6 +220,8 @@ def inspect_application_page_agent(
     page_content: str | None = None,
     final_url: str | None = None,
 ) -> ApplicationPageSnapshot:
+    """Inspect an apply page without submitting forms or entering user data."""
+
     apply_url = str(job.apply_url)
     if page_content is not None:
         return build_application_page_snapshot(
@@ -232,6 +248,8 @@ def inspect_application_page_agent(
 
 
 def fetch_application_page(url: str) -> dict[str, Any]:
+    """Fetch bounded static HTML evidence for an application page."""
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -287,6 +305,8 @@ def build_application_page_snapshot(
     errors: list[str] | None = None,
     browser_fallback_used: bool = False,
 ) -> ApplicationPageSnapshot:
+    """Build a redacted and clipped evidence snapshot from application-page HTML."""
+
     clipped_html = _clip(_redact(html), MAX_APPLY_PAGE_CHARS)
     soup = BeautifulSoup(clipped_html or "", "html.parser")
     for element in soup(["script", "style", "noscript"]):
@@ -327,6 +347,8 @@ def inspect_application_page_with_browser(
     job: JobListing,
     url: str,
 ) -> ApplicationPageSnapshot | BrowserInspectionFailure | None:
+    """Use Playwright as a read-only fallback for JavaScript-heavy apply pages."""
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -555,6 +577,8 @@ def normalize_application_requirements(
     job: JobListing,
     requirements: ApplicationRequirements,
 ) -> ApplicationRequirements:
+    """Normalize requirements identity fields and block non-preserving pages."""
+
     payload = requirements.model_dump(mode="json", warnings=False)
     payload.update(
         {
@@ -694,6 +718,8 @@ def extract_application_requirements_with_llm(
     job: JobListing,
     snapshot: ApplicationPageSnapshot,
 ) -> ApplicationRequirements:
+    """Interpret an application-page snapshot with the configured LLM profile."""
+
     apply_url = str(job.apply_url)
     snapshot_json = json.dumps(snapshot.model_dump(mode="json"), indent=2, ensure_ascii=True)
     workflow_trace: AIWorkflowTrace | None = None
@@ -753,6 +779,8 @@ def save_application_page_snapshot(
     job_id: str,
     snapshot: ApplicationPageSnapshot,
 ) -> Path:
+    """Persist the read-only application-page snapshot for one job."""
+
     target = runtime_application_page_snapshot_path(base_dir, job_id)
     save_model(target, snapshot)
     return target
@@ -762,6 +790,8 @@ def save_application_requirements(
     base_dir: Path | str,
     requirements: ApplicationRequirements,
 ) -> Path:
+    """Persist interpreted application requirements for one job."""
+
     target = runtime_application_requirements_path(base_dir, requirements.job_id)
     save_model(target, requirements)
     return target

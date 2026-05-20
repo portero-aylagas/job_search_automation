@@ -1,3 +1,5 @@
+"""JSON file storage helpers for the local application state."""
+
 from __future__ import annotations
 
 import json
@@ -10,10 +12,19 @@ from src.paths import DATA_DIR, OUTPUTS_DIR, RUNTIME_DATA_DIR, RUNTIME_JOBS_DIR,
 
 
 class JsonStorageError(ValueError):
+    """Raised when a JSON storage file exists but cannot be decoded."""
+
     pass
 
 
 def ensure_data_dirs(base_dir: Path | str = ".") -> None:
+    """Create the local data and output directories used by the workflow.
+
+    Args:
+        base_dir: Repository or test root where runtime directories should be
+            created.
+    """
+
     root = Path(base_dir)
     for relative_path in (
         DATA_DIR,
@@ -26,6 +37,13 @@ def ensure_data_dirs(base_dir: Path | str = ".") -> None:
 
 
 def save_json(path: Path | str, data: Any) -> None:
+    """Write JSON data to disk and create missing parent directories.
+
+    Args:
+        path: Destination JSON file path.
+        data: JSON-serializable payload to persist.
+    """
+
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("w", encoding="utf-8") as file:
@@ -34,6 +52,16 @@ def save_json(path: Path | str, data: Any) -> None:
 
 
 def load_json(path: Path | str, default: Any | None = None) -> Any:
+    """Load JSON data from disk or return the caller-provided default.
+
+    Args:
+        path: Source JSON file path.
+        default: Value returned when the file does not exist.
+
+    Raises:
+        JsonStorageError: If the file exists but contains malformed JSON.
+    """
+
     target = Path(path)
     if not target.exists():
         return default
@@ -47,6 +75,13 @@ def load_json(path: Path | str, default: Any | None = None) -> Any:
 
 
 def save_model(path: Path | str, model: Any) -> None:
+    """Serialize a Pydantic-compatible model as JSON at the given path.
+
+    Args:
+        path: Destination JSON file path.
+        model: Pydantic model or type-adaptable object to persist.
+    """
+
     if isinstance(model, BaseModel):
         payload = model.model_dump(mode="json")
     else:
@@ -55,6 +90,17 @@ def save_model(path: Path | str, model: Any) -> None:
 
 
 def load_model(path: Path | str, model_type: Any, default: Any | None = None) -> Any:
+    """Load JSON from disk and validate it as the requested model type.
+
+    Args:
+        path: Source JSON file path.
+        model_type: Pydantic model type or supported type annotation.
+        default: Value returned when the file does not exist.
+
+    Returns:
+        The validated model instance or the provided default.
+    """
+
     payload = load_json(path, default=default)
     if payload is default:
         return default
