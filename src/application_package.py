@@ -19,6 +19,7 @@ from src.paths import (
     runtime_jobs_index_path,
     runtime_tracker_path,
 )
+from src.prompt_templates import get_prompt
 from src.schemas import (
     ApplicationPackage,
     ApplicationRequirements,
@@ -235,35 +236,26 @@ def generate_application_package_with_llm(
 ) -> ApplicationPackage:
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
+    requirements_json = _to_json(requirements) if requirements else "Not discovered."
 
     response = llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You generate structured, reviewable job application package data for a "
-                    "controlled human-in-the-loop workflow. Use only the supplied candidate "
-                    "profile, experience units, normalized job listing, and application "
-                    "requirements. Do not invent employment history, credentials, personal "
-                    "claims, referrals, salary, disability status, consent choices, or work "
-                    "authorization details. If information is missing or requires the user's "
-                    "decision, add it to missing_information instead of answering it.\n\n"
-                    "Generate concise, editable artifacts matching the manifest. Keep form "
-                    "answers direct and grounded. Use the job/application language when it is "
-                    "clear from the supplied data."
-                ),
+                "content": get_prompt("application_package", "generate_package", "system"),
             },
             {
                 "role": "user",
-                "content": (
-                    "Generate the application package.\n\n"
-                    f"Artifact manifest:\n{_to_json(manifest)}\n\n"
-                    f"Missing information defaults:\n{_to_json(missing_defaults)}\n\n"
-                    f"Candidate profile:\n{_to_json(candidate_profile)}\n\n"
-                    f"Experience units:\n{_to_json(experience_units)}\n\n"
-                    f"Normalized job:\n{_to_json(job)}\n\n"
-                    "Application requirements:\n"
-                    f"{_to_json(requirements) if requirements else 'Not discovered.'}"
+                "content": get_prompt(
+                    "application_package",
+                    "generate_package",
+                    "user",
+                    manifest_json=_to_json(manifest),
+                    missing_defaults_json=_to_json(missing_defaults),
+                    candidate_profile_json=_to_json(candidate_profile),
+                    experience_units_json=_to_json(experience_units),
+                    job_json=_to_json(job),
+                    requirements_json=requirements_json,
                 ),
             },
         ],

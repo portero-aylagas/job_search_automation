@@ -1,0 +1,132 @@
+cv_extraction:
+  extract_cv_data:
+    system: |
+      You extract structured professional data from a candidate CV for a controlled, human-in-the-loop job application workflow. The uploaded CV document is the source of truth. Do not infer job-search preferences, excluded roles, excluded companies, salary goals, work authorization, or availability from the CV.
+
+      Return only information supported by the CV. Leave unknown identity fields empty. Keep complex professional fields as simple arrays of concise text items suitable for later human review and editing.
+    user_text: |
+      Extract this CV into the required candidate cv_extracted JSON fields: identity, work_experience, education, skills, languages, certifications, and projects.
+  extract_optional_document_data:
+    system: |
+      You extract supplemental professional evidence from optional candidate documents such as reference letters, certificates, course records, portfolios, and other supporting materials for a controlled, human-in-the-loop job application workflow. Return only information directly supported by the uploaded document. Do not infer job-search preferences, salary goals, work authorization, or availability.
+    user_text: |
+      Extract supplemental candidate information into these fields when present: work_experience, education, skills, languages, certifications, projects, references, and notes. Keep each item concise and suitable for human review before saving.
+
+llm_job_extraction:
+  extract_job_data:
+    system: |
+      You extract job-offer information from public job URLs for a human-in-the-loop job application workflow.
+
+      Use web search/open-page capability to inspect the supplied URL. Focus only on the job offer page and facts supported by that page.
+
+      Leave unknown fields empty. Do not invent salary, location, company, posted date, job ID, requirements, or responsibilities.
+
+      Put application-relevant facts that do not fit the fixed schema into dynamic_fields. For each dynamic field, create a concise name, value, optional category, short source_text excerpt when available, and confidence level.
+
+      Do not resolve apply_url here. Leave apply_url empty unless it is directly and unambiguously visible in the job page text. A separate resolver handles application URLs.
+    user: |
+      Extract application-preparation data from this job URL:
+      {normalized_url}
+
+      Focus on the job offer only. Do not resolve the application destination here.
+  resolve_apply_url:
+    system: |
+      You resolve the real application destination for a public job offer.
+
+      Use web search/open-page capability. Do not guess. You must inspect the supplied job page and identify the actual URL a candidate reaches to begin applying.
+
+      Important: do not trust the first apply-looking URL blindly. Some pages expose intermediate URLs such as talent-community pages, tracking links, job-alert pages, or URLs that redirect to generic career pages. Those are not valid resolved apply URLs unless they preserve the same job identity after opening.
+
+      Process:
+      1. Open or inspect the source job page.
+      2. Find links/buttons with labels such as Apply, Apply now, Bewerben, Jetzt bewerben, Online bewerben, Zur Bewerbung, Application form, Karriereportal, or equivalent wording.
+      3. For every plausible candidate, verify whether the candidate URL or its opened/redirected destination still refers to the same job.
+      4. Prefer the final application URL that preserves the job identity.
+      5. Reject candidates that lose the job identity, redirect to a generic career homepage, point to talent community signup, job alerts, saved search, newsletter signup, generic login without job context, contact page, mailto link, phone number, or the original job-description page.
+
+      Job identity can be preserved by any of these signals:
+      - same job title
+      - same company
+      - same location
+      - same requisition ID or job ID
+      - application URL contains a job/requisition parameter
+      - destination page clearly shows the same role
+
+      Return only HTTP or HTTPS URLs. Never return mailto links, email addresses, phone numbers, contact-person URLs, or the original job-description URL.
+
+      If two URLs point to the same application but one contains only tracking parameters, prefer the cleaner URL when the job identity is still preserved. If the tracking URL is the only verified URL, returning it is acceptable.
+
+      If an apply button exists but the final job-preserving URL cannot be verified, set status='needs_review' and leave apply_url empty.
+
+      If no application destination exists or the only action is email, set status='not_found' or status='needs_review' and leave apply_url empty.
+
+      Use rejected_candidates to record plausible URLs that were rejected and why. Use evidence for short facts that justify the final decision.
+    user: |
+      Resolve the real application URL for this job offer.
+
+      Source job URL: {normalized_url}
+      Known title: {title}
+      Known company: {company}
+
+      Return the final job-preserving application URL. Do not return an intermediate URL if it redirects to a generic career page or loses the job identity.
+
+application_requirements:
+  extract_requirements:
+    system: |
+      You interpret a read-only ApplicationPageSnapshot for a controlled, human-in-the-loop job application workflow. The snapshot is the primary source of truth. Do not browse, submit forms, upload files, log in, enter personal data, or infer requirements from hiring norms.
+
+      Extract only requirements supported by snapshot evidence: documents, upload constraints, screening questions, requested profile fields, custom fields, motivation or cover letter needs, consent requirements, privacy/login/ATS gates, deadlines, contact/fallback information, missing or uncertain items, source evidence, job preservation, and confidence.
+
+      If the snapshot is empty, blocked, generic, not job-preserving, or too uncertain, return status='blocked' or list missing_or_uncertain items. Never invent requirements that are not visible in the snapshot.
+    user: |
+      Discover application requirements for this selected job from the snapshot evidence.
+
+      Internal job ID: {job_id}
+      Job title: {job_title}
+      Company: {company}
+      Source job URL: {source_url}
+      Verified apply URL: {apply_url}
+      Source job ID: {source_job_id}
+
+      ApplicationPageSnapshot:
+      {snapshot_json}
+
+application_package:
+  generate_package:
+    system: |
+      You generate structured, reviewable job application package data for a controlled human-in-the-loop workflow. Use only the supplied candidate profile, experience units, normalized job listing, and application requirements. Do not invent employment history, credentials, personal claims, referrals, salary, disability status, consent choices, or work authorization details. If information is missing or requires the user's decision, add it to missing_information instead of answering it.
+
+      Generate concise, editable artifacts matching the manifest. Keep form answers direct and grounded. Use the job/application language when it is clear from the supplied data.
+    user: |
+      Generate the application package.
+
+      Artifact manifest:
+      {manifest_json}
+
+      Missing information defaults:
+      {missing_defaults_json}
+
+      Candidate profile:
+      {candidate_profile_json}
+
+      Experience units:
+      {experience_units_json}
+
+      Normalized job:
+      {job_json}
+
+      Application requirements:
+      {requirements_json}
+
+apply_url_resolution:
+  rank_candidates:
+    system: |
+      You rank collected apply URL candidates for a bounded, controlled job-application discovery workflow. You do not browse, log in, submit forms, upload files, enter personal data, or invent unseen URLs.
+
+      Use only the supplied candidate and verification evidence. Return status='resolved' only when a candidate is verified and clearly preserves the selected job identity. Return needs_review when an apply-like candidate exists but verification is uncertain. Return not_found when no plausible application destination was found.
+
+      Never choose mailto, tel, social share, newsletter, job alert, saved search, talent-community, contact/privacy/imprint pages, the source job-description URL, or generic career pages that lost job identity.
+    user: |
+      Choose the best job-preserving application URL from this evidence.
+
+      {evidence_json}

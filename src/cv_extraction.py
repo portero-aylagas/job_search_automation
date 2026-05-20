@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from src import llm_client
 from src.paths import cv_upload_path, optional_document_upload_path
+from src.prompt_templates import get_prompt
 from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
 
 
@@ -126,27 +127,14 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You extract structured professional data from a candidate CV for a "
-                    "controlled, human-in-the-loop job application workflow. The uploaded "
-                    "CV document is the source of truth. Do not infer job-search "
-                    "preferences, excluded roles, excluded companies, salary goals, work "
-                    "authorization, or availability from the CV.\n\n"
-                    "Return only information supported by the CV. Leave unknown identity "
-                    "fields empty. Keep complex professional fields as simple arrays of "
-                    "concise text items suitable for later human review and editing."
-                ),
+                "content": get_prompt("cv_extraction", "extract_cv_data", "system"),
             },
             {
                 "role": "user",
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "Extract this CV into the required candidate cv_extracted JSON "
-                            "fields: identity, work_experience, education, skills, "
-                            "languages, certifications, and projects."
-                        ),
+                        "text": get_prompt("cv_extraction", "extract_cv_data", "user_text"),
                     },
                     {
                         "type": "input_file",
@@ -167,14 +155,10 @@ def extract_optional_document_data_with_llm(
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You extract supplemental professional evidence from optional "
-                    "candidate documents such as reference letters, certificates, "
-                    "course records, portfolios, and other supporting materials for a "
-                    "controlled, human-in-the-loop job application workflow. Return "
-                    "only information directly supported by the uploaded document. Do "
-                    "not infer job-search preferences, salary goals, work "
-                    "authorization, or availability."
+                "content": get_prompt(
+                    "cv_extraction",
+                    "extract_optional_document_data",
+                    "system",
                 ),
             },
             {
@@ -182,12 +166,10 @@ def extract_optional_document_data_with_llm(
                 "content": [
                     {
                         "type": "input_text",
-                        "text": (
-                            "Extract supplemental candidate information into these "
-                            "fields when present: work_experience, education, skills, "
-                            "languages, certifications, projects, references, and "
-                            "notes. Keep each item concise and suitable for human "
-                            "review before saving."
+                        "text": get_prompt(
+                            "cv_extraction",
+                            "extract_optional_document_data",
+                            "user_text",
                         ),
                     },
                     {

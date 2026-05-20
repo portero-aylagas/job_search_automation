@@ -16,6 +16,7 @@ from src.llm_job_extraction import (
     RejectedApplyCandidate,
     resolve_apply_url_from_url,
 )
+from src.prompt_templates import get_prompt
 from src.url_validation import validate_source_url
 
 MAX_SOURCE_PAGE_CHARS = 100_000
@@ -580,26 +581,15 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You rank collected apply URL candidates for a bounded, controlled "
-                    "job-application discovery workflow. You do not browse, log in, "
-                    "submit forms, upload files, enter personal data, or invent unseen "
-                    "URLs.\n\n"
-                    "Use only the supplied candidate and verification evidence. Return "
-                    "status='resolved' only when a candidate is verified and clearly "
-                    "preserves the selected job identity. Return needs_review when an "
-                    "apply-like candidate exists but verification is uncertain. Return "
-                    "not_found when no plausible application destination was found.\n\n"
-                    "Never choose mailto, tel, social share, newsletter, job alert, saved "
-                    "search, talent-community, contact/privacy/imprint pages, the source "
-                    "job-description URL, or generic career pages that lost job identity."
-                ),
+                "content": get_prompt("apply_url_resolution", "rank_candidates", "system"),
             },
             {
                 "role": "user",
-                "content": (
-                    "Choose the best job-preserving application URL from this evidence.\n\n"
-                    f"{evidence_json}"
+                "content": get_prompt(
+                    "apply_url_resolution",
+                    "rank_candidates",
+                    "user",
+                    evidence_json=evidence_json,
                 ),
             },
         ],

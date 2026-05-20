@@ -101,10 +101,15 @@ job_search_automation/
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
-│   ├── scoring.py
-│   ├── llm.py
-│   ├── workflow.py
-│   └── job_search.py
+│   ├── llm_client.py
+│   ├── prompt_templates.py
+│   ├── prompts.yaml
+│   ├── cv_extraction.py
+│   ├── llm_job_extraction.py
+│   ├── apply_url_resolution.py
+│   ├── application_requirements.py
+│   ├── application_package.py
+│   └── ...
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
@@ -140,6 +145,10 @@ The `skills/` directory contains development-support skills used during implemen
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
+
+AI prompt text is stored in `src/prompts.yaml` and loaded through
+`src/prompt_templates.py`. Live OpenAI calls remain behind `src/llm_client.py`,
+so prompt edits and provider-boundary changes stay reviewable and separate.
 
 ---
 
