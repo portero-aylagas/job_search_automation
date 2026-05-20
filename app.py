@@ -546,6 +546,34 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
     return errors
 
 
+def get_application_package_blockers(
+    candidate_profile: CandidateProfile,
+    job: JobListing,
+    requirements: ApplicationRequirements | None,
+) -> list[str]:
+    blockers: list[str] = []
+    profile_errors = validate_candidate_profile(candidate_profile)
+
+    if profile_errors:
+        blockers.append(
+            "Complete the candidate profile: " + ", ".join(profile_errors)
+        )
+    if not candidate_profile.candidate_profile.source_documents.cv.parsed:
+        blockers.append("Parse the candidate CV before generating application material.")
+    if not (job.description or "").strip():
+        blockers.append(
+            "Parse and save the job description before generating application material."
+        )
+    if requirements is None:
+        blockers.append("Discover application requirements before generating application material.")
+    elif requirements.status != "discovered" or not requirements.job_preserving:
+        blockers.append(
+            "Resolve application requirements before generating application material."
+        )
+
+    return blockers
+
+
 def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
     st.title("Tracker")
     sorted_records = sorted(
@@ -733,20 +761,17 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
     candidate_profile = load_candidate_profile(base_dir)
     experience_units = load_experience_units(base_dir)
 
-    profile_errors = validate_candidate_profile(candidate_profile)
-    if profile_errors:
-        st.warning("Candidate profile is incomplete: " + ", ".join(profile_errors))
-
-    if requirements is None:
-        st.info("No application requirements found. Package generation can continue with job data.")
-    elif requirements.status == "blocked":
+    package_blockers = get_application_package_blockers(candidate_profile, job, requirements)
+    if package_blockers:
         st.warning(
-            "Application requirements are blocked. Review requirements before relying on output."
+            "Application package generation is blocked until these prerequisites are complete:"
         )
+        for blocker in package_blockers:
+            st.write(f"- {blocker}")
 
-    if st.button("Generate Application Package"):
-        if profile_errors:
-            st.error("Complete the candidate profile before generating application material.")
+    if st.button("Generate Application Package", disabled=bool(package_blockers)):
+        if package_blockers:
+            st.error("Complete all package prerequisites before generating application material.")
             return
         try:
             with st.spinner("Generating application package..."):
