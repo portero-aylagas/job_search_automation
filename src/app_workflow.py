@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
+from src.apply_url_resolution import resolve_apply_url_agentically
 from src.candidate_profile import validate_candidate_profile
 from src.job_intake import validate_apply_url
-from src.llm_job_extraction import ApplyUrlResolution
+from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, extract_job_data_from_url
 from src.paths import (
     application_requirements_paths,
     candidate_profile_path,
@@ -26,9 +30,45 @@ from src.schemas import (
 from src.storage import load_model, save_model
 
 
+class ApplyUrlResolver(Protocol):
+    def __call__(
+        self,
+        source_url: str,
+        *,
+        title: str,
+        company: str,
+        source_job_id: str,
+    ) -> ApplyUrlResolution: ...
+
+
+@dataclass(frozen=True)
+class JobIntakeExtractionResult:
+    extracted: ExtractedJobData
+    apply_resolution: ApplyUrlResolution
+
+
 def load_app_data(base_dir: Path | str) -> tuple[CandidateProfile, list[TrackerRecord]]:
     bootstrap_sample_data(base_dir)
     return load_candidate_profile(base_dir), load_jobs_index(base_dir)
+
+
+def extract_job_intake_data(
+    source_url: str,
+    *,
+    extractor: Callable[[str], ExtractedJobData] = extract_job_data_from_url,
+    resolver: ApplyUrlResolver = resolve_apply_url_agentically,
+) -> JobIntakeExtractionResult:
+    extracted = extractor(source_url)
+    apply_resolution = resolver(
+        source_url,
+        title=extracted.title,
+        company=extracted.company,
+        source_job_id=extracted.source_job_id,
+    )
+    return JobIntakeExtractionResult(
+        extracted=extracted,
+        apply_resolution=apply_resolution,
+    )
 
 
 def load_candidate_profile(base_dir: Path | str) -> CandidateProfile:
