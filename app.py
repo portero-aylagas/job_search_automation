@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from src.app_workflow import (
     apply_resolution_details,
     apply_url_review_messages,
+    extract_job_intake_data,
     get_application_package_blockers,
     lines_from_text,
     load_app_data,
@@ -35,7 +36,6 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
-from src.apply_url_resolution import resolve_apply_url_agentically
 from src.candidate_profile import (
     merge_supplemental_extracted_data,
     validate_candidate_profile,
@@ -53,7 +53,6 @@ from src.job_intake import (
 from src.llm_job_extraction import (
     ApplyUrlResolution,
     ExtractedJobData,
-    extract_job_data_from_url,
 )
 from src.schemas import (
     AIWorkflowTrace,
@@ -1045,20 +1044,16 @@ def render_job_url_extraction_form() -> tuple[bool, str]:
 def handle_job_url_extraction(source_url: str) -> bool:
     try:
         with st.spinner("Extracting job data with AI..."):
-            extracted = extract_job_data_from_url(source_url)
-            apply_resolution = resolve_apply_url_agentically(
-                source_url,
-                title=extracted.title,
-                company=extracted.company,
-                source_job_id=extracted.source_job_id,
-            )
+            extraction_result = extract_job_intake_data(source_url)
     except (RuntimeError, ValueError) as exc:
         st.error(str(exc))
         return False
 
     st.session_state["job_intake_source_url"] = source_url.strip()
-    st.session_state["job_intake_extracted"] = extracted.model_dump(mode="json")
-    st.session_state["job_intake_apply_resolution"] = apply_resolution.model_dump(mode="json")
+    st.session_state["job_intake_extracted"] = extraction_result.extracted.model_dump(mode="json")
+    st.session_state["job_intake_apply_resolution"] = (
+        extraction_result.apply_resolution.model_dump(mode="json")
+    )
     return True
 
 
