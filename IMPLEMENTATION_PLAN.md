@@ -314,6 +314,9 @@ units + job data guided by those requirements.
 - application form answer generation
 - markdown package rendering from JSON
 - application package save/load
+- package generation gate that requires a complete candidate profile, parsed
+  CV, parsed job description, and discovered job-preserving application
+  requirements before generating application material
 
 ### Generated Outputs
 

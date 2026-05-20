@@ -247,6 +247,11 @@ The package JSON is the source of truth. Markdown exports are generated from the
 full package when needed. When `application_requirements.json` exists, package
 generation uses it to decide which artifacts and answers are needed.
 
+Package generation is gated. The candidate profile mandatory fields must be
+complete, the CV must be parsed, the normalized job must include a parsed
+description, and application requirements must be discovered as job-preserving
+from the apply URL before a package can be generated.
+
 ### Tracker Record
 
 Application tracking information:
