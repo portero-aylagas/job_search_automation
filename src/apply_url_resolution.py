@@ -16,6 +16,7 @@ from src.llm_job_extraction import (
     RejectedApplyCandidate,
     _get_openai_client,
     _validate_source_url,
+    resolve_apply_url_from_url,
 )
 
 MAX_SOURCE_PAGE_CHARS = 100_000
@@ -133,6 +134,11 @@ class ApplyUrlResolutionState(TypedDict, total=False):
     candidates: list[ApplyUrlCandidate]
     verified_candidates: list[ApplyUrlCandidate]
     rejected_candidates: list[RejectedApplyCandidate]
+    candidate_discovery_mode: Literal[
+        "static_candidates_found",
+        "llm_fallback_candidate_found",
+        "no_candidates_at_all",
+    ]
     resolution: ApplyUrlResolution
     errors: list[str]
     fetcher: Callable[[str], FetchResult] | None
@@ -245,12 +251,33 @@ def _extract_candidates_node(state: ApplyUrlResolutionState) -> dict[str, Any]:
         state["source_url"],
         final_source_url=state.get("final_source_url", ""),
     )
+    candidates = list(result["candidates"])
+    rejected_candidates = [
+        *state.get("rejected_candidates", []),
+        *result["rejected_candidates"],
+    ]
+    if candidates:
+        return {
+            "candidates": candidates,
+            "rejected_candidates": rejected_candidates,
+            "candidate_discovery_mode": "static_candidates_found",
+        }
+
+    llm_candidate, fallback_rejected, fallback_errors = _llm_fallback_candidate(state)
+    rejected_candidates.extend(fallback_rejected)
+    if llm_candidate is not None:
+        return {
+            "candidates": [llm_candidate],
+            "rejected_candidates": rejected_candidates,
+            "candidate_discovery_mode": "llm_fallback_candidate_found",
+            "errors": [*state.get("errors", []), *fallback_errors],
+        }
+
     return {
-        "candidates": result["candidates"],
-        "rejected_candidates": [
-            *state.get("rejected_candidates", []),
-            *result["rejected_candidates"],
-        ],
+        "candidates": [],
+        "rejected_candidates": rejected_candidates,
+        "candidate_discovery_mode": "no_candidates_at_all",
+        "errors": [*state.get("errors", []), *fallback_errors],
     }
 
 
@@ -639,7 +666,7 @@ def no_candidate_resolution(state: ApplyUrlResolutionState) -> ApplyUrlResolutio
     return ApplyUrlResolution(
         status="not_found",
         apply_url="",
-        notes="No plausible application URL candidate was found on the source job page.",
+        notes=_no_candidate_notes(state),
         evidence=[*state.get("errors", [])],
         rejected_candidates=state.get("rejected_candidates", []),
         confidence="low",
@@ -855,6 +882,40 @@ def _append_candidate_or_rejection(
     )
 
 
+def _llm_fallback_candidate(
+    state: ApplyUrlResolutionState,
+) -> tuple[ApplyUrlCandidate | None, list[RejectedApplyCandidate], list[str]]:
+    rejected: list[RejectedApplyCandidate] = []
+    try:
+        resolution = resolve_apply_url_from_url(
+            state["source_url"],
+            title=state.get("title", ""),
+            company=state.get("company", ""),
+        )
+    except Exception as exc:
+        return None, [], [f"LLM fallback candidate generation failed: {exc}"]
+
+    fallback_url = resolution.apply_url.strip()
+    if not fallback_url:
+        return None, [], []
+
+    candidates: list[ApplyUrlCandidate] = []
+    evidence_parts = [resolution.notes.strip(), *resolution.evidence]
+    _append_candidate_or_rejection(
+        candidates,
+        rejected,
+        raw_url=fallback_url,
+        source_url=state["source_url"],
+        final_source_url=state.get("final_source_url", ""),
+        source="llm_suggested",
+        label="LLM-suggested apply URL",
+        evidence=_clip(" | ".join(part for part in evidence_parts if part), 500),
+    )
+    if candidates:
+        return candidates[0], rejected, []
+    return None, rejected, []
+
+
 def _extract_element_urls(element: Any) -> list[tuple[str, str]]:
     urls: list[tuple[str, str]] = []
     onclick = element.get("onclick")
@@ -967,6 +1028,21 @@ def _candidate_verification_evidence(
     if candidate.evidence:
         parts.append(f"evidence={candidate.evidence}")
     return _clip(" | ".join(parts), 1000)
+
+
+def _no_candidate_notes(state: ApplyUrlResolutionState) -> str:
+    mode = state.get("candidate_discovery_mode")
+    if mode == "llm_fallback_candidate_found":
+        return (
+            "Only the LLM fallback produced an apply-like candidate, but deterministic "
+            "verification rejected it."
+        )
+    if mode == "no_candidates_at_all":
+        return (
+            "No plausible application URL candidate was found on the source job page or "
+            "through the fallback candidate generator."
+        )
+    return "No plausible application URL candidate was found on the source job page."
 
 
 def _dedupe_candidates(candidates: list[ApplyUrlCandidate]) -> list[ApplyUrlCandidate]:
