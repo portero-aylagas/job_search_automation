@@ -16,6 +16,7 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
+from src.apply_url_resolution import resolve_apply_url_agentically
 from src.cv_extraction import (
     run_cv_extraction_task,
     run_optional_document_extraction_task,
@@ -31,7 +32,6 @@ from src.llm_job_extraction import (
     ApplyUrlResolution,
     ExtractedJobData,
     extract_job_data_from_url,
-    resolve_apply_url_from_url,
 )
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
@@ -1059,10 +1059,11 @@ def render_job_intake_page(base_dir: Path) -> None:
         try:
             with st.spinner("Extracting job data with AI..."):
                 extracted = extract_job_data_from_url(source_url)
-                apply_resolution = resolve_apply_url_from_url(
+                apply_resolution = resolve_apply_url_agentically(
                     source_url,
                     title=extracted.title,
                     company=extracted.company,
+                    source_job_id=extracted.source_job_id,
                 )
         except (RuntimeError, ValueError) as exc:
             st.error(str(exc))
