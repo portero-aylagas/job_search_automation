@@ -302,19 +302,22 @@ def test_discovery_delegates_application_contract_to_llm_extractor() -> None:
     assert requirements.motivation_letter is not None
 
 
-def test_generic_career_page_can_be_blocked_by_llm_extractor() -> None:
+def test_generic_career_page_blocks_before_llm_extraction() -> None:
     job = make_job(apply_url="https://example.com/careers")
+
+    def fail_extractor(_job, _snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
+        raise AssertionError("The LLM extractor should not run for generic career pages.")
 
     requirements = discover_application_requirements(
         job,
         page_content=fixture_html("generic_career_page.html"),
-        extractor=lambda received_job, _snapshot: blocked_requirements(received_job),
+        extractor=fail_extractor,
     )
 
     assert requirements.status == "blocked"
     assert requirements.job_preserving is False
     assert requirements.blocked_reason == (
-        "Apply page does not preserve the selected job identity."
+        "Apply page is a generic careers page and does not preserve the selected job."
     )
 
 
@@ -349,7 +352,7 @@ def test_non_preserving_discovered_output_is_converted_to_blocked() -> None:
 
     requirements = discover_application_requirements(
         job,
-        page_content=fixture_html("generic_career_page.html"),
+        page_content=fixture_html("simple_ats_form.html"),
         extractor=fake_extractor,
     )
 
@@ -407,6 +410,30 @@ def test_missing_local_page_content_blocks_before_llm_extraction() -> None:
     assert requirements.job_preserving is False
     assert "No local page content supplied." in requirements.blocked_reason
     assert "No static HTML content was available" in requirements.blocked_reason
+    assert requirements.confidence == "low"
+
+
+def test_redirected_apply_page_without_job_identity_blocks_before_llm_extraction() -> None:
+    job = make_job()
+
+    def fail_extractor(_job, _snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
+        raise AssertionError("The LLM extractor should not run for non-preserving redirects.")
+
+    requirements = discover_application_requirements(
+        job,
+        page_content=(
+            "<html><body><h1>Product Manager</h1>"
+            "<form><input name='cv'></form></body></html>"
+        ),
+        final_url="https://ats.example.com/jobs/product-manager/apply",
+        extractor=fail_extractor,
+    )
+
+    assert requirements.status == "blocked"
+    assert requirements.job_preserving is False
+    assert requirements.blocked_reason == (
+        "Apply page redirected without preserving the selected job identity."
+    )
     assert requirements.confidence == "low"
 
 
@@ -525,8 +552,9 @@ def test_requirements_graph_invokes_inspection_before_llm_extraction() -> None:
         calls.append("inspect_application_page_agent")
         return ApplicationPageSnapshot(
             requested_url=str(received_job.apply_url),
-            final_url="https://ats.example.com/apply",
+            final_url="https://ats.example.com/jobs/automation-engineer/apply",
             evidence_matches=["Upload CV"],
+            job_preserving_signals=["title: Automation Engineer"],
         )
 
     def fake_extractor(received_job, snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
