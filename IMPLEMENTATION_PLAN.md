@@ -27,6 +27,11 @@ Do not start new feature phases with web search, browser automation, or external
 - Candidate profile storage now uses `data/candidate_profile.json`; local CV
   uploads and generated candidate-profile data are ignored by git because they
   contain personal CV-derived data.
+- Job Intake now resolves `apply_url` through a bounded LangGraph-compatible
+  workflow that extracts static candidates from the source page, verifies job
+  identity deterministically, records rejected candidates, and uses the older
+  LLM resolver only as a fallback candidate generator when no static candidates
+  are found.
 
 ### Not Delivered Yet
 

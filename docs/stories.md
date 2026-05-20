@@ -350,10 +350,10 @@ Completed in the current branch:
 - Extracted fields appear in a human review form only after AI extraction.
 - Dynamic extracted details are displayed as normal name/value fields and saved in `job_details.dynamic_fields`.
 - `apply_url` is blocked if missing, not an `http(s)` URL, or not job-preserving.
+- Apply-link resolution now uses a bounded workflow: deterministic candidate extraction and verification run first, rejected candidates are preserved, and the prior LLM resolver is used only as a fallback candidate generator that still requires deterministic verification.
 - Tracker and Jobs now read from the shared `data/runtime/jobs.json` index.
 
 Open follow-ups:
 
-- #35: stricter apply URL reachability and job-identity validation before downstream workflow steps.
 - #36: source-grounding checks for hallucinated or unsupported AI extraction content, including rejected apply-link candidates.
 - #37: duplicate management and a proper applied-jobs tracker view.
