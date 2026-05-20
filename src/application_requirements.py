@@ -22,6 +22,7 @@ from src.paths import (
     runtime_application_page_snapshot_path,
     runtime_application_requirements_path,
 )
+from src.prompt_templates import get_prompt
 from src.schemas import (
     ApplicationFormField,
     ApplicationPageControl,
@@ -564,34 +565,25 @@ def extract_application_requirements_with_llm(
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You interpret a read-only ApplicationPageSnapshot for a controlled, "
-                    "human-in-the-loop job application workflow. The snapshot is the "
-                    "primary source of truth. Do not browse, submit forms, upload files, "
-                    "log in, enter personal data, or infer requirements from hiring norms.\n\n"
-                    "Extract only requirements supported by snapshot evidence: documents, "
-                    "upload constraints, screening questions, requested profile fields, "
-                    "custom fields, motivation or cover letter needs, consent requirements, "
-                    "privacy/login/ATS gates, deadlines, contact/fallback information, "
-                    "missing or uncertain items, source evidence, job preservation, and "
-                    "confidence.\n\n"
-                    "If the snapshot is empty, blocked, generic, not job-preserving, or too "
-                    "uncertain, return status='blocked' or list missing_or_uncertain items. "
-                    "Never invent requirements that are not visible in the snapshot."
+                "content": get_prompt(
+                    "application_requirements",
+                    "extract_requirements",
+                    "system",
                 ),
             },
             {
                 "role": "user",
-                "content": (
-                    "Discover application requirements for this selected job from the "
-                    "snapshot evidence.\n\n"
-                    f"Internal job ID: {job.id}\n"
-                    f"Job title: {job.title}\n"
-                    f"Company: {job.company}\n"
-                    f"Source job URL: {job.source_url}\n"
-                    f"Verified apply URL: {apply_url}\n"
-                    f"Source job ID: {job.source_job_id or 'Unknown'}\n\n"
-                    f"ApplicationPageSnapshot:\n{snapshot_json}"
+                "content": get_prompt(
+                    "application_requirements",
+                    "extract_requirements",
+                    "user",
+                    job_id=job.id,
+                    job_title=job.title,
+                    company=job.company,
+                    source_url=job.source_url,
+                    apply_url=apply_url,
+                    source_job_id=job.source_job_id or "Unknown",
+                    snapshot_json=snapshot_json,
                 ),
             },
         ],

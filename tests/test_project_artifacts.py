@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from src.prompt_templates import get_prompt, load_prompt_templates
+
 
 def test_core_project_artifacts_exist() -> None:
     required_paths = [
@@ -30,4 +32,18 @@ def test_llm_provider_calls_stay_behind_llm_client() -> None:
 
     assert not violations, "Provider calls must stay in src/llm_client.py: " + ", ".join(
         violations
+    )
+
+
+def test_prompt_templates_exist_and_render() -> None:
+    templates = load_prompt_templates()
+
+    assert isinstance(templates, dict)
+    assert Path("src/prompts.yaml").is_file()
+    assert "candidate CV" in get_prompt("cv_extraction", "extract_cv_data", "system")
+    assert "https://example.com/job" in get_prompt(
+        "llm_job_extraction",
+        "extract_job_data",
+        "user",
+        normalized_url="https://example.com/job",
     )

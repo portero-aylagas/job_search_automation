@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from src import llm_client
+from src.prompt_templates import get_prompt
 from src.url_validation import validate_source_url
 
 
@@ -65,29 +66,15 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You extract job-offer information from public job URLs for a "
-                    "human-in-the-loop job application workflow.\n\n"
-                    "Use web search/open-page capability to inspect the supplied URL. "
-                    "Focus only on the job offer page and facts supported by that page.\n\n"
-                    "Leave unknown fields empty. Do not invent salary, location, company, "
-                    "posted date, job ID, requirements, or responsibilities.\n\n"
-                    "Put application-relevant facts that do not fit the fixed schema into "
-                    "dynamic_fields. For each dynamic field, create a concise name, value, "
-                    "optional category, short source_text excerpt when available, and "
-                    "confidence level.\n\n"
-                    "Do not resolve apply_url here. Leave apply_url empty unless it is "
-                    "directly and unambiguously visible in the job page text. A separate "
-                    "resolver handles application URLs."
-                ),
+                "content": get_prompt("llm_job_extraction", "extract_job_data", "system"),
             },
             {
                 "role": "user",
-                "content": (
-                    "Extract application-preparation data from this job URL:\n"
-                    f"{normalized_url}\n\n"
-                    "Focus on the job offer only. Do not resolve the application "
-                    "destination here."
+                "content": get_prompt(
+                    "llm_job_extraction",
+                    "extract_job_data",
+                    "user",
+                    normalized_url=normalized_url,
                 ),
             },
         ],
@@ -110,60 +97,17 @@ def resolve_apply_url_from_url(
         input=[
             {
                 "role": "system",
-                "content": (
-                    "You resolve the real application destination for a public job offer.\n\n"
-                    "Use web search/open-page capability. Do not guess. You must inspect "
-                    "the supplied job page and identify the actual URL a candidate reaches "
-                    "to begin applying.\n\n"
-                    "Important: do not trust the first apply-looking URL blindly. Some "
-                    "pages expose intermediate URLs such as talent-community pages, tracking "
-                    "links, job-alert pages, or URLs that redirect to generic career pages. "
-                    "Those are not valid resolved apply URLs unless they preserve the same "
-                    "job identity after opening.\n\n"
-                    "Process:\n"
-                    "1. Open or inspect the source job page.\n"
-                    "2. Find links/buttons with labels such as Apply, Apply now, Bewerben, "
-                    "Jetzt bewerben, Online bewerben, Zur Bewerbung, Application form, "
-                    "Karriereportal, or equivalent wording.\n"
-                    "3. For every plausible candidate, verify whether the candidate URL or "
-                    "its opened/redirected destination still refers to the same job.\n"
-                    "4. Prefer the final application URL that preserves the job identity.\n"
-                    "5. Reject candidates that lose the job identity, redirect to a generic "
-                    "career homepage, point to talent community signup, job alerts, saved "
-                    "search, newsletter signup, generic login without job context, contact "
-                    "page, mailto link, phone number, or the original job-description page.\n\n"
-                    "Job identity can be preserved by any of these signals:\n"
-                    "- same job title\n"
-                    "- same company\n"
-                    "- same location\n"
-                    "- same requisition ID or job ID\n"
-                    "- application URL contains a job/requisition parameter\n"
-                    "- destination page clearly shows the same role\n\n"
-                    "Return only HTTP or HTTPS URLs. Never return mailto links, email "
-                    "addresses, phone numbers, contact-person URLs, or the original "
-                    "job-description URL.\n\n"
-                    "If two URLs point to the same application but one contains only tracking "
-                    "parameters, prefer the cleaner URL when the job identity is still "
-                    "preserved. If the tracking URL is the only verified URL, returning it is "
-                    "acceptable.\n\n"
-                    "If an apply button exists but the final job-preserving URL cannot be "
-                    "verified, set status='needs_review' and leave apply_url empty.\n\n"
-                    "If no application destination exists or the only action is email, set "
-                    "status='not_found' or status='needs_review' and leave apply_url empty.\n\n"
-                    "Use rejected_candidates to record plausible URLs that were rejected and "
-                    "why. Use evidence for short facts that justify the final decision."
-                ),
+                "content": get_prompt("llm_job_extraction", "resolve_apply_url", "system"),
             },
             {
                 "role": "user",
-                "content": (
-                    "Resolve the real application URL for this job offer.\n\n"
-                    f"Source job URL: {normalized_url}\n"
-                    f"Known title: {title.strip() or 'Unknown'}\n"
-                    f"Known company: {company.strip() or 'Unknown'}\n\n"
-                    "Return the final job-preserving application URL. Do not return an "
-                    "intermediate URL if it redirects to a generic career page or loses the "
-                    "job identity."
+                "content": get_prompt(
+                    "llm_job_extraction",
+                    "resolve_apply_url",
+                    "user",
+                    normalized_url=normalized_url,
+                    title=title.strip() or "Unknown",
+                    company=company.strip() or "Unknown",
                 ),
             },
         ],
