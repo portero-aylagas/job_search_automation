@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import streamlit as st
@@ -115,6 +116,25 @@ CAREER_LEVEL_HELP = {
     "principal": "Expert individual contributor with broad technical depth.",
     "manager": "People or team leadership role.",
 }
+
+
+@dataclass(frozen=True)
+class JobReviewFormState:
+    title: str
+    company: str
+    location: str
+    remote_policy: str
+    apply_url: str
+    salary: str
+    posted_date: str
+    source_job_id: str
+    description: str
+    requirements: str
+    responsibilities: str
+    nice_to_have_skills: str
+    dynamic_fields: list[dict[str, object]]
+    save_submitted: bool
+    clear_submitted: bool
 
 
 def get_candidate_profile_draft(base_dir: Path) -> dict:
@@ -1014,40 +1034,40 @@ def format_detail_value(value: object) -> str:
     return str(value)
 
 
-def render_job_intake_page(base_dir: Path) -> None:
-    st.title("Job Intake")
-    st.write("Generate application data from a job URL.")
-
-    success_message = st.session_state.pop("job_intake_success", None)
-    if success_message:
-        st.success(success_message)
-
+def render_job_url_extraction_form() -> tuple[bool, str]:
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
         st.caption("This action uses AI and may perform web search to resolve the apply URL.")
         extract_submitted = st.form_submit_button("Extract Application Data")
+    return extract_submitted, source_url
 
-    if extract_submitted:
-        try:
-            with st.spinner("Extracting job data with AI..."):
-                extracted = extract_job_data_from_url(source_url)
-                apply_resolution = resolve_apply_url_agentically(
-                    source_url,
-                    title=extracted.title,
-                    company=extracted.company,
-                    source_job_id=extracted.source_job_id,
-                )
-        except (RuntimeError, ValueError) as exc:
-            st.error(str(exc))
-            return
-        st.session_state["job_intake_source_url"] = source_url.strip()
-        st.session_state["job_intake_extracted"] = extracted.model_dump(mode="json")
-        st.session_state["job_intake_apply_resolution"] = apply_resolution.model_dump(mode="json")
-        st.rerun()
 
+def handle_job_url_extraction(source_url: str) -> bool:
+    try:
+        with st.spinner("Extracting job data with AI..."):
+            extracted = extract_job_data_from_url(source_url)
+            apply_resolution = resolve_apply_url_agentically(
+                source_url,
+                title=extracted.title,
+                company=extracted.company,
+                source_job_id=extracted.source_job_id,
+            )
+    except (RuntimeError, ValueError) as exc:
+        st.error(str(exc))
+        return False
+
+    st.session_state["job_intake_source_url"] = source_url.strip()
+    st.session_state["job_intake_extracted"] = extracted.model_dump(mode="json")
+    st.session_state["job_intake_apply_resolution"] = apply_resolution.model_dump(mode="json")
+    return True
+
+
+def load_job_intake_review_state() -> (
+    tuple[ExtractedJobData, ApplyUrlResolution | None, str] | None
+):
     extracted_payload = st.session_state.get("job_intake_extracted")
     if not extracted_payload:
-        return
+        return None
 
     extracted_data = ExtractedJobData.model_validate(extracted_payload)
     apply_resolution_payload = st.session_state.get("job_intake_apply_resolution")
@@ -1057,6 +1077,14 @@ def render_job_intake_page(base_dir: Path) -> None:
         else None
     )
     source_url = st.session_state.get("job_intake_source_url", "")
+    return extracted_data, apply_resolution, source_url
+
+
+def render_job_intake_review_header(
+    extracted_data: ExtractedJobData,
+    apply_resolution: ApplyUrlResolution | None,
+    source_url: str,
+) -> str:
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
     render_ai_usage_summary(
@@ -1078,7 +1106,14 @@ def render_job_intake_page(base_dir: Path) -> None:
             "The application destination could not be verified automatically."
         )
         st.warning(message)
+    return final_apply_url
 
+
+def render_job_review_form(
+    extracted_data: ExtractedJobData,
+    source_url: str,
+    final_apply_url: str,
+) -> JobReviewFormState:
     with st.form("job_review_form"):
         left, right = st.columns(2)
         with left:
@@ -1148,42 +1183,107 @@ def render_job_intake_page(base_dir: Path) -> None:
         save_submitted = st.form_submit_button("Add To Application Workflow")
         clear_submitted = st.form_submit_button("Start Over")
 
-    if clear_submitted:
-        st.session_state.pop("job_intake_source_url", None)
-        st.session_state.pop("job_intake_extracted", None)
-        st.session_state.pop("job_intake_apply_resolution", None)
+    return JobReviewFormState(
+        title=title,
+        company=company,
+        location=location,
+        remote_policy=remote_policy,
+        apply_url=apply_url,
+        salary=salary,
+        posted_date=posted_date,
+        source_job_id=source_job_id,
+        description=description,
+        requirements=requirements,
+        responsibilities=responsibilities,
+        nice_to_have_skills=nice_to_have_skills,
+        dynamic_fields=dynamic_fields,
+        save_submitted=save_submitted,
+        clear_submitted=clear_submitted,
+    )
+
+
+def build_reviewed_job_listing(
+    form_state: JobReviewFormState,
+    extracted_data: ExtractedJobData,
+    source_url: str,
+    apply_resolution: ApplyUrlResolution | None,
+) -> JobListing:
+    dynamic_fields = [
+        field for field in form_state.dynamic_fields if field["name"] or field["value"]
+    ]
+    validate_reviewed_apply_url(form_state.apply_url, source_url, apply_resolution)
+    return create_job_listing(
+        title=form_state.title,
+        company=form_state.company,
+        source_url=source_url,
+        location=form_state.location,
+        remote_policy=form_state.remote_policy,
+        apply_url=form_state.apply_url,
+        description=form_state.description,
+        requirements=lines_from_text(form_state.requirements),
+        responsibilities=lines_from_text(form_state.responsibilities),
+        nice_to_have_skills=lines_from_text(form_state.nice_to_have_skills),
+        salary=form_state.salary,
+        posted_date=form_state.posted_date,
+        source_job_id=form_state.source_job_id,
+        job_details={
+            "extraction_confidence": extracted_data.confidence,
+            "job_extraction_trace": workflow_trace_payload(extracted_data.workflow_trace),
+            "apply_url_resolution": apply_resolution_details(
+                form_state.apply_url,
+                source_url,
+                apply_resolution,
+            ),
+            "dynamic_fields": dynamic_fields,
+        },
+    )
+
+
+def clear_job_intake_session_state() -> None:
+    st.session_state.pop("job_intake_source_url", None)
+    st.session_state.pop("job_intake_extracted", None)
+    st.session_state.pop("job_intake_apply_resolution", None)
+
+
+def render_job_intake_page(base_dir: Path) -> None:
+    st.title("Job Intake")
+    st.write("Generate application data from a job URL.")
+
+    success_message = st.session_state.pop("job_intake_success", None)
+    if success_message:
+        st.success(success_message)
+
+    extract_submitted, source_url = render_job_url_extraction_form()
+    if extract_submitted:
+        if handle_job_url_extraction(source_url):
+            st.rerun()
+        return
+
+    review_state = load_job_intake_review_state()
+    if review_state is None:
+        return
+
+    extracted_data, apply_resolution, source_url = review_state
+    final_apply_url = render_job_intake_review_header(
+        extracted_data,
+        apply_resolution,
+        source_url,
+    )
+    form_state = render_job_review_form(extracted_data, source_url, final_apply_url)
+
+    if form_state.clear_submitted:
+        clear_job_intake_session_state()
         st.rerun()
 
-    if not save_submitted:
+    if not form_state.save_submitted:
         return
 
     try:
-        dynamic_fields = [field for field in dynamic_fields if field["name"] or field["value"]]
-        validate_reviewed_apply_url(apply_url, source_url, apply_resolution)
-        job_listing = create_job_listing(
-            title=title,
-            company=company,
-            source_url=source_url,
-            location=location,
-            remote_policy=remote_policy,
-            apply_url=apply_url,
-            description=description,
-            requirements=lines_from_text(requirements),
-            responsibilities=lines_from_text(responsibilities),
-            nice_to_have_skills=lines_from_text(nice_to_have_skills),
-            salary=salary,
-            posted_date=posted_date,
-            source_job_id=source_job_id,
-            job_details={
-                "extraction_confidence": extracted_data.confidence,
-                "job_extraction_trace": workflow_trace_payload(extracted_data.workflow_trace),
-                "apply_url_resolution": apply_resolution_details(
-                    apply_url,
-                    source_url,
-                    apply_resolution,
-                ),
-                "dynamic_fields": dynamic_fields,
-            },
+        job_listing = build_reviewed_job_listing(
+            form_state,
+            extracted_data,
+            source_url,
+            apply_resolution,
         )
     except ValueError as exc:
         st.error(str(exc))
@@ -1196,9 +1296,7 @@ def render_job_intake_page(base_dir: Path) -> None:
         return
 
     persist_job_listing(base_dir, job_listing)
-    st.session_state.pop("job_intake_source_url", None)
-    st.session_state.pop("job_intake_extracted", None)
-    st.session_state.pop("job_intake_apply_resolution", None)
+    clear_job_intake_session_state()
     st.session_state["job_intake_success"] = (
         f"Added {job_listing.company} / {job_listing.title} to the workflow."
     )
