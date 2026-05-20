@@ -10,6 +10,7 @@ def test_core_project_artifacts_exist() -> None:
         "IMPLEMENTATION_PLAN.md",
         "README.md",
         "docs/stories.md",
+        ".env.example",
     ]
 
     missing = [path for path in required_paths if not Path(path).is_file()]
@@ -47,3 +48,10 @@ def test_prompt_templates_exist_and_render() -> None:
         "user",
         normalized_url="https://example.com/job",
     )
+
+
+def test_env_example_documents_required_ai_settings() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "OPENAI_API_KEY=your-openai-api-key-here" in env_example
+    assert "OPENAI_MODEL=gpt-5.4" in env_example
