@@ -1,4 +1,5 @@
 import importlib
+from pathlib import Path
 
 from src.job_intake import create_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, RejectedApplyCandidate
@@ -54,6 +55,19 @@ def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
     errors = app.validate_candidate_profile(profile)
 
     assert "Salary max must be >= Salary min" in errors
+
+
+def test_get_latest_candidate_profile_uses_current_draft(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    current_draft = make_complete_candidate_profile().model_dump(mode="json")
+    current_draft["candidate_profile"]["candidate_preferences"]["availability"] = (
+        "Available next month"
+    )
+    monkeypatch.setattr(app, "get_candidate_profile_draft", lambda _base_dir: current_draft)
+
+    profile = app.get_latest_candidate_profile(Path("/tmp"))
+
+    assert profile.candidate_profile.candidate_preferences.availability == "Available next month"
 
 
 def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfile:

@@ -486,17 +486,21 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
         set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
 
 
-def render_profile_save_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
+def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
+    return CandidateProfile.model_validate(get_candidate_profile_draft(base_dir))
+
+
+def render_profile_save_section(base_dir: Path, _candidate_profile: CandidateProfile) -> None:
     st.subheader("Save")
     if st.button("Save profile", type="primary"):
-        validation_errors = validate_candidate_profile(candidate_profile)
+        current_profile = get_latest_candidate_profile(base_dir)
+        validation_errors = validate_candidate_profile(current_profile)
         if validation_errors:
             st.error("Missing required fields: " + ", ".join(validation_errors))
             return
 
-        updated_profile = candidate_profile.model_copy(deep=True)
-        saved_path = save_candidate_profile(base_dir, updated_profile)
-        set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+        saved_path = save_candidate_profile(base_dir, current_profile)
+        set_candidate_profile_draft(current_profile.model_dump(mode="json"))
         st.session_state["candidate_profile_success"] = f"Saved to {saved_path}."
         st.rerun()
 
