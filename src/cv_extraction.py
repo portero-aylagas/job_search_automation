@@ -18,6 +18,10 @@ from src.schemas import (
     CandidateSupplementalExtracted,
 )
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+CV_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md"}
+OPTIONAL_DOCUMENT_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md", ".docx"}
+
 
 class CVDocumentSnapshot(BaseModel):
     file_path: str
@@ -246,7 +250,13 @@ def extract_optional_document_data_with_llm(
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
-    safe_name = _safe_filename(original_name)
+    safe_name = _validate_uploaded_file(
+        original_name,
+        file_bytes,
+        allowed_extensions=CV_UPLOAD_EXTENSIONS,
+        fallback="cv",
+        document_label="CV",
+    )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     target = cv_upload_path(base_dir, f"{timestamp}-{safe_name}")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -259,7 +269,13 @@ def save_uploaded_optional_document(
     original_name: str,
     file_bytes: bytes,
 ) -> Path:
-    safe_name = _safe_filename(original_name, fallback="document")
+    safe_name = _validate_uploaded_file(
+        original_name,
+        file_bytes,
+        allowed_extensions=OPTIONAL_DOCUMENT_UPLOAD_EXTENSIONS,
+        fallback="document",
+        document_label="Optional document",
+    )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     target = optional_document_upload_path(base_dir, f"{timestamp}-{safe_name}")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -290,6 +306,27 @@ def _safe_filename(value: str, *, fallback: str = "cv") -> str:
         for character in value
     ).strip("-")
     return normalized or fallback
+
+
+def _validate_uploaded_file(
+    original_name: str,
+    file_bytes: bytes,
+    *,
+    allowed_extensions: set[str],
+    fallback: str,
+    document_label: str,
+) -> str:
+    safe_name = _safe_filename(original_name, fallback=fallback)
+    extension = Path(safe_name).suffix.lower()
+    if extension not in allowed_extensions:
+        allowed = ", ".join(sorted(allowed_extensions))
+        raise ValueError(f"{document_label} must use one of these file types: {allowed}.")
+    if not file_bytes:
+        raise ValueError(f"{document_label} upload is empty.")
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        max_mb = MAX_UPLOAD_BYTES // (1024 * 1024)
+        raise ValueError(f"{document_label} upload must be {max_mb} MB or smaller.")
+    return safe_name
 
 
 def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> CandidateCVExtracted:
