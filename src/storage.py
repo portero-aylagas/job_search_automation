@@ -9,6 +9,10 @@ from pydantic import BaseModel, TypeAdapter
 from src.paths import DATA_DIR, OUTPUTS_DIR, RUNTIME_DATA_DIR, RUNTIME_JOBS_DIR, TEMPLATE_JOBS_DIR
 
 
+class JsonStorageError(ValueError):
+    pass
+
+
 def ensure_data_dirs(base_dir: Path | str = ".") -> None:
     root = Path(base_dir)
     for relative_path in (
@@ -34,7 +38,12 @@ def load_json(path: Path | str, default: Any | None = None) -> Any:
     if not target.exists():
         return default
     with target.open("r", encoding="utf-8") as file:
-        return json.load(file)
+        try:
+            return json.load(file)
+        except json.JSONDecodeError as exc:
+            raise JsonStorageError(
+                f"Invalid JSON in {target}: line {exc.lineno}, column {exc.colno}: {exc.msg}"
+            ) from exc
 
 
 def save_model(path: Path | str, model: Any) -> None:

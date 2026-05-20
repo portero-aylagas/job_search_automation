@@ -7,6 +7,7 @@ import pytest
 
 from src.application_requirements import (
     APPLICATION_PAGE_SNAPSHOT_FILENAME,
+    BrowserInspectionFailure,
     LLMApplicationRequirementsResponse,
     build_application_page_snapshot,
     discover_application_requirements,
@@ -612,7 +613,9 @@ def test_js_shell_static_html_records_playwright_absence_without_crashing(
     )
     monkeypatch.setattr(
         "src.application_requirements.inspect_application_page_with_browser",
-        lambda _job, _url: None,
+        lambda _job, _url: BrowserInspectionFailure(
+            "Playwright browser fallback failed: Error: browser crashed."
+        ),
     )
 
     snapshot = inspect_application_page_agent(
@@ -620,4 +623,4 @@ def test_js_shell_static_html_records_playwright_absence_without_crashing(
     )
 
     assert snapshot.visible_text_excerpt == "Loading app"
-    assert "Playwright browser fallback is unavailable or failed." in snapshot.errors
+    assert "Playwright browser fallback failed: Error: browser crashed." in snapshot.errors
