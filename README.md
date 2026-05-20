@@ -38,7 +38,7 @@ application tracking
 
 ---
 
-## Core Features
+## Delivered Features
 
 - candidate profile management
 - reusable experience units
@@ -47,12 +47,17 @@ application tracking
 - working apply-page requirements discovery from `apply_url` through a LangGraph
   inspection/extraction slice
 - per-job workspace for saved intake data
-- candidate/job match analysis
 - tailored application package generation
 - editable AI-generated material
-- approval and revision workflow
+- package edit and rejection recovery workflow
 - application tracker
 - JSON-based local storage
+
+## Planned Core Workflow Items
+
+- deterministic candidate/job match analysis
+- explicit package approval and ready-to-apply workflow
+- tracker transitions driven by approved package state
 
 ---
 
@@ -401,8 +406,8 @@ Development is organized in phases:
 
 1. project scaffold
 2. job intake and normalization
-3. deterministic match analysis
-4. application package generation
+3. deterministic match analysis (pending)
+4. application requirements discovery and package generation (implemented)
 5. human review and approval
 6. expand LangGraph workflow orchestration
 7. optional web search

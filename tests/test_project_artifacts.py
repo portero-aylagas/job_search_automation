@@ -55,3 +55,17 @@ def test_env_example_documents_required_ai_settings() -> None:
 
     assert "OPENAI_API_KEY=your-openai-api-key-here" in env_example
     assert "OPENAI_MODEL=gpt-5.4" in env_example
+
+
+def test_delivery_status_docs_are_consistent() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    implementation_plan = Path("IMPLEMENTATION_PLAN.md").read_text(encoding="utf-8")
+
+    assert "## Delivered Features" in readme
+    assert "deterministic candidate/job match analysis" in readme
+    assert "deterministic match analysis (pending)" in readme
+    assert "Application package generation is implemented" in implementation_plan
+    assert "Deterministic match analysis is still pending." in implementation_plan
+    assert "Application package generation and downstream human review are still pending" not in (
+        implementation_plan
+    )
