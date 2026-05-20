@@ -317,6 +317,8 @@ units + job data guided by those requirements.
 - package generation gate that requires a complete candidate profile, parsed
   CV, parsed job description, and discovered job-preserving application
   requirements before generating application material
+- apply URL validation that rejects source-page URLs, non-http(s) targets, and
+  other invalid application destinations before jobs are saved
 
 ### Generated Outputs
 

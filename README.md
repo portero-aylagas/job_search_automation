@@ -252,6 +252,10 @@ complete, the CV must be parsed, the normalized job must include a parsed
 description, and application requirements must be discovered as job-preserving
 from the apply URL before a package can be generated.
 
+Apply URLs that are the same as the source job page, or that are not valid
+http(s) application destinations, are rejected at validation time and cannot be
+saved as normalized jobs.
+
 ### Tracker Record
 
 Application tracking information:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
@@ -319,6 +320,25 @@ class JobListing(BaseModel):
     salary: str | None = None
     posted_date: str | None = None
     job_details: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _reject_apply_url_that_matches_source_url(self) -> JobListing:
+        if self.apply_url is None:
+            return self
+
+        if _normalized_url_identity(str(self.apply_url)) == _normalized_url_identity(
+            str(self.source_url)
+        ):
+            raise ValueError(
+                "Apply URL must point to the application destination, not the job offer page."
+            )
+        return self
+
+
+def _normalized_url_identity(value: str) -> tuple[str, str, str]:
+    parsed = urlsplit(value.strip())
+    path = parsed.path.rstrip("/") or "/"
+    return parsed.scheme.lower(), parsed.netloc.lower(), path
 
 
 ConfidenceLevel = Literal["high", "medium", "low"]

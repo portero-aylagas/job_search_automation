@@ -23,7 +23,6 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.job_intake import (
-    choose_valid_apply_url,
     create_job_listing,
     persist_job_listing,
     validate_apply_url,
@@ -962,6 +961,84 @@ def format_detail_value(value: object) -> str:
     return str(value)
 
 
+def resolved_apply_url(source_url: str, resolution: ApplyUrlResolution | None) -> str:
+    if resolution is None or resolution.status != "resolved":
+        return ""
+
+    candidate = resolution.apply_url.strip()
+    if not candidate:
+        return ""
+
+    try:
+        validate_apply_url(candidate, source_url)
+    except ValueError:
+        return ""
+    return candidate
+
+
+def validate_reviewed_apply_url(
+    apply_url: str,
+    source_url: str,
+    resolution: ApplyUrlResolution | None,
+) -> None:
+    validate_apply_url(apply_url, source_url)
+    verified_url = resolved_apply_url(source_url, resolution)
+    if verified_url and apply_url.strip() != verified_url:
+        raise ValueError("Apply URL must match the verified job-preserving application URL.")
+
+
+def apply_resolution_details(
+    apply_url: str,
+    source_url: str,
+    resolution: ApplyUrlResolution | None,
+) -> dict[str, object]:
+    verified_url = resolved_apply_url(source_url, resolution)
+    manual_override = bool(apply_url.strip()) and apply_url.strip() != verified_url
+    if resolution is None:
+        return {
+            "status": "manual_review",
+            "apply_url": apply_url.strip(),
+            "verified_by_resolver": False,
+            "manual_override": manual_override,
+            "notes": "Apply URL was entered manually and was not verified by the resolver.",
+            "evidence": [],
+            "rejected_candidates": [],
+            "confidence": "low",
+        }
+
+    details = resolution.model_dump(mode="json")
+    details["verified_by_resolver"] = bool(verified_url)
+    details["manual_override"] = manual_override
+    if manual_override:
+        details["manual_apply_url"] = apply_url.strip()
+    return details
+
+
+def apply_url_review_messages(
+    extracted_apply_url: str,
+    source_url: str,
+    final_apply_url: str,
+) -> dict[str, list[str]]:
+    messages: dict[str, list[str]] = {"errors": [], "warnings": [], "info": []}
+    if final_apply_url:
+        return messages
+
+    if extracted_apply_url:
+        try:
+            validate_apply_url(extracted_apply_url, source_url)
+        except ValueError as exc:
+            messages["errors"].append(str(exc))
+        messages["warnings"].append(
+            "The extracted apply URL was not verified by the apply-link resolver."
+        )
+
+    messages["info"].append(
+        "You can paste the application URL manually. It will be saved as a "
+        "manual review URL and checked during requirements discovery."
+    )
+    return messages
+
+
 def render_job_intake_page(base_dir: Path) -> None:
     st.title("Job Intake")
     st.write("Generate application data from a job URL.")
@@ -1006,12 +1083,8 @@ def render_job_intake_page(base_dir: Path) -> None:
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
 
-    final_apply_url = choose_valid_apply_url(
-        source_url,
-        apply_resolution.apply_url if apply_resolution else "",
-        extracted_data.apply_url,
-    )
-    if apply_resolution and apply_resolution.status != "resolved" and not final_apply_url:
+    final_apply_url = resolved_apply_url(source_url, apply_resolution)
+    if apply_resolution and apply_resolution.status != "resolved":
         message = apply_resolution.notes or (
             "The application destination could not be verified automatically."
         )
@@ -1071,11 +1144,17 @@ def render_job_intake_page(base_dir: Path) -> None:
 
         if extracted_data.missing_or_uncertain:
             st.warning("Needs review: " + "; ".join(extracted_data.missing_or_uncertain))
-        if extracted_data.apply_url:
-            try:
-                validate_apply_url(extracted_data.apply_url, source_url)
-            except ValueError as exc:
-                st.error(str(exc))
+        apply_url_messages = apply_url_review_messages(
+            extracted_data.apply_url,
+            source_url,
+            final_apply_url,
+        )
+        for message in apply_url_messages["errors"]:
+            st.error(message)
+        for message in apply_url_messages["warnings"]:
+            st.warning(message)
+        for message in apply_url_messages["info"]:
+            st.info(message)
 
         save_submitted = st.form_submit_button("Add To Application Workflow")
         clear_submitted = st.form_submit_button("Start Over")
@@ -1091,7 +1170,7 @@ def render_job_intake_page(base_dir: Path) -> None:
 
     try:
         dynamic_fields = [field for field in dynamic_fields if field["name"] or field["value"]]
-        validate_apply_url(apply_url, source_url)
+        validate_reviewed_apply_url(apply_url, source_url, apply_resolution)
         job_listing = create_job_listing(
             title=title,
             company=company,
@@ -1108,6 +1187,11 @@ def render_job_intake_page(base_dir: Path) -> None:
             source_job_id=source_job_id,
             job_details={
                 "extraction_confidence": extracted_data.confidence,
+                "apply_url_resolution": apply_resolution_details(
+                    apply_url,
+                    source_url,
+                    apply_resolution,
+                ),
                 "dynamic_fields": dynamic_fields,
             },
         )

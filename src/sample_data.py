@@ -111,7 +111,7 @@ def get_sample_job_listing() -> JobListing:
         source_job_id="example-python-automation-specialist",
         location="Berlin",
         remote_policy="Hybrid",
-        apply_url="https://example.com/jobs/python-automation-specialist",
+        apply_url="https://example.com/apply/python-automation-specialist",
         description=(
             "Own internal automation tools, improve operational reporting, and support "
             "cross-functional teams with lightweight applications."

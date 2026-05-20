@@ -1,6 +1,7 @@
 import importlib
 
 from src.job_intake import create_job_listing
+from src.llm_job_extraction import ApplyUrlResolution, RejectedApplyCandidate
 from src.schemas import ApplicationRequirements, CandidateProfile
 
 
@@ -185,6 +186,169 @@ def test_package_generation_has_no_blockers_when_prerequisites_are_complete() ->
     )
 
     assert blockers == []
+
+
+def test_resolved_apply_url_uses_only_resolved_valid_resolution() -> None:
+    app = importlib.import_module("app")
+    source_url = "https://example.com/jobs/automation-engineer"
+
+    resolved = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://example.com/apply/automation-engineer",
+        evidence=["Destination preserves Automation Engineer."],
+        confidence="high",
+    )
+    needs_review = ApplyUrlResolution(
+        status="needs_review",
+        apply_url="https://example.com/apply/automation-engineer",
+        notes="Could not verify job identity.",
+    )
+
+    assert app.resolved_apply_url(source_url, resolved) == (
+        "https://example.com/apply/automation-engineer"
+    )
+    assert app.resolved_apply_url(source_url, needs_review) == ""
+    assert app.resolved_apply_url(source_url, None) == ""
+
+
+def test_validate_reviewed_apply_url_accepts_manual_unverified_values() -> None:
+    app = importlib.import_module("app")
+    source_url = "https://example.com/jobs/automation-engineer"
+    needs_review = ApplyUrlResolution(
+        status="needs_review",
+        apply_url="https://example.com/apply/automation-engineer",
+    )
+
+    app.validate_reviewed_apply_url(
+        "https://example.com/apply/automation-engineer",
+        source_url,
+        needs_review,
+    )
+    app.validate_reviewed_apply_url(
+        "https://example.com/apply/automation-engineer",
+        source_url,
+        None,
+    )
+
+
+def test_validate_reviewed_apply_url_rejects_changed_verified_values() -> None:
+    app = importlib.import_module("app")
+    source_url = "https://example.com/jobs/automation-engineer"
+    resolution = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://example.com/apply/automation-engineer",
+    )
+
+    app.validate_reviewed_apply_url(
+        "https://example.com/apply/automation-engineer",
+        source_url,
+        resolution,
+    )
+
+    try:
+        app.validate_reviewed_apply_url(
+            "https://example.com/apply/different-job",
+            source_url,
+            resolution,
+        )
+    except ValueError as exc:
+        assert "must match the verified" in str(exc)
+    else:
+        raise AssertionError("Changed apply URL should be rejected.")
+
+
+def test_apply_resolution_details_preserves_evidence_and_rejections() -> None:
+    app = importlib.import_module("app")
+    resolution = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://example.com/apply/automation-engineer",
+        notes="Verified final destination.",
+        evidence=["Same title on destination page."],
+        rejected_candidates=[
+            RejectedApplyCandidate(
+                url="https://example.com/careers",
+                reason="Generic career page",
+                evidence="Search all jobs",
+            )
+        ],
+        confidence="high",
+    )
+
+    details = app.apply_resolution_details(
+        "https://example.com/apply/automation-engineer",
+        "https://example.com/jobs/automation-engineer",
+        resolution,
+    )
+
+    assert details["status"] == "resolved"
+    assert details["confidence"] == "high"
+    assert details["verified_by_resolver"] is True
+    assert details["manual_override"] is False
+    assert details["evidence"] == ["Same title on destination page."]
+    assert details["rejected_candidates"][0]["reason"] == "Generic career page"
+
+
+def test_apply_resolution_details_marks_manual_override() -> None:
+    app = importlib.import_module("app")
+    source_url = "https://example.com/jobs/automation-engineer"
+    manual_url = "https://example.com/apply/automation-engineer"
+    resolution = ApplyUrlResolution(
+        status="needs_review",
+        apply_url="",
+        notes="Could not verify job identity.",
+        confidence="low",
+    )
+
+    details = app.apply_resolution_details(manual_url, source_url, resolution)
+
+    assert details["status"] == "needs_review"
+    assert details["verified_by_resolver"] is False
+    assert details["manual_override"] is True
+    assert details["manual_apply_url"] == manual_url
+
+
+def test_apply_resolution_details_handles_missing_resolution_as_manual_review() -> None:
+    app = importlib.import_module("app")
+    manual_url = "https://example.com/apply/automation-engineer"
+
+    details = app.apply_resolution_details(
+        manual_url,
+        "https://example.com/jobs/automation-engineer",
+        None,
+    )
+
+    assert details["status"] == "manual_review"
+    assert details["apply_url"] == manual_url
+    assert details["verified_by_resolver"] is False
+    assert details["manual_override"] is True
+
+
+def test_apply_url_review_messages_are_empty_when_final_apply_url_is_verified() -> None:
+    app = importlib.import_module("app")
+
+    messages = app.apply_url_review_messages(
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/apply/automation-engineer",
+    )
+
+    assert messages == {"errors": [], "warnings": [], "info": []}
+
+
+def test_apply_url_review_messages_explain_manual_fallback_when_unverified() -> None:
+    app = importlib.import_module("app")
+
+    messages = app.apply_url_review_messages(
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/jobs/automation-engineer",
+        "",
+    )
+
+    assert any("application destination" in message for message in messages["errors"])
+    assert messages["warnings"] == [
+        "The extracted apply URL was not verified by the apply-link resolver."
+    ]
+    assert any("paste the application URL manually" in message for message in messages["info"])
 
 
 def test_candidate_preferences_migrates_legacy_entry_level_employment_types() -> None:
