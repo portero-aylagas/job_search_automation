@@ -37,6 +37,15 @@ from src.llm_job_extraction import (
     ExtractedJobData,
     extract_job_data_from_url,
 )
+from src.paths import (
+    application_requirements_paths,
+    candidate_profile_path,
+    experience_units_paths,
+    jobs_index_paths,
+    legacy_profile_path,
+    normalized_job_paths,
+    runtime_candidate_profile_path,
+)
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
     ApplicationPackage,
@@ -111,9 +120,9 @@ def load_app_data() -> tuple[CandidateProfile, list[TrackerRecord]]:
 
 
 def load_candidate_profile(base_dir: Path) -> CandidateProfile:
-    active_path = base_dir / "data" / "candidate_profile.json"
-    runtime_path = base_dir / "data" / "runtime" / "candidate_profile.json"
-    legacy_path = base_dir / "data" / "profile.json"
+    active_path = candidate_profile_path(base_dir)
+    runtime_path = runtime_candidate_profile_path(base_dir)
+    legacy_path = legacy_profile_path(base_dir)
 
     if active_path.exists():
         return load_model(active_path, CandidateProfile)
@@ -125,7 +134,7 @@ def load_candidate_profile(base_dir: Path) -> CandidateProfile:
 
 
 def save_candidate_profile(base_dir: Path, profile: CandidateProfile) -> Path:
-    target = base_dir / "data" / "candidate_profile.json"
+    target = candidate_profile_path(base_dir)
     save_model(target, profile)
     return target
 
@@ -178,6 +187,10 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
     with st.container(border=True):
         st.subheader("1. CV Upload")
         st.caption("The CV is the source of truth for professional data.")
+        current_cv = candidate_profile.candidate_profile.source_documents.cv
+        if current_cv.file_path:
+            status = "parsed" if current_cv.parsed else "uploaded, not parsed"
+            st.caption(f"Current CV: {Path(current_cv.file_path).name} ({status})")
 
         uploaded_cv = st.file_uploader(
             required_label("Upload CV"),
@@ -195,9 +208,10 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
 
             saved_path = save_uploaded_cv(base_dir, uploaded_cv.name, uploaded_cv.getvalue())
             try:
-                extracted = run_cv_extraction_task(saved_path)
+                with st.spinner("Parsing CV with the AI extractor..."):
+                    extracted = run_cv_extraction_task(saved_path)
             except Exception as exc:
-                st.error(str(exc))
+                st.error(format_cv_parse_error(saved_path, exc))
                 return
 
             updated_profile = candidate_profile.model_copy(deep=True)
@@ -207,6 +221,14 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
             set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
             st.success("CV parsed and loaded into the review form.")
             st.rerun()
+
+
+def format_cv_parse_error(saved_path: Path, exc: Exception) -> str:
+    return (
+        f"CV upload was saved to {saved_path}, but AI parsing failed: {exc}. "
+        "Check that the Streamlit process has OPENAI_API_KEY and network access, "
+        "then click Parse CV again."
+    )
 
 
 def render_optional_documents_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
@@ -494,6 +516,7 @@ def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
 
 def render_profile_save_section(base_dir: Path, _candidate_profile: CandidateProfile) -> None:
     st.subheader("Save")
+    st.caption("This writes the reviewed profile to data/candidate_profile.json.")
     if st.button("Save profile", type="primary"):
         current_profile = get_latest_candidate_profile(base_dir)
         validation_errors = validate_candidate_profile(current_profile)
@@ -589,8 +612,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
 
 
 def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
-    runtime_path = base_dir / "data" / "runtime" / "jobs" / job_id / "normalized_job.json"
-    template_path = base_dir / "data" / "jobs" / job_id / "normalized_job.json"
+    runtime_path, template_path = normalized_job_paths(base_dir, job_id)
     if runtime_path.exists():
         return load_model(runtime_path, JobListing, default=None)
     if template_path.exists():
@@ -602,15 +624,7 @@ def load_application_requirements(
     base_dir: Path,
     job_id: str,
 ) -> ApplicationRequirements | None:
-    runtime_path = (
-        base_dir
-        / "data"
-        / "runtime"
-        / "jobs"
-        / job_id
-        / "application_requirements.json"
-    )
-    template_path = base_dir / "data" / "jobs" / job_id / "application_requirements.json"
+    runtime_path, template_path = application_requirements_paths(base_dir, job_id)
     if runtime_path.exists():
         return load_model(runtime_path, ApplicationRequirements, default=None)
     if template_path.exists():
@@ -619,8 +633,7 @@ def load_application_requirements(
 
 
 def load_experience_units(base_dir: Path) -> list[ExperienceUnit]:
-    runtime_path = base_dir / "data" / "runtime" / "experience_units.json"
-    template_path = base_dir / "data" / "experience_units.json"
+    runtime_path, template_path = experience_units_paths(base_dir)
     if runtime_path.exists():
         return load_model(runtime_path, list[ExperienceUnit], default=[])
     if template_path.exists():
@@ -629,10 +642,9 @@ def load_experience_units(base_dir: Path) -> list[ExperienceUnit]:
 
 
 def load_jobs_index(base_dir: Path) -> list[TrackerRecord]:
-    runtime_jobs_index = base_dir / "data" / "runtime" / "jobs.json"
-    template_jobs_index = base_dir / "data" / "jobs.json"
-    runtime_tracker = base_dir / "data" / "runtime" / "tracker.json"
-    template_tracker = base_dir / "data" / "tracker.json"
+    runtime_jobs_index, runtime_tracker, template_jobs_index, template_tracker = jobs_index_paths(
+        base_dir
+    )
     if runtime_jobs_index.exists():
         return load_model(runtime_jobs_index, list[TrackerRecord], default=[])
     if runtime_tracker.exists():

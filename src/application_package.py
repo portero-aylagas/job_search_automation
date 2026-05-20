@@ -8,7 +8,17 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.llm_job_extraction import MODEL, _get_openai_client
+from src.llm_client import MODEL, get_openai_client
+from src.paths import (
+    APPLICATION_PACKAGE_MARKDOWN_FILENAME as _APPLICATION_PACKAGE_MARKDOWN_FILENAME,
+)
+from src.paths import (
+    application_package_markdown_path,
+    application_package_paths,
+    runtime_application_package_path,
+    runtime_jobs_index_path,
+    runtime_tracker_path,
+)
 from src.schemas import (
     ApplicationPackage,
     ApplicationRequirements,
@@ -19,10 +29,7 @@ from src.schemas import (
 )
 from src.storage import load_model, save_model
 
-APPLICATION_PACKAGE_FILENAME = "application_package.json"
-APPLICATION_PACKAGE_MARKDOWN_FILENAME = "application_package.md"
-RUNTIME_DATA_DIR = Path("data/runtime")
-OUTPUTS_DIR = Path("outputs")
+APPLICATION_PACKAGE_MARKDOWN_FILENAME = _APPLICATION_PACKAGE_MARKDOWN_FILENAME
 
 PackageGenerator = Callable[
     [CandidateProfile, list[ExperienceUnit], JobListing, ApplicationRequirements | None],
@@ -228,7 +235,7 @@ def generate_application_package_with_llm(
 ) -> ApplicationPackage:
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
-    client = _get_openai_client()
+    client = get_openai_client()
 
     response = client.responses.parse(
         model=MODEL,
@@ -355,9 +362,8 @@ def save_application_package(
     package: ApplicationPackage,
     job: JobListing,
 ) -> tuple[Path, Path]:
-    root = Path(base_dir)
-    json_path = root / RUNTIME_DATA_DIR / "jobs" / package.job_id / APPLICATION_PACKAGE_FILENAME
-    markdown_path = root / OUTPUTS_DIR / package.job_id / APPLICATION_PACKAGE_MARKDOWN_FILENAME
+    json_path = runtime_application_package_path(base_dir, package.job_id)
+    markdown_path = application_package_markdown_path(base_dir, package.job_id)
     save_model(json_path, package)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.write_text(render_application_package_markdown(package, job), encoding="utf-8")
@@ -368,9 +374,7 @@ def load_application_package(
     base_dir: Path | str,
     job_id: str,
 ) -> ApplicationPackage | None:
-    root = Path(base_dir)
-    runtime_path = root / RUNTIME_DATA_DIR / "jobs" / job_id / APPLICATION_PACKAGE_FILENAME
-    template_path = root / "data" / "jobs" / job_id / APPLICATION_PACKAGE_FILENAME
+    runtime_path, template_path = application_package_paths(base_dir, job_id)
     if runtime_path.exists():
         return load_model(runtime_path, ApplicationPackage, default=None)
     if template_path.exists():
@@ -383,9 +387,8 @@ def update_tracker_for_application_package(
     job_id: str,
     package_path: Path | str,
 ) -> list[TrackerRecord]:
-    root = Path(base_dir)
-    jobs_index_path = root / RUNTIME_DATA_DIR / "jobs.json"
-    tracker_path = root / RUNTIME_DATA_DIR / "tracker.json"
+    jobs_index_path = runtime_jobs_index_path(base_dir)
+    tracker_path = runtime_tracker_path(base_dir)
     tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
     package_path_text = str(package_path)
 

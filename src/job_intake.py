@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from src.paths import (
+    runtime_jobs_index_path,
+    runtime_normalized_job_path,
+    runtime_tracker_path,
+)
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model, save_model
-
-JOBS_INDEX_FILENAME = "jobs.json"
-RUNTIME_DATA_DIR = Path("data/runtime")
 
 
 def require_text(value: str, field_name: str) -> str:
@@ -110,21 +112,14 @@ def create_job_listing(
 
 
 def save_normalized_job(base_dir: Path | str, job_listing: JobListing) -> Path:
-    target = (
-        Path(base_dir)
-        / RUNTIME_DATA_DIR
-        / "jobs"
-        / job_listing.id
-        / "normalized_job.json"
-    )
+    target = runtime_normalized_job_path(base_dir, job_listing.id)
     save_model(target, job_listing)
     return target
 
 
 def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list[TrackerRecord]:
-    root = Path(base_dir)
-    jobs_index_path = root / RUNTIME_DATA_DIR / JOBS_INDEX_FILENAME
-    tracker_path = root / RUNTIME_DATA_DIR / "tracker.json"
+    jobs_index_path = runtime_jobs_index_path(base_dir)
+    tracker_path = runtime_tracker_path(base_dir)
     tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
 
     new_record = TrackerRecord(

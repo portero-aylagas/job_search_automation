@@ -8,11 +8,9 @@ from typing import TypedDict
 
 from pydantic import BaseModel
 
-from src.llm_job_extraction import MODEL, _get_openai_client
+from src.llm_client import MODEL, get_openai_client
+from src.paths import cv_upload_path, optional_document_upload_path
 from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
-
-CV_UPLOAD_DIR = Path("data/runtime/candidate_profile/cv")
-OPTIONAL_DOCUMENT_UPLOAD_DIR = Path("data/runtime/candidate_profile/optional_documents")
 
 
 class CVDocumentSnapshot(BaseModel):
@@ -112,7 +110,7 @@ def _extract_cv_data_node(state: CVExtractionState) -> dict[str, CandidateCVExtr
 
 def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
     path = _validate_cv_path(cv_path)
-    client = _get_openai_client()
+    client = get_openai_client()
     with path.open("rb") as file:
         uploaded_file = client.files.create(file=file, purpose="user_data")
 
@@ -125,7 +123,7 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
-    client = _get_openai_client()
+    client = get_openai_client()
     response = client.responses.parse(
         model=MODEL,
         input=[
@@ -171,7 +169,7 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
-    client = _get_openai_client()
+    client = get_openai_client()
     response = client.responses.parse(
         model=MODEL,
         input=[
@@ -216,10 +214,9 @@ def extract_optional_document_data_with_llm(
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
-    root = Path(base_dir)
     safe_name = _safe_filename(original_name)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    target = root / CV_UPLOAD_DIR / f"{timestamp}-{safe_name}"
+    target = cv_upload_path(base_dir, f"{timestamp}-{safe_name}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(file_bytes)
     return target
@@ -230,10 +227,9 @@ def save_uploaded_optional_document(
     original_name: str,
     file_bytes: bytes,
 ) -> Path:
-    root = Path(base_dir)
     safe_name = _safe_filename(original_name, fallback="document")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    target = root / OPTIONAL_DOCUMENT_UPLOAD_DIR / f"{timestamp}-{safe_name}"
+    target = optional_document_upload_path(base_dir, f"{timestamp}-{safe_name}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(file_bytes)
     return target
