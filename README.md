@@ -349,19 +349,20 @@ pytest
 
 ## Environment Variables
 
-For AI generation features, create a `.env` file:
+For AI-assisted workflows, create a `.env` file from `.env.example`:
 
 ```text
-OPENAI_API_KEY=...
+OPENAI_API_KEY=your-openai-api-key-here
+OPENAI_MODEL=gpt-5.4
 ```
 
 The application should still support non-AI sample/demo flows without requiring
 an API key during early phases.
 
-The active LLM extraction configuration is defined in
-`src/llm_job_extraction.py`. That file currently pins the extraction model and
-uses the project-local web search tool for both job-offer extraction and apply
-URL resolution.
+The shared AI configuration boundary lives in `src/llm_client.py`. That module
+reads `OPENAI_API_KEY`, applies the default `OPENAI_MODEL`, and owns the live
+provider calls used by CV extraction, job extraction, requirements discovery,
+and application-package generation.
 
 ---
 

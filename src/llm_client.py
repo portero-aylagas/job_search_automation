@@ -12,7 +12,7 @@ StructuredModel = TypeVar("StructuredModel", bound=BaseModel)
 def get_openai_client() -> Any:
     """Return a configured OpenAI client for live AI calls."""
     if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("Set OPENAI_API_KEY before extracting job data with AI.")
+        raise RuntimeError("Set OPENAI_API_KEY before using AI-assisted workflows.")
 
     try:
         from openai import OpenAI
