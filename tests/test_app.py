@@ -1,7 +1,182 @@
 import importlib
+from pathlib import Path
+
+from src.schemas import CandidateProfile
 
 
 def test_app_module_imports() -> None:
     module = importlib.import_module("app")
 
     assert module is not None
+
+
+def test_validate_candidate_profile_reports_missing_required_fields() -> None:
+    app = importlib.import_module("app")
+
+    errors = app.validate_candidate_profile(CandidateProfile())
+
+    assert "Upload CV" in errors
+    assert "Full name" in errors
+    assert "Email" in errors
+    assert "Target roles" in errors
+    assert "Remote preference" in errors
+    assert "Career level" in errors
+    assert "Work authorization" in errors
+    assert "Salary min" in errors
+    assert "Salary max" in errors
+
+
+def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
+    app = importlib.import_module("app")
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "source_documents": {"cv": {"file_path": "/tmp/cv.pdf", "parsed": True}},
+                "cv_extracted": {
+                    "identity": {"full_name": "Taylor Rivera", "email": "taylor@example.com"},
+                },
+                "candidate_preferences": {
+                    "target_roles": ["Automation Engineer"],
+                    "target_locations": ["Remote"],
+                    "remote_preference": ["remote"],
+                    "employment_type": ["full_time"],
+                    "seniority_level": ["junior"],
+                    "availability": "Immediately",
+                    "salary_min_eur": 70000,
+                    "salary_max_eur": 60000,
+                    "work_authorization": "eu_authorized",
+                },
+            }
+        }
+    )
+
+    errors = app.validate_candidate_profile(profile)
+
+    assert "Salary max must be >= Salary min" in errors
+
+
+def test_get_latest_candidate_profile_uses_current_draft(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    current_draft = make_complete_candidate_profile().model_dump(mode="json")
+    current_draft["candidate_profile"]["candidate_preferences"]["availability"] = (
+        "Available next month"
+    )
+    monkeypatch.setattr(app, "get_candidate_profile_draft", lambda _base_dir: current_draft)
+
+    profile = app.get_latest_candidate_profile(Path("/tmp"))
+
+    assert profile.candidate_profile.candidate_preferences.availability == "Available next month"
+
+
+def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfile:
+    return CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "source_documents": {
+                    "cv": {"file_path": "/tmp/cv.pdf", "parsed": cv_parsed},
+                },
+                "cv_extracted": {
+                    "identity": {
+                        "full_name": "Taylor Rivera",
+                        "email": "taylor@example.com",
+                    },
+                },
+                "candidate_preferences": {
+                    "target_roles": ["Automation Engineer"],
+                    "target_locations": ["Remote"],
+                    "remote_preference": ["remote"],
+                    "employment_type": ["full_time"],
+                    "seniority_level": ["junior"],
+                    "availability": "Immediately",
+                    "salary_min_eur": 55000,
+                    "salary_max_eur": 65000,
+                    "work_authorization": "eu_authorized",
+                },
+            }
+        }
+    )
+
+
+def test_candidate_preferences_migrates_legacy_entry_level_employment_types() -> None:
+    from src.schemas import CandidatePreferences
+
+    preferences = CandidatePreferences.model_validate(
+        {
+            "target_roles": ["Automation Engineer"],
+            "target_locations": ["Remote"],
+            "remote_preference": ["remote"],
+            "employment_type": ["full_time", "trainee", "working_student"],
+            "seniority_level": ["junior"],
+            "availability": "Immediately",
+            "salary_min_eur": 55000,
+            "salary_max_eur": 65000,
+            "work_authorization": "eu_authorized",
+        }
+    )
+
+    assert preferences.employment_type == ["full_time"]
+    assert preferences.seniority_level == ["junior", "trainee", "working_student"]
+
+
+def test_career_level_options_are_flat_and_unique() -> None:
+    app = importlib.import_module("app")
+
+    option_values = [value for value, _ in app.CAREER_LEVEL_OPTIONS]
+    option_labels = [label for _, label in app.CAREER_LEVEL_OPTIONS]
+
+    assert not hasattr(app, "SENIORITY_GROUPS")
+    assert len(option_values) == len(set(option_values))
+    assert len(option_labels) == len(set(option_labels))
+
+
+def test_employment_type_labels_are_not_grouped() -> None:
+    app = importlib.import_module("app")
+
+    assert not hasattr(app, "EMPLOYMENT_TYPE_GROUPS")
+    assert [label for _, label in app.EMPLOYMENT_TYPE_OPTIONS] == [
+        "Full-time",
+        "Part-time",
+        "Contract",
+        "Freelance",
+    ]
+
+
+def test_salary_labels_and_defaults_are_annual() -> None:
+    app = importlib.import_module("app")
+
+    assert "EUR / year" in app.required_label("Salary min (EUR / year)")
+    assert "EUR / year" in app.required_label("Salary max (EUR / year)")
+
+
+def test_optional_document_upload_menus_match_supported_categories() -> None:
+    app = importlib.import_module("app")
+
+    assert app.OPTIONAL_DOCUMENT_UPLOAD_MENUS == [
+        ("reference", "Upload references"),
+        ("certificate", "Upload certificates"),
+        ("other", "Upload other documents"),
+    ]
+    assert set(app.OPTIONAL_DOCUMENT_TYPES) == {
+        document_type for document_type, _ in app.OPTIONAL_DOCUMENT_UPLOAD_MENUS
+    }
+
+
+def test_merge_supplemental_extracted_data_appends_unique_items() -> None:
+    app = importlib.import_module("app")
+    from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
+
+    target = CandidateCVExtracted(
+        skills=["Python"],
+        certifications=["Cloud Fundamentals"],
+    )
+    supplemental = CandidateSupplementalExtracted(
+        skills=["python", "SQL"],
+        certifications=["Cloud Fundamentals", "Security Basics"],
+        references=["Reference letter from Example Manager"],
+    )
+
+    app.merge_supplemental_extracted_data(target, supplemental)
+
+    assert target.skills == ["Python", "SQL"]
+    assert target.certifications == ["Cloud Fundamentals", "Security Basics"]
+    assert target.references == ["Reference letter from Example Manager"]

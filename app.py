@@ -10,6 +10,7 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
+from src.cv_extraction import run_cv_extraction_task, save_uploaded_cv
 from src.job_intake import (
     choose_valid_apply_url,
     create_job_listing,
@@ -25,66 +26,425 @@ from src.llm_job_extraction import (
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
     ApplicationRequirements,
+    CandidateCVExtracted,
     CandidateProfile,
-    ExperienceUnit,
+    CandidateSupplementalExtracted,
     JobListing,
     TrackerRecord,
 )
-from src.storage import load_model
+from src.storage import load_model, save_model
 
 BASE_DIR = Path(__file__).resolve().parent
+EMPLOYMENT_TYPE_OPTIONS = [
+    ("full_time", "Full-time"),
+    ("part_time", "Part-time"),
+    ("contract", "Contract"),
+    ("freelance", "Freelance"),
+]
+REMOTE_PREFERENCE_OPTIONS = [
+    ("remote", "Remote"),
+    ("hybrid", "Hybrid"),
+    ("onsite", "On-site"),
+]
+WORK_AUTHORIZATION_OPTIONS = [
+    ("eu_authorized", "EU authorized"),
+    ("eu_sponsorship_required", "EU sponsorship required"),
+]
+OPTIONAL_DOCUMENT_TYPES = {
+    "reference": "Reference",
+    "certificate": "Certificate",
+    "other": "Other document",
+}
+OPTIONAL_DOCUMENT_UPLOAD_MENUS = [
+    ("reference", "Upload references"),
+    ("certificate", "Upload certificates"),
+    ("other", "Upload other documents"),
+]
+CAREER_LEVEL_OPTIONS = [
+    ("internship", "Internship"),
+    ("working_student", "Working student"),
+    ("trainee", "Trainee"),
+    ("junior", "Junior"),
+    ("entry_level", "Entry level"),
+    ("mid_level", "Mid level"),
+    ("senior", "Senior"),
+    ("lead", "Lead"),
+    ("principal", "Principal"),
+    ("manager", "Manager"),
+]
+CAREER_LEVEL_HELP = {
+    "internship": "Early training role, usually temporary and part of learning.",
+    "working_student": "Student role with part-time professional work alongside studies.",
+    "trainee": "Structured early-career role focused on learning the job.",
+    "junior": "First professional role with limited experience and support.",
+    "entry_level": "Starting role for someone entering the field.",
+    "mid_level": "Independent contributor with solid practical experience.",
+    "senior": "Experienced contributor who works with little supervision.",
+    "lead": "Senior contributor who also guides delivery or other people.",
+    "principal": "Expert individual contributor with broad technical depth.",
+    "manager": "People or team leadership role.",
+}
 
 
-def load_app_data() -> tuple[CandidateProfile, list[ExperienceUnit], list[TrackerRecord]]:
+def load_app_data() -> tuple[CandidateProfile, list[TrackerRecord]]:
     bootstrap_sample_data(BASE_DIR)
 
-    profile = load_model(BASE_DIR / "data/profile.json", CandidateProfile)
-    experience_units = load_model(
-        BASE_DIR / "data/experience_units.json",
-        list[ExperienceUnit],
-    )
+    profile = load_candidate_profile(BASE_DIR)
     tracker_records = load_jobs_index(BASE_DIR)
-    return profile, experience_units, tracker_records
+    return profile, tracker_records
 
 
-def render_candidate_profile_page(
-    profile: CandidateProfile,
-    experience_units: list[ExperienceUnit],
-) -> None:
+def load_candidate_profile(base_dir: Path) -> CandidateProfile:
+    runtime_path = base_dir / "data" / "runtime" / "candidate_profile.json"
+    template_path = base_dir / "data" / "candidate_profile.json"
+    legacy_path = base_dir / "data" / "profile.json"
+
+    if runtime_path.exists():
+        return load_model(runtime_path, CandidateProfile)
+    if template_path.exists():
+        return load_model(template_path, CandidateProfile)
+    if legacy_path.exists():
+        return load_model(legacy_path, CandidateProfile)
+    return CandidateProfile()
+
+
+def save_candidate_profile(base_dir: Path, profile: CandidateProfile) -> Path:
+    target = base_dir / "data" / "candidate_profile.json"
+    save_model(target, profile)
+    return target
+
+
+def get_candidate_profile_draft(base_dir: Path) -> dict:
+    draft = st.session_state.get("candidate_profile_draft")
+    if draft is None:
+        draft = load_candidate_profile(base_dir).model_dump(mode="json")
+        st.session_state["candidate_profile_draft"] = draft
+    return draft
+
+
+def set_candidate_profile_draft(draft: dict) -> None:
+    st.session_state["candidate_profile_draft"] = draft
+
+
+def required_label(label: str) -> str:
+    return f"{label} *"
+
+
+def work_authorization_index(value: str) -> int | None:
+    for index, (option_value, _) in enumerate(WORK_AUTHORIZATION_OPTIONS):
+        if option_value == value:
+            return index
+    return None
+
+
+def render_candidate_profile_page(base_dir: Path) -> None:
     st.title("Candidate Profile")
-    st.subheader(profile.full_name)
-    st.write(profile.professional_summary)
+    st.write(
+        "Upload your CV once, review the extracted data, and fill in the missing "
+        "job-search preferences."
+    )
 
-    left, right = st.columns(2)
-    with left:
-        st.markdown("**Target Roles**")
-        st.write(profile.target_roles)
-        st.markdown("**Skills**")
-        st.write(profile.skills)
-        st.markdown("**Languages**")
-        st.write(profile.languages)
-    with right:
-        st.markdown("**Target Locations**")
-        st.write(profile.target_locations)
-        st.markdown("**Salary Expectation**")
-        st.write(profile.salary_expectation or "Not specified")
-        st.markdown("**Constraints**")
-        st.write(profile.constraints or ["None listed"])
+    success_message = st.session_state.pop("candidate_profile_success", None)
+    if success_message:
+        st.success(success_message)
 
-    st.markdown("**Documents Used**")
-    st.write(profile.documents_used or ["None listed"])
+    draft = get_candidate_profile_draft(base_dir)
+    candidate_profile = CandidateProfile.model_validate(draft)
 
-    st.divider()
-    st.subheader("Experience Units")
-    for unit in experience_units:
-        with st.expander(f"{unit.title} · {unit.organization}", expanded=False):
-            st.caption(unit.date_range)
-            st.write(unit.summary)
-            st.markdown("**Skills**")
-            st.write(unit.skills)
-            st.markdown("**Evidence Points**")
-            for point in unit.evidence_points:
-                st.write(f"- {point}")
+    render_cv_upload_section(base_dir, candidate_profile)
+    render_cv_extracted_review_section(candidate_profile)
+    render_candidate_preferences_section(candidate_profile)
+    render_profile_save_section(base_dir, candidate_profile)
+
+
+def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
+    with st.container(border=True):
+        st.subheader("1. CV Upload")
+        st.caption("The CV is the source of truth for professional data.")
+
+        uploaded_cv = st.file_uploader(
+            required_label("Upload CV"),
+            type=["pdf", "txt", "md"],
+            accept_multiple_files=False,
+            key="candidate_profile_cv_upload",
+        )
+        if uploaded_cv is not None:
+            st.caption(f"Selected file: {uploaded_cv.name}")
+
+        if st.button("Parse CV", type="primary"):
+            if uploaded_cv is None:
+                st.error("Upload a CV before parsing.")
+                return
+
+            saved_path = save_uploaded_cv(base_dir, uploaded_cv.name, uploaded_cv.getvalue())
+            try:
+                extracted = run_cv_extraction_task(saved_path)
+            except Exception as exc:
+                st.error(str(exc))
+                return
+
+            updated_profile = candidate_profile.model_copy(deep=True)
+            updated_profile.candidate_profile.source_documents.cv.file_path = str(saved_path)
+            updated_profile.candidate_profile.source_documents.cv.parsed = True
+            updated_profile.candidate_profile.cv_extracted = extracted
+            set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+            st.success("CV parsed and loaded into the review form.")
+            st.rerun()
+
+
+def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> None:
+    with st.container(border=True):
+        st.subheader("2. CV-extracted data review")
+        profile_data = candidate_profile.candidate_profile
+        extracted = profile_data.cv_extracted
+
+        if not profile_data.source_documents.cv.parsed:
+            st.info("Upload and parse a CV to populate these review fields.")
+
+        with st.form("candidate_profile_review_form"):
+            st.markdown("**Identity**")
+            identity_left, identity_right = st.columns(2)
+            with identity_left:
+                full_name = st.text_input(
+                    required_label("Full name"),
+                    value=extracted.identity.full_name,
+                )
+                email = st.text_input(required_label("Email"), value=extracted.identity.email)
+                phone = st.text_input("Phone", value=extracted.identity.phone)
+                location = st.text_input("Location", value=extracted.identity.location)
+            with identity_right:
+                linkedin_url = st.text_input(
+                    "LinkedIn URL", value=extracted.identity.linkedin_url
+                )
+                github_url = st.text_input("GitHub URL", value=extracted.identity.github_url)
+                portfolio_url = st.text_input(
+                    "Portfolio URL", value=extracted.identity.portfolio_url
+                )
+
+            st.markdown("**Professional data**")
+            work_experience = st.text_area(
+                "Work experience",
+                value="\n".join(extracted.work_experience),
+                height=120,
+            )
+            education = st.text_area(
+                "Education",
+                value="\n".join(extracted.education),
+                height=120,
+            )
+            skills = st.text_area("Skills", value="\n".join(extracted.skills), height=100)
+            languages = st.text_area("Languages", value="\n".join(extracted.languages), height=80)
+            certifications = st.text_area(
+                "Certifications",
+                value="\n".join(extracted.certifications),
+                height=80,
+            )
+            projects = st.text_area("Projects", value="\n".join(extracted.projects), height=100)
+
+            save_extracted = st.form_submit_button("Save CV review changes")
+
+        if not save_extracted:
+            return
+
+        updated_profile = candidate_profile.model_copy(deep=True)
+        updated_profile.candidate_profile.cv_extracted.identity.full_name = full_name.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.email = email.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.phone = phone.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.location = location.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.linkedin_url = linkedin_url.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.github_url = github_url.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.portfolio_url = (
+            portfolio_url.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.work_experience = lines_from_text(
+            work_experience
+        )
+        updated_profile.candidate_profile.cv_extracted.education = lines_from_text(education)
+        updated_profile.candidate_profile.cv_extracted.skills = lines_from_text(skills)
+        updated_profile.candidate_profile.cv_extracted.languages = lines_from_text(languages)
+        updated_profile.candidate_profile.cv_extracted.certifications = lines_from_text(
+            certifications
+        )
+        updated_profile.candidate_profile.cv_extracted.projects = lines_from_text(projects)
+        set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+        st.success("CV review fields updated.")
+        st.rerun()
+
+
+def render_candidate_preferences_section(candidate_profile: CandidateProfile) -> None:
+    with st.container(border=True):
+        st.subheader("3. Manual candidate preferences")
+        profile_data = candidate_profile.candidate_profile
+        preferences = profile_data.candidate_preferences
+
+        target_roles = st.text_area(
+            required_label("Target roles"),
+            value="\n".join(preferences.target_roles),
+            height=100,
+        )
+        target_locations = st.text_area(
+            required_label("Target locations"),
+            value="\n".join(preferences.target_locations),
+            height=100,
+        )
+        st.markdown("**Remote preference** *")
+        selected_remote_preferences: list[str] = []
+        remote_preference_values = set(preferences.remote_preference)
+        remote_columns = st.columns(2)
+        for index, (value, label) in enumerate(REMOTE_PREFERENCE_OPTIONS):
+            column = remote_columns[index % 2]
+            with column:
+                if st.checkbox(
+                    label,
+                    value=value in remote_preference_values,
+                    key=f"remote_preference_{value}",
+                ):
+                    selected_remote_preferences.append(value)
+
+        st.markdown("**Employment type** *")
+        selected_employment_types: list[str] = []
+        employment_type_values = set(preferences.employment_type)
+        type_columns = st.columns(2)
+        for index, (value, label) in enumerate(EMPLOYMENT_TYPE_OPTIONS):
+            column = type_columns[index % 2]
+            with column:
+                if st.checkbox(
+                    label,
+                    value=value in employment_type_values,
+                    key=f"employment_type_{value}",
+                ):
+                    selected_employment_types.append(value)
+
+        st.markdown("**Career level** *")
+        selected_seniority_levels: list[str] = []
+        seniority_level_values = set(preferences.seniority_level)
+        seniority_columns = st.columns(2)
+        for index, (value, label) in enumerate(CAREER_LEVEL_OPTIONS):
+            column = seniority_columns[index % 2]
+            with column:
+                if st.checkbox(
+                    label,
+                    value=value in seniority_level_values,
+                    help=CAREER_LEVEL_HELP.get(value),
+                    key=f"seniority_level_{value}",
+                ):
+                    selected_seniority_levels.append(value)
+
+        availability = st.text_input(required_label("Availability"), value=preferences.availability)
+        work_authorization = st.radio(
+            required_label("Work authorization"),
+            options=[value for value, _ in WORK_AUTHORIZATION_OPTIONS],
+            format_func=dict(WORK_AUTHORIZATION_OPTIONS).get,
+            index=work_authorization_index(preferences.work_authorization),
+            horizontal=True,
+            key="candidate_profile_work_authorization",
+        )
+        salary_left, salary_right = st.columns(2)
+        with salary_left:
+            salary_min_eur = st.number_input(
+                required_label("Salary min (EUR / year)"),
+                min_value=0,
+                step=1000,
+                value=preferences.salary_min_eur or 50000,
+                key="candidate_profile_salary_min_eur",
+            )
+        with salary_right:
+            salary_max_eur = st.number_input(
+                required_label("Salary max (EUR / year)"),
+                min_value=0,
+                step=1000,
+                value=preferences.salary_max_eur or 100000,
+                key="candidate_profile_salary_max_eur",
+            )
+        st.caption("Currency: EUR per year")
+
+        updated_profile = candidate_profile.model_copy(deep=True)
+        updated_profile.candidate_profile.candidate_preferences.target_roles = lines_from_text(
+            target_roles
+        )
+        updated_profile.candidate_profile.candidate_preferences.target_locations = lines_from_text(
+            target_locations
+        )
+        updated_profile.candidate_profile.candidate_preferences.remote_preference = (
+            selected_remote_preferences
+        )
+        updated_profile.candidate_profile.candidate_preferences.employment_type = (
+            selected_employment_types
+        )
+        updated_profile.candidate_profile.candidate_preferences.seniority_level = (
+            selected_seniority_levels
+        )
+        updated_profile.candidate_profile.candidate_preferences.availability = availability.strip()
+        updated_profile.candidate_profile.candidate_preferences.salary_min_eur = int(
+            salary_min_eur
+        )
+        updated_profile.candidate_profile.candidate_preferences.salary_max_eur = int(
+            salary_max_eur
+        )
+        updated_profile.candidate_profile.candidate_preferences.work_authorization = (
+            work_authorization or ""
+        )
+        set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+
+
+def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
+    return CandidateProfile.model_validate(get_candidate_profile_draft(base_dir))
+
+
+def render_profile_save_section(base_dir: Path, _candidate_profile: CandidateProfile) -> None:
+    st.subheader("Save")
+    if st.button("Save profile", type="primary"):
+        current_profile = get_latest_candidate_profile(base_dir)
+        validation_errors = validate_candidate_profile(current_profile)
+        if validation_errors:
+            st.error("Missing required fields: " + ", ".join(validation_errors))
+            return
+
+        saved_path = save_candidate_profile(base_dir, current_profile)
+        set_candidate_profile_draft(current_profile.model_dump(mode="json"))
+        st.session_state["candidate_profile_success"] = f"Saved to {saved_path}."
+        st.rerun()
+
+
+def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
+    profile = candidate_profile.candidate_profile
+    errors: list[str] = []
+
+    if not profile.source_documents.cv.file_path.strip():
+        errors.append("Upload CV")
+    if not profile.cv_extracted.identity.full_name.strip():
+        errors.append("Full name")
+    if not profile.cv_extracted.identity.email.strip():
+        errors.append("Email")
+    if not profile.candidate_preferences.target_roles:
+        errors.append("Target roles")
+    if not profile.candidate_preferences.target_locations:
+        errors.append("Target locations")
+    if not profile.candidate_preferences.remote_preference:
+        errors.append("Remote preference")
+    if not profile.candidate_preferences.employment_type:
+        errors.append("Employment type")
+    if not profile.candidate_preferences.seniority_level:
+        errors.append("Career level")
+    if not profile.candidate_preferences.availability.strip():
+        errors.append("Availability")
+    if profile.candidate_preferences.salary_min_eur is None:
+        errors.append("Salary min")
+    if profile.candidate_preferences.salary_max_eur is None:
+        errors.append("Salary max")
+    if (
+        profile.candidate_preferences.salary_min_eur is not None
+        and profile.candidate_preferences.salary_max_eur is not None
+        and (
+            profile.candidate_preferences.salary_max_eur
+            < profile.candidate_preferences.salary_min_eur
+        )
+    ):
+        errors.append("Salary max must be >= Salary min")
+    if not str(profile.candidate_preferences.work_authorization).strip():
+        errors.append("Work authorization")
+
+    return errors
 
 
 def render_tracker_page(tracker_records: list[TrackerRecord]) -> None:
@@ -562,15 +922,46 @@ def lines_from_text(value: str) -> list[str]:
     return [line.strip("-• \t") for line in value.splitlines() if line.strip("-• \t")]
 
 
+def merge_supplemental_extracted_data(
+    target: CandidateCVExtracted,
+    supplemental: CandidateSupplementalExtracted,
+) -> None:
+    target.work_experience = _merge_unique_items(
+        target.work_experience,
+        supplemental.work_experience,
+    )
+    target.education = _merge_unique_items(target.education, supplemental.education)
+    target.skills = _merge_unique_items(target.skills, supplemental.skills)
+    target.languages = _merge_unique_items(target.languages, supplemental.languages)
+    target.certifications = _merge_unique_items(
+        target.certifications,
+        supplemental.certifications,
+    )
+    target.projects = _merge_unique_items(target.projects, supplemental.projects)
+    target.references = _merge_unique_items(target.references, supplemental.references)
+
+
+def _merge_unique_items(existing: list[str], incoming: list[str]) -> list[str]:
+    merged = list(existing)
+    seen = {item.casefold() for item in existing}
+    for item in incoming:
+        normalized = item.strip()
+        if not normalized or normalized.casefold() in seen:
+            continue
+        merged.append(normalized)
+        seen.add(normalized.casefold())
+    return merged
+
+
 def main() -> None:
     st.set_page_config(page_title="Job Search Automation", layout="wide")
-    profile, experience_units, tracker_records = load_app_data()
+    _, tracker_records = load_app_data()
 
     st.sidebar.title("Job Search Automation")
     page = st.sidebar.radio("Navigate", ["Candidate Profile", "Job Intake", "Jobs", "Tracker"])
 
     if page == "Candidate Profile":
-        render_candidate_profile_page(profile, experience_units)
+        render_candidate_profile_page(BASE_DIR)
     elif page == "Job Intake":
         render_job_intake_page(BASE_DIR)
     elif page == "Jobs":

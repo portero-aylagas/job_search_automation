@@ -10,6 +10,54 @@ Do not start new feature phases with web search, browser automation, or external
 
 ---
 
+## Current Delivery Status
+
+### Delivered
+
+- Candidate Profile MVP now uses the CV as the source of truth for professional
+  data instead of asking the user to rebuild the CV manually.
+- The Candidate Profile page supports mandatory CV upload, agent/LLM extraction,
+  optional supporting documents, editable extracted CV review fields, manual
+  job-search preferences, validation, and JSON persistence.
+- CV extraction is implemented through an agent-facing graph/task that uploads
+  the CV and asks the LLM for structured `cv_extracted` data. The UI does not
+  parse CV content directly.
+- Optional documents can be uploaded separately and are parsed into supplemental
+  evidence such as references or certificates when available.
+- Candidate profile storage now uses `data/candidate_profile.json`; local CV
+  uploads and generated candidate-profile data are ignored by git because they
+  contain personal CV-derived data.
+
+### Not Delivered Yet
+
+- Deterministic match analysis is still pending.
+- Application package generation and downstream human review are still pending.
+- Complex nested CV editors, multiple CV versions, excluded roles, excluded
+  companies, profile scoring, passport/ID upload, and job matching from the
+  Candidate Profile page remain out of scope.
+
+### Requirement Changes From Candidate Profile MVP
+
+- Candidate professional data now comes from `cv_extracted`, populated by CV
+  extraction and editable by the user.
+- Manual candidate preferences are limited to fields not reliably present in a
+  CV: target roles, target locations, remote preference, employment type, career
+  level, availability, annual EUR salary range, and EU work authorization.
+- `remote_preference` no longer includes `no_preference`; users select all
+  concrete modes when they are open to all.
+- `employment_type` is separate from career level and contains only work
+  arrangement values: full-time, part-time, contract, and freelance.
+- Career level is stored as `seniority_level` for compatibility but shown as
+  `Career level`, with per-option hover help in the UI.
+- Salary expectation is stored as `salary_min_eur` and `salary_max_eur`, both
+  annual EUR integer values.
+- Work authorization is EU-only for now: EU authorized or EU sponsorship
+  required.
+- Application rules are not part of the Candidate Profile UI or JSON schema;
+  they remain fixed product behavior outside this profile form.
+
+---
+
 ## Phase 1 — Project Scaffold
 
 ### Goal
@@ -63,6 +111,69 @@ streamlit run app.py
 - sample tracker table is visible
 - JSON helpers can save and load data
 - no live API calls are required
+
+---
+
+## Phase 1A — Candidate Profile MVP
+
+### Goal
+
+Let the user create a candidate profile from a CV plus only the missing
+job-search preferences that are not reliably extractable from the CV.
+
+### Implemented
+
+- mandatory CV upload
+- CV file storage under local runtime data
+- agent-facing CV extraction task using a LangGraph-compatible graph:
+  `inspect_cv_document_agent -> extract_cv_data`
+- LLM structured extraction into:
+  - identity
+  - work experience
+  - education
+  - skills
+  - languages
+  - certifications
+  - projects
+- optional supporting document upload and supplemental extraction into
+  references, certifications, and other evidence
+- editable CV-extracted review section with simple text fields and multiline
+  list editors
+- manual candidate preferences:
+  - target roles
+  - target locations
+  - remote preference
+  - employment type
+  - career level
+  - availability
+  - annual EUR salary range
+  - EU work authorization
+- profile validation before final save
+- single final `Save profile` action
+- JSON persistence to `data/candidate_profile.json`
+
+### Data Output
+
+```text
+data/candidate_profile.json
+data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
+```
+
+### Acceptance Criteria
+
+- user must upload a CV before saving a complete profile
+- CV extraction is triggered through the agent layer, not by UI regex parsing
+- extracted CV data is visible and editable before saving
+- user can fill only missing job-search preferences manually
+- employment type is a checkbox list with at least one selected value
+- career level is a checkbox list with hover help for each option
+- work authorization is a mutually exclusive EU radio choice
+- salary is a yearly EUR min/max range and max must be greater than or equal to
+  min
+- final save validates all required fields and writes one candidate profile JSON
+- local personal profile artifacts are not committed to git
+- optional supporting documents can be saved and merged into the reviewable
+  candidate profile data
 
 ---
 
