@@ -325,6 +325,53 @@ class ExperienceUnit(BaseModel):
     evidence_points: list[str] = Field(default_factory=list)
 
 
+ConfidenceLevel = Literal["high", "medium", "low"]
+
+_STORAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _validate_storage_identifier(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string.")
+    normalized = value.strip()
+    if normalized != value or not normalized:
+        raise ValueError(f"{field_name} must be a non-empty storage identifier.")
+    if normalized in {".", ".."} or "/" in normalized or "\\" in normalized:
+        raise ValueError(f"{field_name} must not contain path separators.")
+    if not _STORAGE_ID_PATTERN.fullmatch(normalized):
+        raise ValueError(f"{field_name} contains unsupported characters.")
+    return normalized
+
+
+class JobDynamicField(BaseModel):
+    dynamic: bool = True
+    name: str = Field(default="", validate_default=True)
+    value: Any
+    category: str = ""
+    source_text: str = ""
+    confidence: ConfidenceLevel = "medium"
+
+    @field_validator("dynamic")
+    @classmethod
+    def _require_dynamic_marker(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("Dynamic job detail fields must have dynamic=true.")
+        return value
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _normalize_required_name(cls, value: object) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            raise ValueError("Dynamic job detail fields require a name.")
+        return normalized
+
+    @field_validator("category", "source_text", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: object) -> str:
+        return str(value or "").strip()
+
+
 class JobListing(BaseModel):
     id: str
     title: str
@@ -342,6 +389,32 @@ class JobListing(BaseModel):
     salary: str | None = None
     posted_date: str | None = None
     job_details: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("id")
+    @classmethod
+    def _validate_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
+
+    @field_validator("job_details", mode="before")
+    @classmethod
+    def _normalize_job_details(cls, value: object) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError("Job details must be an object.")
+
+        details = dict(value)
+        dynamic_fields = details.get("dynamic_fields")
+        if dynamic_fields is None:
+            return details
+        if not isinstance(dynamic_fields, list):
+            raise ValueError("Job details dynamic_fields must be a list.")
+
+        details["dynamic_fields"] = [
+            JobDynamicField.model_validate(field).model_dump(mode="json")
+            for field in dynamic_fields
+        ]
+        return details
 
     @model_validator(mode="after")
     def _reject_apply_url_that_matches_source_url(self) -> JobListing:
@@ -361,9 +434,6 @@ def _normalized_url_identity(value: str) -> tuple[str, str, str]:
     parsed = urlsplit(value.strip())
     path = parsed.path.rstrip("/") or "/"
     return parsed.scheme.lower(), parsed.netloc.lower(), path
-
-
-ConfidenceLevel = Literal["high", "medium", "low"]
 
 
 ApplicationArtifactStatus = Literal[
@@ -461,6 +531,11 @@ class ApplicationRequirements(BaseModel):
     source_evidence: list[str] = Field(default_factory=list)
     confidence: ConfidenceLevel = "medium"
 
+    @field_validator("job_id")
+    @classmethod
+    def _validate_job_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
+
 
 class ApplicationArtifact(BaseModel):
     id: str
@@ -483,6 +558,11 @@ class ApplicationPackage(BaseModel):
     selected_experience_units: list[str] = Field(default_factory=list)
     generation_notes: list[str] = Field(default_factory=list)
 
+    @field_validator("job_id")
+    @classmethod
+    def _validate_job_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
+
 
 class TrackerRecord(BaseModel):
     job_id: str
@@ -495,3 +575,8 @@ class TrackerRecord(BaseModel):
     status: TrackerStatus = "new"
     notes: str | None = None
     generated_package_path: str | None = None
+
+    @field_validator("job_id")
+    @classmethod
+    def _validate_job_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
