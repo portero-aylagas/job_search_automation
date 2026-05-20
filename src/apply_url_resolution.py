@@ -595,6 +595,8 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
         ],
         text_format=ApplyUrlResolution,
         operation="AI apply URL ranking",
+        # Ranking compares bounded evidence, so repeatability matters more than stylistic variation.
+        profile=llm_client.APPLY_URL_RANKING_PROFILE,
     )
 
 

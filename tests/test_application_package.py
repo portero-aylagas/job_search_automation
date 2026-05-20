@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from src.application_package import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
+    LLMApplicationArtifact,
     LLMApplicationPackageResponse,
     build_application_artifact_manifest,
     build_missing_information_defaults,
     generate_application_package,
+    generate_application_package_with_llm,
     load_application_package,
     render_application_package_markdown,
     save_application_package,
@@ -131,6 +136,50 @@ def test_llm_application_package_schema_has_no_free_form_metadata() -> None:
     schema = to_strict_json_schema(LLMApplicationPackageResponse)
 
     assert find_property_schema(schema, "metadata") is None
+
+
+def test_generate_application_package_with_llm_uses_creative_package_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job = make_job()
+    parse_calls = []
+    parsed_payload = LLMApplicationPackageResponse(
+        job_id="wrong-job",
+        artifacts=[
+            LLMApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Application Summary",
+                required=True,
+                content="Strong automation fit.",
+            )
+        ],
+        selected_experience_units=["exp-001"],
+    )
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(output_parsed=parsed_payload)
+
+    monkeypatch.setattr(
+        "src.llm_client.get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    package = generate_application_package_with_llm(
+        get_sample_candidate_profile(),
+        get_sample_experience_units(),
+        job,
+        None,
+    )
+
+    assert package.job_id == job.id
+    assert package.artifacts[0].content == "Strong automation fit."
+    assert parse_calls[0]["temperature"] == 0.6
+    assert parse_calls[0]["max_output_tokens"] == 9000
+    assert parse_calls[0]["timeout"] == 90
+    assert parse_calls[0]["truncation"] == "disabled"
 
 
 def test_manifest_without_requirements_uses_core_artifacts() -> None:

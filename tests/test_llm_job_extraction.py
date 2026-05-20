@@ -5,10 +5,12 @@ from types import SimpleNamespace
 import pytest
 
 from src.llm_job_extraction import (
+    ApplyUrlResolution,
     DynamicJobDetail,
     ExtractedJobData,
     LLMExtractedJobDataResponse,
     extract_job_data_from_url,
+    resolve_apply_url_from_url,
 )
 
 
@@ -64,6 +66,11 @@ def test_extract_job_data_uses_llm_safe_response_model(monkeypatch: pytest.Monke
 
     assert parse_calls[0]["text_format"] is LLMExtractedJobDataResponse
     assert parse_calls[0]["text_format"] is not ExtractedJobData
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 5000
+    assert parse_calls[0]["timeout"] == 90
+    assert parse_calls[0]["truncation"] == "disabled"
+    assert parse_calls[0]["max_tool_calls"] == 4
     assert extracted == ExtractedJobData(
         title="Automation Engineer",
         company="Example Co",
@@ -95,3 +102,36 @@ def test_extract_job_data_normalizes_missing_fields(monkeypatch: pytest.MonkeyPa
     extracted = extract_job_data_from_url("https://example.com/jobs/automation-engineer")
 
     assert extracted == ExtractedJobData(confidence="low")
+
+
+def test_resolve_apply_url_uses_resolution_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    parse_calls = []
+    parsed_payload = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://ats.example.com/apply/automation-engineer",
+        evidence=["Apply button points to the ATS page."],
+        confidence="high",
+    )
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(output_parsed=parsed_payload)
+
+    monkeypatch.setattr(
+        "src.llm_client.get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    resolution = resolve_apply_url_from_url(
+        "https://example.com/jobs/automation-engineer",
+        title="Automation Engineer",
+        company="Example Co",
+    )
+
+    assert resolution == parsed_payload
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 3000
+    assert parse_calls[0]["timeout"] == 90
+    assert parse_calls[0]["truncation"] == "disabled"
+    assert parse_calls[0]["max_tool_calls"] == 5

@@ -98,6 +98,10 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
     )
     assert parse_calls[0]["text_format"] is LLMCandidateCVExtractedResponse
     assert parse_calls[0]["text_format"] is not CandidateCVExtracted
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 4000
+    assert parse_calls[0]["timeout"] == 60
+    assert parse_calls[0]["truncation"] == "disabled"
     user_content = parse_calls[0]["input"][1]["content"]
     input_file = next(item for item in user_content if item["type"] == "input_file")
     assert input_file == {"type": "input_file", "file_id": "file-cv"}
@@ -169,6 +173,10 @@ def test_extract_optional_document_data_with_llm_uses_structured_response(monkey
     )
     assert parse_calls[0]["text_format"] is LLMCandidateSupplementalExtractedResponse
     assert parse_calls[0]["text_format"] is not CandidateSupplementalExtracted
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 3000
+    assert parse_calls[0]["timeout"] == 60
+    assert parse_calls[0]["truncation"] == "disabled"
     user_content = parse_calls[0]["input"][1]["content"]
     input_file = next(item for item in user_content if item["type"] == "input_file")
     assert input_file == {"type": "input_file", "file_id": "file-reference"}
@@ -219,6 +227,7 @@ def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) 
     snapshot = cv_extraction.inspect_cv_document_agent(cv_path)
 
     assert create_calls[0]["purpose"] == "user_data"
+    assert create_calls[0]["timeout"] == 60
     assert snapshot.file_id == "file-uploaded-cv"
     assert snapshot.file_name == "Taylor CV.pdf"
     assert snapshot.mime_type == "application/pdf"

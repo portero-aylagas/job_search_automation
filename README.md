@@ -364,6 +364,27 @@ reads `OPENAI_API_KEY`, applies the default `OPENAI_MODEL`, and owns the live
 provider calls used by CV extraction, job extraction, requirements discovery,
 and application-package generation.
 
+## LLM Call Policy
+
+All live structured LLM calls go through named profiles in `src/llm_client.py`.
+The project keeps one model setting, `OPENAI_MODEL`, and varies behavior by
+workflow instead of adding per-workflow model environment variables.
+
+Evidence and decision workflows are deterministic with `temperature=0.0`: CV
+extraction, optional document extraction, job URL extraction, apply URL
+resolution, apply candidate ranking, and application requirements extraction.
+Application package generation is the only intentionally more creative profile
+with `temperature=0.6`, because it writes human-facing draft text from already
+validated structured inputs.
+
+Profiles also set explicit output-token budgets, per-request timeouts, retry
+counts, disabled input truncation, and bounded web-search tool calls for the two
+workflows that inspect source URLs. The OpenAI SDK client is created with
+`max_retries=0`; visible project retry policy lives in `src/llm_client.py`.
+Retryable failures are limited to transient rate limits, timeouts, connection
+errors, and temporary provider errors. Schema, validation, configuration, bad
+request, and unsupported-model failures fail immediately.
+
 ---
 
 ## Current Follow-ups

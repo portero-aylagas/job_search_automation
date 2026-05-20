@@ -177,6 +177,8 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
         ],
         text_format=LLMCandidateCVExtractedResponse,
         operation="AI CV extraction",
+        # CV extraction should stay evidence-first and repeatable.
+        profile=llm_client.CV_EXTRACTION_PROFILE,
     )
     return normalize_cv_extracted(response)
 
@@ -214,6 +216,8 @@ def extract_optional_document_data_with_llm(
         ],
         text_format=LLMCandidateSupplementalExtractedResponse,
         operation="AI optional document extraction",
+        # Supplemental documents are also parsed as factual evidence, not prose generation.
+        profile=llm_client.OPTIONAL_DOCUMENT_EXTRACTION_PROFILE,
     )
     return normalize_optional_document_extracted(response)
 

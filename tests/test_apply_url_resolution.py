@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from src.apply_url_resolution import (
+    ApplyUrlCandidate,
     choose_apply_url_deterministically,
     extract_apply_url_candidates,
     normalize_candidate_url,
+    rank_apply_url_candidates_with_llm,
     resolve_apply_url_agentically,
     run_apply_url_resolution_graph,
     verify_apply_url_candidates,
@@ -314,3 +318,54 @@ def test_workflow_marks_no_candidates_branch_when_static_and_fallback_fail(
 
     assert state["candidate_discovery_mode"] == "no_candidates_at_all"
     assert state["resolution"].status == "not_found"
+
+
+def test_llm_candidate_ranking_uses_deterministic_ranking_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parse_calls = []
+    parsed_payload = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://ats.example.com/apply/automation-engineer?job_id=12345",
+        evidence=["Verified candidate preserves the job title."],
+        confidence="high",
+    )
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(output_parsed=parsed_payload)
+
+    monkeypatch.setattr(
+        "src.llm_client.get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    resolution = rank_apply_url_candidates_with_llm(
+        {
+            "source_url": SOURCE_URL,
+            "final_source_url": SOURCE_URL,
+            "title": "Automation Engineer",
+            "company": "Example Co",
+            "source_job_id": "12345",
+            "candidates": [
+                ApplyUrlCandidate(
+                    url="https://ats.example.com/apply/automation-engineer?job_id=12345",
+                    source="href",
+                    label="Apply now",
+                    status="verified",
+                    confidence="high",
+                )
+            ],
+            "verified_candidates": [],
+            "rejected_candidates": [],
+            "errors": [],
+        }
+    )
+
+    assert resolution == parsed_payload
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 2500
+    assert parse_calls[0]["timeout"] == 45
+    assert parse_calls[0]["truncation"] == "disabled"
+    assert "max_tool_calls" not in parse_calls[0]
