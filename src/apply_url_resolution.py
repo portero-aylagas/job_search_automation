@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from src import llm_client
 from src.llm_job_extraction import (
     ApplyUrlResolution,
+    LLMApplyUrlResolutionResponse,
     RejectedApplyCandidate,
     resolve_apply_url_from_url,
 )
@@ -577,7 +578,7 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
         MAX_LLM_EVIDENCE_CHARS,
     )
 
-    return llm_client.parse_structured_response(
+    response = llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -593,11 +594,12 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
                 ),
             },
         ],
-        text_format=ApplyUrlResolution,
+        text_format=LLMApplyUrlResolutionResponse,
         operation="AI apply URL ranking",
         # Ranking compares bounded evidence, so repeatability matters more than stylistic variation.
         profile=llm_client.APPLY_URL_RANKING_PROFILE,
     )
+    return ApplyUrlResolution.model_validate(response.model_dump(mode="json"))
 
 
 def choose_apply_url_deterministically(state: ApplyUrlResolutionState) -> ApplyUrlResolution:

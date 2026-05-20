@@ -21,6 +21,7 @@ from src.paths import (
 )
 from src.prompt_templates import get_prompt
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationPackage,
     ApplicationRequirements,
     CandidateProfile,
@@ -237,6 +238,11 @@ def generate_application_package_with_llm(
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
     requirements_json = _to_json(requirements) if requirements else "Not discovered."
+    workflow_trace: AIWorkflowTrace | None = None
+
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
 
     response = llm_client.parse_structured_response(
         input=[
@@ -263,6 +269,7 @@ def generate_application_package_with_llm(
         operation="AI package generation",
         # This is the one workflow where some phrasing flexibility is useful.
         profile=llm_client.APPLICATION_PACKAGE_PROFILE,
+        trace_sink=capture_trace,
     )
 
     payload = response.model_dump(mode="json")
@@ -270,7 +277,9 @@ def generate_application_package_with_llm(
     payload["missing_information"] = _dedupe(
         [*missing_defaults, *payload.get("missing_information", [])]
     )
-    return ApplicationPackage.model_validate(payload)
+    package = ApplicationPackage.model_validate(payload)
+    package.workflow_trace = workflow_trace
+    return package
 
 
 def normalize_application_package(
@@ -343,6 +352,21 @@ def render_application_package_markdown(
         lines.append("## Generation Notes")
         lines.extend(f"- {item}" for item in package.generation_notes)
         lines.append("")
+
+    if package.workflow_trace:
+        lines.extend(
+            [
+                "## AI Run Metadata",
+                "",
+                f"- Workflow: {package.workflow_trace.workflow_name}",
+                f"- Operation: {package.workflow_trace.operation}",
+                f"- Model: {package.workflow_trace.model}",
+                f"- Profile: {package.workflow_trace.profile_name}",
+                f"- Attempts: {package.workflow_trace.attempt_count}",
+                f"- Duration (ms): {package.workflow_trace.duration_ms or 0}",
+                "",
+            ]
+        )
 
     return "\n".join(lines).rstrip() + "\n"
 

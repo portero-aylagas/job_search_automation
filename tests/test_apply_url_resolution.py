@@ -14,7 +14,7 @@ from src.apply_url_resolution import (
     run_apply_url_resolution_graph,
     verify_apply_url_candidates,
 )
-from src.llm_job_extraction import ApplyUrlResolution
+from src.llm_job_extraction import ApplyUrlResolution, LLMApplyUrlResolutionResponse
 
 SOURCE_URL = "https://example.com/jobs/automation-engineer-12345"
 
@@ -324,7 +324,7 @@ def test_llm_candidate_ranking_uses_deterministic_ranking_profile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     parse_calls = []
-    parsed_payload = ApplyUrlResolution(
+    parsed_payload = LLMApplyUrlResolutionResponse(
         status="resolved",
         apply_url="https://ats.example.com/apply/automation-engineer?job_id=12345",
         evidence=["Verified candidate preserves the job title."],
@@ -363,7 +363,13 @@ def test_llm_candidate_ranking_uses_deterministic_ranking_profile(
         }
     )
 
-    assert resolution == parsed_payload
+    assert resolution.status == "resolved"
+    assert resolution.apply_url == "https://ats.example.com/apply/automation-engineer?job_id=12345"
+    assert resolution.evidence == ["Verified candidate preserves the job title."]
+    assert resolution.confidence == "high"
+    assert resolution.workflow_trace is None
+    assert parse_calls[0]["text_format"] is LLMApplyUrlResolutionResponse
+    assert parse_calls[0]["text_format"] is not ApplyUrlResolution
     assert parse_calls[0]["temperature"] == 0.0
     assert parse_calls[0]["max_output_tokens"] == 2500
     assert parse_calls[0]["timeout"] == 45
