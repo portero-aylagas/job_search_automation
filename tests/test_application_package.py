@@ -9,6 +9,7 @@ from src.application_package import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
     LLMApplicationArtifact,
     LLMApplicationPackageResponse,
+    apply_application_package_quality_checks,
     apply_manual_artifact_edits,
     build_application_artifact_manifest,
     build_missing_information_defaults,
@@ -362,6 +363,69 @@ def test_reject_application_package_preserves_artifacts_and_records_reason() -> 
         "Initial generation.",
         "Rejected by reviewer: Overstates Python experience.",
     ]
+
+
+def test_quality_checks_flag_unsupported_skill_overclaims() -> None:
+    job = create_job_listing(
+        title="Platform Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/platform-automation-engineer",
+        apply_url="https://example.com/apply/platform-automation-engineer",
+        requirements=["Kubernetes"],
+    )
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter",
+                type="cover_letter",
+                label="Cover Letter",
+                content="I have experience with Kubernetes in production systems.",
+            )
+        ],
+    )
+
+    checked = apply_application_package_quality_checks(
+        package,
+        get_sample_candidate_profile(),
+        job,
+    )
+
+    assert checked.status == "needs_review"
+    assert checked.artifacts[0].status == "needs_review"
+    assert checked.artifacts[0].metadata["quality_findings"] == [
+        "Claims experience with unsupported requirement: Kubernetes"
+    ]
+    assert any("unsupported requirement" in item for item in checked.missing_information)
+
+
+def test_quality_checks_flag_sensitive_generated_answers() -> None:
+    job = make_job()
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="disability-answer",
+                type="form_answer",
+                label="Severe disability disclosure",
+                source_prompt="Do you have a severe disability you want to disclose?",
+                content="No.",
+            )
+        ],
+    )
+
+    checked = apply_application_package_quality_checks(
+        package,
+        get_sample_candidate_profile(),
+        job,
+    )
+
+    assert checked.status == "needs_review"
+    assert checked.artifacts[0].status == "needs_review"
+    assert checked.artifacts[0].metadata["quality_findings"] == [
+        "Generated answer for a sensitive or user-decision field."
+    ]
+    assert any("sensitive" in item for item in checked.missing_information)
 
 
 def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
