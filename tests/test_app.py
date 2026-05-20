@@ -302,12 +302,19 @@ def test_apply_url_review_messages_explain_manual_fallback_when_unverified() -> 
     assert any("paste the application URL manually" in message for message in messages["info"])
 
 
-def make_package_requirements(job, *, status: str = "discovered", job_preserving: bool = True):
+def make_package_requirements(
+    job,
+    *,
+    status: str = "discovered",
+    job_preserving: bool = True,
+    review_status: str = "reviewed",
+):
     return ApplicationRequirements(
         job_id=job.id,
         apply_url=job.apply_url,
         source_url=job.source_url,
         status=status,
+        review_status=review_status,
         job_preserving=job_preserving,
     )
 
@@ -361,6 +368,31 @@ def test_package_generation_blockers_require_application_requirements() -> None:
     )
 
     assert "Discover application requirements" in " ".join(blockers)
+
+
+def test_package_generation_blockers_require_reviewed_requirements() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        make_complete_candidate_profile(),
+        job,
+        make_package_requirements(job, review_status="draft"),
+    )
+
+    assert "Review the application requirements" in " ".join(blockers)
+
+
+def test_mark_requirements_reviewed_returns_reviewed_copy() -> None:
+    app = importlib.import_module("app")
+    job = make_package_job()
+    requirements = make_package_requirements(job, review_status="draft")
+
+    reviewed = app.mark_requirements_reviewed(requirements)
+
+    assert reviewed.review_status == "reviewed"
+    assert requirements.review_status == "draft"
+    assert reviewed.job_id == requirements.job_id
 
 
 def test_package_generation_blockers_reject_blocked_or_non_preserving_requirements() -> None:
