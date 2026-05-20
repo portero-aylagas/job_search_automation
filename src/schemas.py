@@ -111,6 +111,18 @@ class CandidateCVExtracted(BaseModel):
     languages: list[str] = Field(default_factory=list)
     certifications: list[str] = Field(default_factory=list)
     projects: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+
+
+class CandidateSupplementalExtracted(BaseModel):
+    work_experience: list[str] = Field(default_factory=list)
+    education: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
+    languages: list[str] = Field(default_factory=list)
+    certifications: list[str] = Field(default_factory=list)
+    projects: list[str] = Field(default_factory=list)
+    references: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
 
 
 class CandidatePreferences(BaseModel):

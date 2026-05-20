@@ -26,28 +26,20 @@ from src.llm_job_extraction import (
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
     ApplicationRequirements,
+    CandidateCVExtracted,
     CandidateProfile,
+    CandidateSupplementalExtracted,
     JobListing,
     TrackerRecord,
 )
 from src.storage import load_model, save_model
 
 BASE_DIR = Path(__file__).resolve().parent
-EMPLOYMENT_TYPE_GROUPS = [
-    (
-        "Commitment",
-        [
-            ("full_time", "Full-time"),
-            ("part_time", "Part-time"),
-        ],
-    ),
-    (
-        "Engagement",
-        [
-            ("contract", "Contract"),
-            ("freelance", "Freelance"),
-        ],
-    ),
+EMPLOYMENT_TYPE_OPTIONS = [
+    ("full_time", "Full-time"),
+    ("part_time", "Part-time"),
+    ("contract", "Contract"),
+    ("freelance", "Freelance"),
 ]
 REMOTE_PREFERENCE_OPTIONS = [
     ("remote", "Remote"),
@@ -57,6 +49,16 @@ REMOTE_PREFERENCE_OPTIONS = [
 WORK_AUTHORIZATION_OPTIONS = [
     ("eu_authorized", "EU authorized"),
     ("eu_sponsorship_required", "EU sponsorship required"),
+]
+OPTIONAL_DOCUMENT_TYPES = {
+    "reference": "Reference",
+    "certificate": "Certificate",
+    "other": "Other document",
+}
+OPTIONAL_DOCUMENT_UPLOAD_MENUS = [
+    ("reference", "Upload references"),
+    ("certificate", "Upload certificates"),
+    ("other", "Upload other documents"),
 ]
 CAREER_LEVEL_OPTIONS = [
     ("internship", "Internship"),
@@ -302,18 +304,16 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
         st.markdown("**Employment type** *")
         selected_employment_types: list[str] = []
         employment_type_values = set(preferences.employment_type)
-        for group_label, group_options in EMPLOYMENT_TYPE_GROUPS:
-            st.caption(group_label)
-            type_columns = st.columns(2)
-            for index, (value, label) in enumerate(group_options):
-                column = type_columns[index % 2]
-                with column:
-                    if st.checkbox(
-                        label,
-                        value=value in employment_type_values,
-                        key=f"employment_type_{value}",
-                    ):
-                        selected_employment_types.append(value)
+        type_columns = st.columns(2)
+        for index, (value, label) in enumerate(EMPLOYMENT_TYPE_OPTIONS):
+            column = type_columns[index % 2]
+            with column:
+                if st.checkbox(
+                    label,
+                    value=value in employment_type_values,
+                    key=f"employment_type_{value}",
+                ):
+                    selected_employment_types.append(value)
 
         st.markdown("**Career level** *")
         selected_seniority_levels: list[str] = []
@@ -920,6 +920,37 @@ def render_job_intake_page(base_dir: Path) -> None:
 
 def lines_from_text(value: str) -> list[str]:
     return [line.strip("-• \t") for line in value.splitlines() if line.strip("-• \t")]
+
+
+def merge_supplemental_extracted_data(
+    target: CandidateCVExtracted,
+    supplemental: CandidateSupplementalExtracted,
+) -> None:
+    target.work_experience = _merge_unique_items(
+        target.work_experience,
+        supplemental.work_experience,
+    )
+    target.education = _merge_unique_items(target.education, supplemental.education)
+    target.skills = _merge_unique_items(target.skills, supplemental.skills)
+    target.languages = _merge_unique_items(target.languages, supplemental.languages)
+    target.certifications = _merge_unique_items(
+        target.certifications,
+        supplemental.certifications,
+    )
+    target.projects = _merge_unique_items(target.projects, supplemental.projects)
+    target.references = _merge_unique_items(target.references, supplemental.references)
+
+
+def _merge_unique_items(existing: list[str], incoming: list[str]) -> list[str]:
+    merged = list(existing)
+    seen = {item.casefold() for item in existing}
+    for item in incoming:
+        normalized = item.strip()
+        if not normalized or normalized.casefold() in seen:
+            continue
+        merged.append(normalized)
+        seen.add(normalized.casefold())
+    return merged
 
 
 def main() -> None:
