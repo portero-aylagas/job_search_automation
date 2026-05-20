@@ -35,6 +35,7 @@ def get_sample_candidate_profile() -> CandidateProfile:
                 "languages": [],
                 "certifications": [],
                 "projects": [],
+                "references": [],
             },
             "candidate_preferences": {
                 "target_roles": [],

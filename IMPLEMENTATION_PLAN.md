@@ -17,11 +17,13 @@ Do not start new feature phases with web search, browser automation, or external
 - Candidate Profile MVP now uses the CV as the source of truth for professional
   data instead of asking the user to rebuild the CV manually.
 - The Candidate Profile page supports mandatory CV upload, agent/LLM extraction,
-  editable extracted CV review fields, manual job-search preferences, validation,
-  and JSON persistence.
+  optional supporting documents, editable extracted CV review fields, manual
+  job-search preferences, validation, and JSON persistence.
 - CV extraction is implemented through an agent-facing graph/task that uploads
   the CV and asks the LLM for structured `cv_extracted` data. The UI does not
   parse CV content directly.
+- Optional documents can be uploaded separately and are parsed into supplemental
+  evidence such as references or certificates when available.
 - Candidate profile storage now uses `data/candidate_profile.json`; local CV
   uploads and generated candidate-profile data are ignored by git because they
   contain personal CV-derived data.
@@ -133,6 +135,8 @@ job-search preferences that are not reliably extractable from the CV.
   - languages
   - certifications
   - projects
+- optional supporting document upload and supplemental extraction into
+  references, certifications, and other evidence
 - editable CV-extracted review section with simple text fields and multiline
   list editors
 - manual candidate preferences:
@@ -168,6 +172,8 @@ data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
   min
 - final save validates all required fields and writes one candidate profile JSON
 - local personal profile artifacts are not committed to git
+- optional supporting documents can be saved and merged into the reviewable
+  candidate profile data
 
 ---
 

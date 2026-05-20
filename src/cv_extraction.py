@@ -9,9 +9,10 @@ from typing import TypedDict
 from pydantic import BaseModel
 
 from src.llm_job_extraction import MODEL, _get_openai_client
-from src.schemas import CandidateCVExtracted
+from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
 
 CV_UPLOAD_DIR = Path("data/runtime/candidate_profile/cv")
+OPTIONAL_DOCUMENT_UPLOAD_DIR = Path("data/runtime/candidate_profile/optional_documents")
 
 
 class CVDocumentSnapshot(BaseModel):
@@ -23,6 +24,7 @@ class CVDocumentSnapshot(BaseModel):
 
 CVDocumentInspector = Callable[[Path], CVDocumentSnapshot]
 CVDataExtractor = Callable[[CVDocumentSnapshot], CandidateCVExtracted]
+SupplementalDataExtractor = Callable[[CVDocumentSnapshot], CandidateSupplementalExtracted]
 
 
 class CVExtractionState(TypedDict, total=False):
@@ -45,6 +47,17 @@ def run_cv_extraction_task(
         extractor=extractor,
     )
     return state["cv_extracted"]
+
+
+def run_optional_document_extraction_task(
+    document_path: str | Path,
+    *,
+    inspector: CVDocumentInspector | None = None,
+    extractor: SupplementalDataExtractor | None = None,
+) -> CandidateSupplementalExtracted:
+    path = _validate_document_path(document_path)
+    snapshot = (inspector or inspect_cv_document_agent)(path)
+    return (extractor or extract_optional_document_data_with_llm)(snapshot)
 
 
 def run_cv_extraction_graph(
@@ -155,6 +168,53 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
     return response.output_parsed
 
 
+def extract_optional_document_data_with_llm(
+    snapshot: CVDocumentSnapshot,
+) -> CandidateSupplementalExtracted:
+    client = _get_openai_client()
+    response = client.responses.parse(
+        model=MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You extract supplemental professional evidence from optional "
+                    "candidate documents such as reference letters, certificates, "
+                    "course records, portfolios, and other supporting materials for a "
+                    "controlled, human-in-the-loop job application workflow. Return "
+                    "only information directly supported by the uploaded document. Do "
+                    "not infer job-search preferences, salary goals, work "
+                    "authorization, or availability."
+                ),
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "Extract supplemental candidate information into these "
+                            "fields when present: work_experience, education, skills, "
+                            "languages, certifications, projects, references, and "
+                            "notes. Keep each item concise and suitable for human "
+                            "review before saving."
+                        ),
+                    },
+                    {
+                        "type": "input_file",
+                        "file_id": snapshot.file_id,
+                    },
+                ],
+            },
+        ],
+        text_format=CandidateSupplementalExtracted,
+    )
+
+    if response.output_parsed is None:
+        raise RuntimeError("AI extraction did not return structured optional document data.")
+    return response.output_parsed
+
+
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
     root = Path(base_dir)
     safe_name = _safe_filename(original_name)
@@ -165,18 +225,40 @@ def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes
     return target
 
 
+def save_uploaded_optional_document(
+    base_dir: Path | str,
+    original_name: str,
+    file_bytes: bytes,
+) -> Path:
+    root = Path(base_dir)
+    safe_name = _safe_filename(original_name, fallback="document")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    target = root / OPTIONAL_DOCUMENT_UPLOAD_DIR / f"{timestamp}-{safe_name}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(file_bytes)
+    return target
+
+
 def _validate_cv_path(cv_path: str | Path) -> Path:
-    path = Path(cv_path)
+    return _validate_document_path(cv_path, document_label="CV")
+
+
+def _validate_document_path(
+    document_path: str | Path,
+    *,
+    document_label: str = "Document",
+) -> Path:
+    path = Path(document_path)
     if not path.exists():
-        raise FileNotFoundError(f"CV file not found: {path}")
+        raise FileNotFoundError(f"{document_label} file not found: {path}")
     if not path.is_file():
-        raise ValueError(f"CV path must point to a file: {path}")
+        raise ValueError(f"{document_label} path must point to a file: {path}")
     return path
 
 
-def _safe_filename(value: str) -> str:
+def _safe_filename(value: str, *, fallback: str = "cv") -> str:
     normalized = "".join(
         character if character.isalnum() or character in "._-" else "-"
         for character in value
     ).strip("-")
-    return normalized or "cv"
+    return normalized or fallback
