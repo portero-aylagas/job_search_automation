@@ -2,7 +2,7 @@ import importlib
 from pathlib import Path
 
 from src.job_intake import create_job_listing
-from src.llm_job_extraction import ApplyUrlResolution, RejectedApplyCandidate
+from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, RejectedApplyCandidate
 from src.schemas import AIWorkflowTrace, ApplicationRequirements, CandidateProfile
 
 
@@ -272,6 +272,58 @@ def test_apply_resolution_details_handles_missing_resolution_as_manual_review() 
     assert details["apply_url"] == manual_url
     assert details["verified_by_resolver"] is False
     assert details["manual_override"] is True
+
+
+def test_build_reviewed_job_listing_maps_review_form_state() -> None:
+    app = importlib.import_module("app")
+    source_url = "https://example.com/jobs/automation-engineer"
+    apply_url = "https://example.com/apply/automation-engineer"
+    form_state = app.JobReviewFormState(
+        title="Automation Engineer",
+        company="Example Co",
+        location="Berlin",
+        remote_policy="Hybrid",
+        apply_url=apply_url,
+        salary="EUR 60k",
+        posted_date="2026-05-20",
+        source_job_id="external-123",
+        description="Build automation workflows.",
+        requirements="- Python\n- Testing",
+        responsibilities="- Ship tools",
+        nice_to_have_skills="- Streamlit",
+        dynamic_fields=[
+            {
+                "dynamic": True,
+                "name": "Hiring team",
+                "value": "Platform",
+                "category": "",
+                "source_text": "",
+                "confidence": "medium",
+            },
+            {
+                "dynamic": True,
+                "name": "",
+                "value": "",
+                "category": "",
+                "source_text": "",
+                "confidence": "low",
+            },
+        ],
+        save_submitted=True,
+        clear_submitted=False,
+    )
+    extracted = ExtractedJobData(confidence="high")
+    resolution = ApplyUrlResolution(status="resolved", apply_url=apply_url)
+
+    job = app.build_reviewed_job_listing(form_state, extracted, source_url, resolution)
+
+    assert job.title == "Automation Engineer"
+    assert job.requirements == ["Python", "Testing"]
+    assert job.responsibilities == ["Ship tools"]
+    assert job.nice_to_have_skills == ["Streamlit"]
+    assert job.job_details["extraction_confidence"] == "high"
+    assert job.job_details["dynamic_fields"] == [form_state.dynamic_fields[0]]
+    assert job.job_details["apply_url_resolution"]["verified_by_resolver"] is True
 
 
 def test_apply_url_review_messages_are_empty_when_final_apply_url_is_verified() -> None:
