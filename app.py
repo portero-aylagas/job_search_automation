@@ -5,12 +5,23 @@ from pathlib import Path
 import streamlit as st
 from pydantic import ValidationError
 
+from src.application_package import (
+    generate_application_package,
+    load_application_package,
+    save_application_package,
+    update_tracker_for_application_package,
+)
 from src.application_requirements import (
     run_requirements_discovery_graph,
     save_application_page_snapshot,
     save_application_requirements,
 )
-from src.cv_extraction import run_cv_extraction_task, save_uploaded_cv
+from src.cv_extraction import (
+    run_cv_extraction_task,
+    run_optional_document_extraction_task,
+    save_uploaded_cv,
+    save_uploaded_optional_document,
+)
 from src.job_intake import (
     choose_valid_apply_url,
     create_job_listing,
@@ -25,29 +36,24 @@ from src.llm_job_extraction import (
 )
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
+    ApplicationPackage,
     ApplicationRequirements,
+    CandidateCVExtracted,
+    CandidateOptionalDocument,
     CandidateProfile,
+    CandidateSupplementalExtracted,
+    ExperienceUnit,
     JobListing,
     TrackerRecord,
 )
 from src.storage import load_model, save_model
 
 BASE_DIR = Path(__file__).resolve().parent
-EMPLOYMENT_TYPE_GROUPS = [
-    (
-        "Commitment",
-        [
-            ("full_time", "Full-time"),
-            ("part_time", "Part-time"),
-        ],
-    ),
-    (
-        "Engagement",
-        [
-            ("contract", "Contract"),
-            ("freelance", "Freelance"),
-        ],
-    ),
+EMPLOYMENT_TYPE_OPTIONS = [
+    ("full_time", "Full-time"),
+    ("part_time", "Part-time"),
+    ("contract", "Contract"),
+    ("freelance", "Freelance"),
 ]
 REMOTE_PREFERENCE_OPTIONS = [
     ("remote", "Remote"),
@@ -58,6 +64,17 @@ WORK_AUTHORIZATION_OPTIONS = [
     ("eu_authorized", "EU authorized"),
     ("eu_sponsorship_required", "EU sponsorship required"),
 ]
+OPTIONAL_DOCUMENT_TYPES = {
+    "reference": "Reference",
+    "certificate": "Certificate",
+    "other": "Other document",
+}
+OPTIONAL_DOCUMENT_UPLOAD_MENUS = [
+    ("reference", "Upload references"),
+    ("certificate", "Upload certificates"),
+    ("other", "Upload other documents"),
+]
+OPTIONAL_DOCUMENT_FILE_TYPES = ["pdf", "txt", "md", "docx"]
 CAREER_LEVEL_OPTIONS = [
     ("internship", "Internship"),
     ("working_student", "Working student"),
@@ -150,6 +167,7 @@ def render_candidate_profile_page(base_dir: Path) -> None:
     candidate_profile = CandidateProfile.model_validate(draft)
 
     render_cv_upload_section(base_dir, candidate_profile)
+    render_optional_documents_section(base_dir, candidate_profile)
     render_cv_extracted_review_section(candidate_profile)
     render_candidate_preferences_section(candidate_profile)
     render_profile_save_section(base_dir, candidate_profile)
@@ -190,9 +208,87 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
             st.rerun()
 
 
+def render_optional_documents_section(base_dir: Path, candidate_profile: CandidateProfile) -> None:
+    with st.container(border=True):
+        st.subheader("2. Optional documents")
+        st.caption("Upload references, certificates, or other supporting documents.")
+
+        existing_documents = candidate_profile.candidate_profile.source_documents.optional_documents
+        if existing_documents:
+            st.markdown("**Uploaded optional documents**")
+            for document in existing_documents:
+                status = "parsed" if document.parsed else "not parsed"
+                document_type = OPTIONAL_DOCUMENT_TYPES.get(
+                    document.document_type,
+                    OPTIONAL_DOCUMENT_TYPES["other"],
+                )
+                st.caption(f"{document.file_name} - {document_type}, {status}")
+
+        uploaded_documents_by_type = {}
+        for document_type, label in OPTIONAL_DOCUMENT_UPLOAD_MENUS:
+            uploaded_documents_by_type[document_type] = st.file_uploader(
+                label,
+                type=OPTIONAL_DOCUMENT_FILE_TYPES,
+                accept_multiple_files=True,
+                key=f"candidate_profile_optional_documents_upload_{document_type}",
+            )
+
+        if st.button("Upload and parse optional documents"):
+            uploaded_document_entries = [
+                (document_type, uploaded_document)
+                for document_type, uploaded_documents in uploaded_documents_by_type.items()
+                for uploaded_document in uploaded_documents or []
+            ]
+            if not uploaded_document_entries:
+                st.error("Upload at least one optional document before parsing.")
+                return
+
+            updated_profile = candidate_profile.model_copy(deep=True)
+            parsed_count = 0
+            for document_type, uploaded_document in uploaded_document_entries:
+                saved_path = save_uploaded_optional_document(
+                    base_dir,
+                    uploaded_document.name,
+                    uploaded_document.getvalue(),
+                )
+                document = CandidateOptionalDocument(
+                    file_path=str(saved_path),
+                    file_name=uploaded_document.name,
+                    document_type=document_type,
+                    parsed=False,
+                )
+
+                try:
+                    extracted = run_optional_document_extraction_task(saved_path)
+                except Exception as exc:
+                    updated_profile.candidate_profile.source_documents.optional_documents.append(
+                        document
+                    )
+                    st.error(f"{uploaded_document.name}: {exc}")
+                    continue
+
+                merge_supplemental_extracted_data(
+                    updated_profile.candidate_profile.cv_extracted,
+                    extracted,
+                )
+                document.parsed = True
+                updated_profile.candidate_profile.source_documents.optional_documents.append(
+                    document
+                )
+                parsed_count += 1
+
+            set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+            if parsed_count:
+                st.success(
+                    f"Parsed {parsed_count} optional document"
+                    f"{'' if parsed_count == 1 else 's'} into the review fields."
+                )
+            st.rerun()
+
+
 def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> None:
     with st.container(border=True):
-        st.subheader("2. CV-extracted data review")
+        st.subheader("3. Extracted data review")
         profile_data = candidate_profile.candidate_profile
         extracted = profile_data.cv_extracted
 
@@ -238,6 +334,11 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                 height=80,
             )
             projects = st.text_area("Projects", value="\n".join(extracted.projects), height=100)
+            references = st.text_area(
+                "References",
+                value="\n".join(extracted.references),
+                height=80,
+            )
 
             save_extracted = st.form_submit_button("Save CV review changes")
 
@@ -264,6 +365,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
             certifications
         )
         updated_profile.candidate_profile.cv_extracted.projects = lines_from_text(projects)
+        updated_profile.candidate_profile.cv_extracted.references = lines_from_text(references)
         set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
         st.success("CV review fields updated.")
         st.rerun()
@@ -271,7 +373,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
 def render_candidate_preferences_section(candidate_profile: CandidateProfile) -> None:
     with st.container(border=True):
-        st.subheader("3. Manual candidate preferences")
+        st.subheader("4. Manual candidate preferences")
         profile_data = candidate_profile.candidate_profile
         preferences = profile_data.candidate_preferences
 
@@ -302,18 +404,16 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
         st.markdown("**Employment type** *")
         selected_employment_types: list[str] = []
         employment_type_values = set(preferences.employment_type)
-        for group_label, group_options in EMPLOYMENT_TYPE_GROUPS:
-            st.caption(group_label)
-            type_columns = st.columns(2)
-            for index, (value, label) in enumerate(group_options):
-                column = type_columns[index % 2]
-                with column:
-                    if st.checkbox(
-                        label,
-                        value=value in employment_type_values,
-                        key=f"employment_type_{value}",
-                    ):
-                        selected_employment_types.append(value)
+        type_columns = st.columns(2)
+        for index, (value, label) in enumerate(EMPLOYMENT_TYPE_OPTIONS):
+            column = type_columns[index % 2]
+            with column:
+                if st.checkbox(
+                    label,
+                    value=value in employment_type_values,
+                    key=f"employment_type_{value}",
+                ):
+                    selected_employment_types.append(value)
 
         st.markdown("**Career level** *")
         selected_seniority_levels: list[str] = []
@@ -493,6 +593,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
 
     render_job_intake_summary(job_listing)
     render_application_requirements_panel(base_dir, job_listing)
+    render_application_package_panel(base_dir, job_listing)
 
 
 def load_normalized_job(base_dir: Path, job_id: str) -> JobListing | None:
@@ -523,6 +624,16 @@ def load_application_requirements(
     if template_path.exists():
         return load_model(template_path, ApplicationRequirements, default=None)
     return None
+
+
+def load_experience_units(base_dir: Path) -> list[ExperienceUnit]:
+    runtime_path = base_dir / "data" / "runtime" / "experience_units.json"
+    template_path = base_dir / "data" / "experience_units.json"
+    if runtime_path.exists():
+        return load_model(runtime_path, list[ExperienceUnit], default=[])
+    if template_path.exists():
+        return load_model(template_path, list[ExperienceUnit], default=[])
+    return []
 
 
 def load_jobs_index(base_dir: Path) -> list[TrackerRecord]:
@@ -609,6 +720,87 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         return
 
     render_application_requirements(requirements)
+
+
+def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
+    st.divider()
+    st.subheader("Application Package")
+    package = load_application_package(base_dir, job.id)
+    requirements = load_application_requirements(base_dir, job.id)
+    candidate_profile = load_candidate_profile(base_dir)
+    experience_units = load_experience_units(base_dir)
+
+    profile_errors = validate_candidate_profile(candidate_profile)
+    if profile_errors:
+        st.warning("Candidate profile is incomplete: " + ", ".join(profile_errors))
+
+    if requirements is None:
+        st.info("No application requirements found. Package generation can continue with job data.")
+    elif requirements.status == "blocked":
+        st.warning(
+            "Application requirements are blocked. Review requirements before relying on output."
+        )
+
+    if st.button("Generate Application Package"):
+        if profile_errors:
+            st.error("Complete the candidate profile before generating application material.")
+            return
+        try:
+            with st.spinner("Generating application package..."):
+                package = generate_application_package(
+                    candidate_profile,
+                    experience_units,
+                    job,
+                    requirements,
+                )
+                json_path, markdown_path = save_application_package(base_dir, package, job)
+                update_tracker_for_application_package(base_dir, job.id, json_path)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
+        st.success(f"Application package saved. Markdown export: {markdown_path}")
+
+    if package is None:
+        st.info("No application package has been generated yet.")
+        return
+
+    render_application_package(package)
+
+
+def render_application_package(package: ApplicationPackage) -> None:
+    status_columns = st.columns(3)
+    status_columns[0].metric("Status", package.status)
+    status_columns[1].metric("Artifacts", len(package.artifacts))
+    status_columns[2].metric("Missing Items", len(package.missing_information))
+
+    if package.selected_experience_units:
+        render_list("Selected Experience Units", package.selected_experience_units)
+
+    if package.missing_information:
+        st.markdown("**Missing Information**")
+        for item in package.missing_information:
+            st.write(f"- {item}")
+
+    for artifact in package.artifacts:
+        with st.expander(artifact.label, expanded=artifact.required):
+            artifact_columns = st.columns(3)
+            artifact_columns[0].metric("Type", artifact.type)
+            artifact_columns[1].metric("Status", artifact.status)
+            artifact_columns[2].metric(
+                "Required",
+                "Yes" if artifact.required else "No",
+            )
+            if artifact.source_prompt:
+                st.markdown("**Source Prompt**")
+                st.write(artifact.source_prompt)
+            if artifact.source_requirement:
+                st.markdown("**Source Requirement**")
+                st.caption(artifact.source_requirement)
+            st.markdown("**Content**")
+            st.write(artifact.content or "No content generated.")
+
+    if package.generation_notes:
+        render_list("Generation Notes", package.generation_notes)
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:
@@ -916,6 +1108,37 @@ def render_job_intake_page(base_dir: Path) -> None:
 
 def lines_from_text(value: str) -> list[str]:
     return [line.strip("-• \t") for line in value.splitlines() if line.strip("-• \t")]
+
+
+def merge_supplemental_extracted_data(
+    target: CandidateCVExtracted,
+    supplemental: CandidateSupplementalExtracted,
+) -> None:
+    target.work_experience = _merge_unique_items(
+        target.work_experience,
+        supplemental.work_experience,
+    )
+    target.education = _merge_unique_items(target.education, supplemental.education)
+    target.skills = _merge_unique_items(target.skills, supplemental.skills)
+    target.languages = _merge_unique_items(target.languages, supplemental.languages)
+    target.certifications = _merge_unique_items(
+        target.certifications,
+        supplemental.certifications,
+    )
+    target.projects = _merge_unique_items(target.projects, supplemental.projects)
+    target.references = _merge_unique_items(target.references, supplemental.references)
+
+
+def _merge_unique_items(existing: list[str], incoming: list[str]) -> list[str]:
+    merged = list(existing)
+    seen = {item.casefold() for item in existing}
+    for item in incoming:
+        normalized = item.strip()
+        if not normalized or normalized.casefold() in seen:
+            continue
+        merged.append(normalized)
+        seen.add(normalized.casefold())
+    return merged
 
 
 def main() -> None:

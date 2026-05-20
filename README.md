@@ -233,6 +233,10 @@ Candidate/job comparison:
 Generated material:
 
 - variable artifacts
+- cover letter drafts
+- CV tailoring notes
+- recruiter message drafts
+- document upload checklists
 - job-specific form answers
 - missing information checklist
 - selected experience units

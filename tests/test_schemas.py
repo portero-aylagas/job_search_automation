@@ -1,4 +1,10 @@
-from src.schemas import CandidatePreferences, CandidateProfile, TrackerRecord
+from src.schemas import (
+    ApplicationArtifact,
+    ApplicationPackage,
+    CandidatePreferences,
+    CandidateProfile,
+    TrackerRecord,
+)
 
 
 def test_candidate_profile_round_trip() -> None:
@@ -40,6 +46,26 @@ def test_candidate_profile_round_trip() -> None:
     reloaded = CandidateProfile.model_validate(profile.model_dump(mode="json"))
 
     assert reloaded == profile
+
+
+def test_candidate_profile_coerces_legacy_optional_document_paths() -> None:
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "source_documents": {
+                    "optional_documents": [
+                        "data/runtime/candidate_profile/optional_documents/reference.pdf"
+                    ],
+                },
+            },
+        }
+    )
+
+    optional_document = profile.candidate_profile.source_documents.optional_documents[0]
+    assert optional_document.file_path.endswith("reference.pdf")
+    assert optional_document.file_name == "reference.pdf"
+    assert optional_document.document_type == "other"
+    assert optional_document.parsed is False
 
 
 def test_candidate_preferences_coerces_legacy_strings() -> None:
@@ -84,3 +110,30 @@ def test_tracker_record_accepts_known_statuses() -> None:
     )
 
     assert record.status == "application_draft"
+
+
+def test_application_package_round_trip() -> None:
+    package = ApplicationPackage(
+        job_id="job-123",
+        status="draft",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                required=True,
+                status="needs_review",
+                content="Dear hiring team...",
+                source_prompt="Please upload a cover letter.",
+                source_requirement="Cover letter required.",
+                metadata={"language": "en"},
+            )
+        ],
+        missing_information=["Confirm preferred location."],
+        selected_experience_units=["exp-001"],
+        generation_notes=["Generated from reviewed requirements."],
+    )
+
+    reloaded = ApplicationPackage.model_validate(package.model_dump(mode="json"))
+
+    assert reloaded == package
