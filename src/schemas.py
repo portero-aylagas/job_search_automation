@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
@@ -206,9 +207,37 @@ class CandidateSourceCV(BaseModel):
     parsed: bool = False
 
 
+class CandidateOptionalDocument(BaseModel):
+    file_path: str = ""
+    file_name: str = ""
+    document_type: str = "other"
+    parsed: bool = False
+
+
 class CandidateSourceDocuments(BaseModel):
     cv: CandidateSourceCV = Field(default_factory=CandidateSourceCV)
-    optional_documents: list[str] = Field(default_factory=list)
+    optional_documents: list[CandidateOptionalDocument] = Field(default_factory=list)
+
+    @field_validator("optional_documents", mode="before")
+    @classmethod
+    def _coerce_legacy_optional_documents(cls, value: object) -> object:
+        if not isinstance(value, list):
+            return value
+
+        normalized: list[object] = []
+        for item in value:
+            if isinstance(item, str):
+                normalized.append(
+                    {
+                        "file_path": item,
+                        "file_name": Path(item).name,
+                        "document_type": "other",
+                        "parsed": False,
+                    }
+                )
+            else:
+                normalized.append(item)
+        return normalized
 
 
 class CandidateProfileData(BaseModel):
@@ -313,6 +342,14 @@ def _normalized_url_identity(value: str) -> tuple[str, str, str]:
 
 
 ConfidenceLevel = Literal["high", "medium", "low"]
+ApplicationArtifactStatus = Literal[
+    "draft",
+    "needs_review",
+    "approved",
+    "rejected",
+    "regenerated",
+    "manually_edited",
+]
 
 
 class ApplicationRequirementFinding(BaseModel):
@@ -397,6 +434,27 @@ class ApplicationRequirements(BaseModel):
     missing_or_uncertain: list[str] = Field(default_factory=list)
     source_evidence: list[str] = Field(default_factory=list)
     confidence: ConfidenceLevel = "medium"
+
+
+class ApplicationArtifact(BaseModel):
+    id: str
+    type: str
+    label: str
+    required: bool = False
+    status: ApplicationArtifactStatus = "draft"
+    content: str = ""
+    source_prompt: str | None = None
+    source_requirement: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ApplicationPackage(BaseModel):
+    job_id: str
+    status: ApplicationArtifactStatus = "draft"
+    artifacts: list[ApplicationArtifact] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    selected_experience_units: list[str] = Field(default_factory=list)
+    generation_notes: list[str] = Field(default_factory=list)
 
 
 class TrackerRecord(BaseModel):
