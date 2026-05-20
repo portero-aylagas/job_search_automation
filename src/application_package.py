@@ -80,6 +80,11 @@ def generate_application_package(
     selected_generator = generator or generate_application_package_with_llm
     package = selected_generator(candidate_profile, experience_units, job, requirements)
     package = attach_application_package_traceability(package, requirements, experience_units)
+    package = apply_application_package_quality_checks(
+        package,
+        candidate_profile,
+        job,
+    )
     return normalize_application_package(job, package)
 
 
@@ -281,7 +286,8 @@ def generate_application_package_with_llm(
     )
     package = ApplicationPackage.model_validate(payload)
     package.workflow_trace = workflow_trace
-    return attach_application_package_traceability(package, requirements, experience_units)
+    package = attach_application_package_traceability(package, requirements, experience_units)
+    return apply_application_package_quality_checks(package, candidate_profile, job)
 
 
 def attach_application_package_traceability(
@@ -313,6 +319,53 @@ def attach_application_package_traceability(
     return traced_package
 
 
+def apply_application_package_quality_checks(
+    package: ApplicationPackage,
+    candidate_profile: CandidateProfile,
+    job: JobListing,
+) -> ApplicationPackage:
+    checked_package = package.model_copy(deep=True)
+    candidate_evidence = _candidate_evidence_text(candidate_profile)
+    unsupported_terms = _unsupported_requirement_terms(job, candidate_evidence)
+    review_items: list[str] = []
+
+    for artifact in checked_package.artifacts:
+        findings = [
+            *_sensitive_answer_findings(artifact),
+            *_unsupported_claim_findings(artifact.content, unsupported_terms),
+        ]
+        if not findings:
+            continue
+
+        metadata = dict(artifact.metadata)
+        metadata["quality_findings"] = _dedupe(
+            [
+                *[str(item) for item in metadata.get("quality_findings", [])],
+                *findings,
+            ]
+        )
+        artifact.metadata = metadata
+        if artifact.status != "manually_edited":
+            artifact.status = "needs_review"
+        review_items.extend(
+            f"Review generated artifact '{artifact.label}': {finding}"
+            for finding in findings
+        )
+
+    if review_items:
+        checked_package.status = "needs_review"
+        checked_package.missing_information = _dedupe(
+            [*checked_package.missing_information, *review_items]
+        )
+        checked_package.generation_notes = _dedupe(
+            [
+                *checked_package.generation_notes,
+                "Quality checks flagged generated content for reviewer confirmation.",
+            ]
+        )
+    return checked_package
+
+
 def normalize_application_package(
     job: JobListing,
     package: ApplicationPackage,
@@ -337,6 +390,52 @@ def normalize_application_package(
 
     payload["artifacts"] = normalized_artifacts
     return ApplicationPackage.model_validate(payload)
+
+
+def apply_manual_artifact_edits(
+    package: ApplicationPackage,
+    edits_by_artifact_id: dict[str, str],
+) -> ApplicationPackage:
+    edited_package = package.model_copy(deep=True)
+    edited_labels: list[str] = []
+
+    for artifact in edited_package.artifacts:
+        if artifact.id not in edits_by_artifact_id:
+            continue
+        edited_content = str(edits_by_artifact_id[artifact.id]).strip()
+        if edited_content == artifact.content:
+            continue
+        artifact.content = edited_content
+        artifact.status = "manually_edited"
+        metadata = dict(artifact.metadata)
+        metadata["manual_edit"] = True
+        artifact.metadata = metadata
+        edited_labels.append(artifact.label)
+
+    if edited_labels:
+        edited_package.generation_notes = _dedupe(
+            [
+                *edited_package.generation_notes,
+                "Manual edits saved for: " + ", ".join(edited_labels),
+            ]
+        )
+    return edited_package
+
+
+def reject_application_package(
+    package: ApplicationPackage,
+    reason: str = "",
+) -> ApplicationPackage:
+    rejected_package = package.model_copy(deep=True)
+    rejected_package.status = "rejected"
+    normalized_reason = reason.strip() or "No reason provided."
+    rejected_package.generation_notes = _dedupe(
+        [
+            *rejected_package.generation_notes,
+            f"Rejected by reviewer: {normalized_reason}",
+        ]
+    )
+    return rejected_package
 
 
 def render_application_package_markdown(
@@ -507,6 +606,88 @@ def _requirements_hint_at_cover_letter(
         ]
     ).casefold()
     return any(term in haystack for term in ("cover letter", "motivation", "anschreiben"))
+
+
+def _candidate_evidence_text(candidate_profile: CandidateProfile) -> str:
+    profile_data = candidate_profile.candidate_profile
+    extracted = profile_data.cv_extracted
+    evidence_parts = [
+        extracted.identity.full_name,
+        extracted.identity.location,
+        *extracted.work_experience,
+        *extracted.education,
+        *extracted.skills,
+        *extracted.languages,
+        *extracted.certifications,
+        *extracted.projects,
+        *extracted.references,
+        *profile_data.candidate_preferences.target_roles,
+    ]
+    return " ".join(evidence_parts).casefold()
+
+
+def _unsupported_requirement_terms(
+    job: JobListing,
+    candidate_evidence: str,
+) -> list[str]:
+    terms: list[str] = []
+    for raw_term in [*job.requirements, *job.nice_to_have_skills]:
+        term = _quality_term(raw_term)
+        if not term:
+            continue
+        if term.casefold() not in candidate_evidence:
+            terms.append(term)
+    return _dedupe(terms)
+
+
+def _quality_term(value: str) -> str:
+    normalized = re.sub(r"\s+", " ", value).strip(" .,:;")
+    if len(normalized) < 3:
+        return ""
+    if len(normalized.split()) > 4:
+        return ""
+    return normalized
+
+
+def _sensitive_answer_findings(artifact: Any) -> list[str]:
+    source_text = " ".join(
+        str(value)
+        for value in (
+            artifact.label,
+            artifact.source_prompt or "",
+            artifact.source_requirement or "",
+        )
+        if value
+    )
+    if artifact.content.strip() and _is_sensitive_or_user_decision_field(source_text):
+        return ["Generated answer for a sensitive or user-decision field."]
+    return []
+
+
+def _unsupported_claim_findings(
+    content: str,
+    unsupported_terms: list[str],
+) -> list[str]:
+    findings: list[str] = []
+    for term in unsupported_terms:
+        if _content_claims_experience_with_term(content, term):
+            findings.append(f"Claims experience with unsupported requirement: {term}")
+    return findings
+
+
+def _content_claims_experience_with_term(content: str, term: str) -> bool:
+    escaped_term = re.escape(term)
+    claim_pattern = re.compile(
+        rf"\b("
+        rf"experience\s+(?:with|in)|"
+        rf"experienced\s+(?:with|in)|"
+        rf"skilled\s+(?:with|in)|"
+        rf"proficient\s+(?:with|in)|"
+        rf"expert\s+(?:with|in)"
+        rf")\s+{escaped_term}\b",
+        re.IGNORECASE,
+    )
+    return bool(claim_pattern.search(content))
 
 
 def _selected_experience_trace(

@@ -9,11 +9,14 @@ from src.application_package import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
     LLMApplicationArtifact,
     LLMApplicationPackageResponse,
+    apply_application_package_quality_checks,
+    apply_manual_artifact_edits,
     build_application_artifact_manifest,
     build_missing_information_defaults,
     generate_application_package,
     generate_application_package_with_llm,
     load_application_package,
+    reject_application_package,
     render_application_package_markdown,
     save_application_package,
     update_tracker_for_application_package,
@@ -303,6 +306,126 @@ def test_application_package_adds_artifact_traceability_metadata() -> None:
     assert "Automated weekly KPI reporting" in (
         traceability["source_experience_units"][0]["evidence_points"][0]
     )
+
+
+def test_manual_artifact_edits_mark_artifacts_without_mutating_original() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter",
+                type="cover_letter",
+                label="Cover Letter",
+                content="Draft text.",
+            ),
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Summary",
+                content="Keep this.",
+            ),
+        ],
+    )
+
+    edited = apply_manual_artifact_edits(
+        package,
+        {"cover-letter": "Reviewed text.", "summary": "Keep this."},
+    )
+
+    assert package.artifacts[0].content == "Draft text."
+    assert edited.artifacts[0].content == "Reviewed text."
+    assert edited.artifacts[0].status == "manually_edited"
+    assert edited.artifacts[0].metadata["manual_edit"] is True
+    assert edited.artifacts[1].status == "draft"
+    assert edited.generation_notes == ["Manual edits saved for: Cover Letter"]
+
+
+def test_reject_application_package_preserves_artifacts_and_records_reason() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Summary",
+                content="Draft text.",
+            )
+        ],
+        generation_notes=["Initial generation."],
+    )
+
+    rejected = reject_application_package(package, "Overstates Python experience.")
+
+    assert package.status == "draft"
+    assert rejected.status == "rejected"
+    assert rejected.artifacts[0].content == "Draft text."
+    assert rejected.generation_notes == [
+        "Initial generation.",
+        "Rejected by reviewer: Overstates Python experience.",
+    ]
+
+
+def test_quality_checks_flag_unsupported_skill_overclaims() -> None:
+    job = create_job_listing(
+        title="Platform Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/platform-automation-engineer",
+        apply_url="https://example.com/apply/platform-automation-engineer",
+        requirements=["Kubernetes"],
+    )
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter",
+                type="cover_letter",
+                label="Cover Letter",
+                content="I have experience with Kubernetes in production systems.",
+            )
+        ],
+    )
+
+    checked = apply_application_package_quality_checks(
+        package,
+        get_sample_candidate_profile(),
+        job,
+    )
+
+    assert checked.status == "needs_review"
+    assert checked.artifacts[0].status == "needs_review"
+    assert checked.artifacts[0].metadata["quality_findings"] == [
+        "Claims experience with unsupported requirement: Kubernetes"
+    ]
+    assert any("unsupported requirement" in item for item in checked.missing_information)
+
+
+def test_quality_checks_flag_sensitive_generated_answers() -> None:
+    job = make_job()
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="disability-answer",
+                type="form_answer",
+                label="Severe disability disclosure",
+                source_prompt="Do you have a severe disability you want to disclose?",
+                content="No.",
+            )
+        ],
+    )
+
+    checked = apply_application_package_quality_checks(
+        package,
+        get_sample_candidate_profile(),
+        job,
+    )
+
+    assert checked.status == "needs_review"
+    assert checked.artifacts[0].status == "needs_review"
+    assert checked.artifacts[0].metadata["quality_findings"] == [
+        "Generated answer for a sensitive or user-decision field."
+    ]
+    assert any("sensitive" in item for item in checked.missing_information)
 
 
 def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
