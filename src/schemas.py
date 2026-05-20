@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -95,6 +96,25 @@ _LEGACY_SENIORITY_VALUES = {
 }
 
 
+class AIWorkflowTrace(BaseModel):
+    workflow_name: str
+    operation: str
+    model: str
+    profile_name: str
+    temperature: float
+    max_output_tokens: int
+    timeout_seconds: float
+    max_retries: int
+    retry_backoff_seconds: list[float] = Field(default_factory=list)
+    max_tool_calls: int | None = None
+    truncation: str = "disabled"
+    attempt_count: int = 1
+    duration_ms: int | None = None
+    recorded_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+
+
 class CandidateCVIdentity(BaseModel):
     full_name: str = ""
     email: str = ""
@@ -114,6 +134,7 @@ class CandidateCVExtracted(BaseModel):
     certifications: list[str] = Field(default_factory=list)
     projects: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
+    workflow_trace: AIWorkflowTrace | None = None
 
 
 class CandidateSupplementalExtracted(BaseModel):
@@ -125,6 +146,7 @@ class CandidateSupplementalExtracted(BaseModel):
     projects: list[str] = Field(default_factory=list)
     references: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    workflow_trace: AIWorkflowTrace | None = None
 
 
 class CandidatePreferences(BaseModel):
@@ -342,6 +364,8 @@ def _normalized_url_identity(value: str) -> tuple[str, str, str]:
 
 
 ConfidenceLevel = Literal["high", "medium", "low"]
+
+
 ApplicationArtifactStatus = Literal[
     "draft",
     "needs_review",
@@ -420,6 +444,7 @@ class ApplicationRequirements(BaseModel):
     source_url: HttpUrl
     status: Literal["discovered", "blocked"] = "discovered"
     review_status: Literal["draft", "reviewed"] = "draft"
+    workflow_trace: AIWorkflowTrace | None = None
     blocked_reason: str | None = None
     job_preserving: bool = False
     required_documents: list[ApplicationRequirementFinding] = Field(default_factory=list)
@@ -452,6 +477,7 @@ class ApplicationArtifact(BaseModel):
 class ApplicationPackage(BaseModel):
     job_id: str
     status: ApplicationArtifactStatus = "draft"
+    workflow_trace: AIWorkflowTrace | None = None
     artifacts: list[ApplicationArtifact] = Field(default_factory=list)
     missing_information: list[str] = Field(default_factory=list)
     selected_experience_units: list[str] = Field(default_factory=list)

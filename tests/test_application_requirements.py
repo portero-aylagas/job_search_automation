@@ -208,6 +208,8 @@ def test_llm_extractor_uses_llm_safe_response_model(monkeypatch: pytest.MonkeyPa
     assert parse_calls[0]["truncation"] == "disabled"
     assert isinstance(requirements, ApplicationRequirements)
     assert requirements.required_documents[0].label == "CV"
+    assert requirements.workflow_trace is not None
+    assert requirements.workflow_trace.workflow_name == "application_requirements"
 
 
 def test_llm_extractor_converts_output_to_persisted_requirements_model(
@@ -250,6 +252,7 @@ def test_llm_extractor_converts_output_to_persisted_requirements_model(
     assert str(requirements.apply_url) == str(job.apply_url)
     assert str(requirements.source_url) == str(job.source_url)
     assert requirements.source_evidence == ["Upload CV"]
+    assert requirements.workflow_trace is not None
 
 
 def test_llm_extractor_wraps_openai_api_errors(monkeypatch: pytest.MonkeyPatch) -> None:

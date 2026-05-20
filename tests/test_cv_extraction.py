@@ -87,15 +87,19 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
 
     extracted = extract_cv_data_with_llm(snapshot)
 
-    assert extracted == CandidateCVExtracted(
-        identity=CandidateCVIdentity(full_name="Taylor Rivera", email="taylor@example.com"),
-        work_experience=["Automation Engineer at Example Co"],
-        education=["BSc Computer Science"],
-        skills=["Python", "SQL"],
-        languages=["English"],
-        certifications=["Cloud Fundamentals"],
-        projects=["Application workflow automation"],
+    assert extracted.identity == CandidateCVIdentity(
+        full_name="Taylor Rivera",
+        email="taylor@example.com",
     )
+    assert extracted.work_experience == ["Automation Engineer at Example Co"]
+    assert extracted.education == ["BSc Computer Science"]
+    assert extracted.skills == ["Python", "SQL"]
+    assert extracted.languages == ["English"]
+    assert extracted.certifications == ["Cloud Fundamentals"]
+    assert extracted.projects == ["Application workflow automation"]
+    assert extracted.workflow_trace is not None
+    assert extracted.workflow_trace.workflow_name == "cv_extraction"
+    assert extracted.workflow_trace.profile_name == "cv_extraction"
     assert parse_calls[0]["text_format"] is LLMCandidateCVExtractedResponse
     assert parse_calls[0]["text_format"] is not CandidateCVExtracted
     assert parse_calls[0]["temperature"] == 0.0
@@ -166,11 +170,12 @@ def test_extract_optional_document_data_with_llm_uses_structured_response(monkey
 
     extracted = extract_optional_document_data_with_llm(snapshot)
 
-    assert extracted == CandidateSupplementalExtracted(
-        certifications=["Cloud Fundamentals"],
-        references=["Reference letter from Example Manager"],
-        notes=["Available on request"],
-    )
+    assert extracted.certifications == ["Cloud Fundamentals"]
+    assert extracted.references == ["Reference letter from Example Manager"]
+    assert extracted.notes == ["Available on request"]
+    assert extracted.workflow_trace is not None
+    assert extracted.workflow_trace.workflow_name == "optional_document_extraction"
+    assert extracted.workflow_trace.profile_name == "optional_document_extraction"
     assert parse_calls[0]["text_format"] is LLMCandidateSupplementalExtractedResponse
     assert parse_calls[0]["text_format"] is not CandidateSupplementalExtracted
     assert parse_calls[0]["temperature"] == 0.0
@@ -203,9 +208,9 @@ def test_extract_cv_data_with_llm_normalizes_missing_fields(monkeypatch) -> None
         )
     )
 
-    assert extracted == CandidateCVExtracted(
-        identity=CandidateCVIdentity(),
-    )
+    assert extracted.identity == CandidateCVIdentity()
+    assert extracted.workflow_trace is not None
+    assert extracted.workflow_trace.operation == "AI CV extraction"
 
 
 def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) -> None:

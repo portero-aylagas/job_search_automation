@@ -24,6 +24,7 @@ from src.paths import (
 )
 from src.prompt_templates import get_prompt
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationFormField,
     ApplicationPageControl,
     ApplicationPageFormSummary,
@@ -618,6 +619,11 @@ def extract_application_requirements_with_llm(
 ) -> ApplicationRequirements:
     apply_url = str(job.apply_url)
     snapshot_json = json.dumps(snapshot.model_dump(mode="json"), indent=2, ensure_ascii=True)
+    workflow_trace: AIWorkflowTrace | None = None
+
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
 
     response = llm_client.parse_structured_response(
         input=[
@@ -649,6 +655,7 @@ def extract_application_requirements_with_llm(
         operation="AI application requirements extraction",
         # Requirements extraction is a contract-reading step, so it stays deterministic.
         profile=llm_client.APPLICATION_REQUIREMENTS_PROFILE,
+        trace_sink=capture_trace,
     )
 
     payload = response.model_dump(mode="json")
@@ -659,7 +666,9 @@ def extract_application_requirements_with_llm(
             "source_url": str(job.source_url),
         }
     )
-    return ApplicationRequirements.model_validate(payload)
+    requirements = ApplicationRequirements.model_validate(payload)
+    requirements.workflow_trace = workflow_trace
+    return requirements
 
 
 def save_application_page_snapshot(

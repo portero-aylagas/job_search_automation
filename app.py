@@ -48,6 +48,7 @@ from src.paths import (
 )
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationPackage,
     ApplicationRequirements,
     CandidateOptionalDocument,
@@ -317,6 +318,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
         if not profile_data.source_documents.cv.parsed:
             st.info("Upload and parse a CV to populate these review fields.")
+        render_workflow_trace("CV Extraction Trace", extracted.workflow_trace)
 
         with st.form("candidate_profile_review_form"):
             st.markdown("**Identity**")
@@ -782,6 +784,8 @@ def render_application_package(package: ApplicationPackage) -> None:
     if package.selected_experience_units:
         render_list("Selected Experience Units", package.selected_experience_units)
 
+    render_workflow_trace("Package Generation Trace", package.workflow_trace)
+
     if package.missing_information:
         st.markdown("**Missing Information**")
         for item in package.missing_information:
@@ -818,6 +822,8 @@ def render_application_requirements(requirements: ApplicationRequirements) -> No
 
     if requirements.blocked_reason:
         st.warning(requirements.blocked_reason)
+
+    render_workflow_trace("Requirements Extraction Trace", requirements.workflow_trace)
 
     render_requirement_findings("Required Documents", requirements.required_documents)
     render_requirement_findings("Upload Expectations", requirements.upload_expectations)
@@ -924,6 +930,32 @@ def render_screening_questions(
 def render_field(label: str, value: str | None) -> None:
     st.markdown(f"**{label}**")
     st.write(value or "Not specified")
+
+
+def workflow_trace_payload(trace: AIWorkflowTrace | None) -> dict[str, object] | None:
+    if trace is None:
+        return None
+    return trace.model_dump(mode="json")
+
+
+def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
+    if trace is None:
+        return
+
+    with st.expander(label, expanded=False):
+        st.write(f"Workflow: {trace.workflow_name}")
+        st.write(f"Operation: {trace.operation}")
+        st.write(f"Model: {trace.model}")
+        st.write(f"Profile: {trace.profile_name}")
+        st.write(f"Temperature: {trace.temperature}")
+        st.write(f"Max output tokens: {trace.max_output_tokens}")
+        st.write(f"Timeout seconds: {trace.timeout_seconds}")
+        st.write(f"Retries allowed: {trace.max_retries}")
+        st.write(f"Retry backoff seconds: {trace.retry_backoff_seconds}")
+        st.write(f"Tool call cap: {trace.max_tool_calls or 'none'}")
+        st.write(f"Attempt count: {trace.attempt_count}")
+        st.write(f"Duration (ms): {trace.duration_ms or 0}")
+        st.caption(f"Recorded at {trace.recorded_at}")
 
 
 def render_list(label: str, values: list[str]) -> None:
@@ -1088,6 +1120,11 @@ def render_job_intake_page(base_dir: Path) -> None:
     source_url = st.session_state.get("job_intake_source_url", "")
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
+    render_workflow_trace("Job Extraction Trace", extracted_data.workflow_trace)
+    render_workflow_trace(
+        "Apply URL Resolution Trace",
+        apply_resolution.workflow_trace if apply_resolution else None,
+    )
 
     final_apply_url = resolved_apply_url(source_url, apply_resolution)
     if apply_resolution and apply_resolution.status != "resolved":
@@ -1193,6 +1230,7 @@ def render_job_intake_page(base_dir: Path) -> None:
             source_job_id=source_job_id,
             job_details={
                 "extraction_confidence": extracted_data.confidence,
+                "job_extraction_trace": workflow_trace_payload(extracted_data.workflow_trace),
                 "apply_url_resolution": apply_resolution_details(
                     apply_url,
                     source_url,

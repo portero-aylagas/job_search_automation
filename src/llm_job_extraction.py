@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from src import llm_client
 from src.prompt_templates import get_prompt
-from src.schemas import ConfidenceLevel
+from src.schemas import AIWorkflowTrace, ConfidenceLevel
 from src.url_validation import validate_source_url
 
 
@@ -34,6 +34,7 @@ class ExtractedJobData(BaseModel):
     confidence: ConfidenceLevel = "low"
     dynamic_fields: list[DynamicJobDetail] = Field(default_factory=list)
     missing_or_uncertain: list[str] = Field(default_factory=list)
+    workflow_trace: AIWorkflowTrace | None = None
 
 
 class LLMExtractedJobDataResponse(BaseModel):
@@ -67,6 +68,16 @@ class ApplyUrlResolution(BaseModel):
     evidence: list[str] = Field(default_factory=list)
     rejected_candidates: list[RejectedApplyCandidate] = Field(default_factory=list)
     confidence: Literal["high", "medium", "low"] = "low"
+    workflow_trace: AIWorkflowTrace | None = None
+
+
+class LLMApplyUrlResolutionResponse(BaseModel):
+    status: Literal["resolved", "needs_review", "not_found"] = "not_found"
+    apply_url: str = ""
+    notes: str = ""
+    evidence: list[str] = Field(default_factory=list)
+    rejected_candidates: list[RejectedApplyCandidate] = Field(default_factory=list)
+    confidence: Literal["high", "medium", "low"] = "low"
 
 
 def _web_search_tool() -> dict:
@@ -78,6 +89,11 @@ def _web_search_tool() -> dict:
 
 def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
     normalized_url = validate_source_url(source_url)
+    workflow_trace: AIWorkflowTrace | None = None
+
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
 
     response = llm_client.parse_structured_response(
         tools=[_web_search_tool()],
@@ -101,8 +117,11 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
         operation="AI job extraction",
         # Job extraction should describe what the source says, not invent missing fields.
         profile=llm_client.JOB_EXTRACTION_PROFILE,
+        trace_sink=capture_trace,
     )
-    return normalize_extracted_job_data(response)
+    extracted = normalize_extracted_job_data(response)
+    extracted.workflow_trace = workflow_trace
+    return extracted
 
 
 def resolve_apply_url_from_url(
@@ -112,8 +131,13 @@ def resolve_apply_url_from_url(
     company: str = "",
 ) -> ApplyUrlResolution:
     normalized_url = validate_source_url(source_url)
+    workflow_trace: AIWorkflowTrace | None = None
 
-    return llm_client.parse_structured_response(
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
+
+    response = llm_client.parse_structured_response(
         tools=[_web_search_tool()],
         tool_choice={"type": "web_search"},
         input=[
@@ -133,11 +157,15 @@ def resolve_apply_url_from_url(
                 ),
             },
         ],
-        text_format=ApplyUrlResolution,
+        text_format=LLMApplyUrlResolutionResponse,
         operation="AI apply URL resolution",
         # URL resolution is a verification task, so we keep it deterministic as well.
         profile=llm_client.APPLY_URL_RESOLUTION_PROFILE,
+        trace_sink=capture_trace,
     )
+    resolution = ApplyUrlResolution.model_validate(response.model_dump(mode="json"))
+    resolution.workflow_trace = workflow_trace
+    return resolution
 
 
 def normalize_extracted_job_data(response: LLMExtractedJobDataResponse) -> ExtractedJobData:

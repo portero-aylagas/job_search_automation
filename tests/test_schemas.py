@@ -1,6 +1,8 @@
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationArtifact,
     ApplicationPackage,
+    ApplicationRequirements,
     CandidatePreferences,
     CandidateProfile,
     JobListing,
@@ -67,6 +69,33 @@ def test_candidate_profile_coerces_legacy_optional_document_paths() -> None:
     assert optional_document.file_name == "reference.pdf"
     assert optional_document.document_type == "other"
     assert optional_document.parsed is False
+
+
+def test_supplemental_extraction_round_trip_includes_workflow_trace() -> None:
+    from src.schemas import CandidateSupplementalExtracted
+
+    trace = AIWorkflowTrace(
+        workflow_name="optional_document_extraction",
+        operation="AI optional document extraction",
+        model="gpt-5.4",
+        profile_name="optional_document_extraction",
+        temperature=0.0,
+        max_output_tokens=3000,
+        timeout_seconds=60,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+    )
+    supplemental = CandidateSupplementalExtracted(
+        certifications=["Cloud Fundamentals"],
+        notes=["Reference available."],
+        workflow_trace=trace,
+    )
+
+    reloaded = CandidateSupplementalExtracted.model_validate(
+        supplemental.model_dump(mode="json")
+    )
+
+    assert reloaded == supplemental
 
 
 def test_candidate_preferences_coerces_legacy_strings() -> None:
@@ -144,9 +173,23 @@ def test_job_listing_allows_distinct_apply_url() -> None:
     assert str(listing.apply_url).startswith("https://apply.example.com/start/")
 
 def test_application_package_round_trip() -> None:
+    trace = AIWorkflowTrace(
+        workflow_name="application_package",
+        operation="AI package generation",
+        model="gpt-5.4",
+        profile_name="application_package",
+        temperature=0.6,
+        max_output_tokens=9000,
+        timeout_seconds=90,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+        attempt_count=2,
+        duration_ms=321,
+    )
     package = ApplicationPackage(
         job_id="job-123",
         status="draft",
+        workflow_trace=trace,
         artifacts=[
             ApplicationArtifact(
                 id="cover-letter-draft",
@@ -171,8 +214,19 @@ def test_application_package_round_trip() -> None:
 
 
 def test_application_requirements_round_trip_includes_review_status() -> None:
-    from src.schemas import ApplicationRequirements
-
+    trace = AIWorkflowTrace(
+        workflow_name="application_requirements",
+        operation="AI application requirements extraction",
+        model="gpt-5.4",
+        profile_name="application_requirements",
+        temperature=0.0,
+        max_output_tokens=6000,
+        timeout_seconds=60,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+        attempt_count=1,
+        duration_ms=210,
+    )
     requirements = ApplicationRequirements(
         job_id="job-123",
         apply_url="https://example.com/apply/automation-engineer",
@@ -180,6 +234,7 @@ def test_application_requirements_round_trip_includes_review_status() -> None:
         review_status="reviewed",
         status="discovered",
         job_preserving=True,
+        workflow_trace=trace,
     )
 
     reloaded = ApplicationRequirements.model_validate(requirements.model_dump(mode="json"))

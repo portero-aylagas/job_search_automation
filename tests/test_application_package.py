@@ -180,6 +180,8 @@ def test_generate_application_package_with_llm_uses_creative_package_profile(
     assert parse_calls[0]["max_output_tokens"] == 9000
     assert parse_calls[0]["timeout"] == 90
     assert parse_calls[0]["truncation"] == "disabled"
+    assert package.workflow_trace is not None
+    assert package.workflow_trace.workflow_name == "application_package"
 
 
 def test_manifest_without_requirements_uses_core_artifacts() -> None:

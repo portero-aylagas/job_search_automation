@@ -8,6 +8,7 @@ from src.llm_job_extraction import (
     ApplyUrlResolution,
     DynamicJobDetail,
     ExtractedJobData,
+    LLMApplyUrlResolutionResponse,
     LLMExtractedJobDataResponse,
     extract_job_data_from_url,
     resolve_apply_url_from_url,
@@ -33,6 +34,14 @@ def test_llm_job_extraction_schema_constrains_confidence_values() -> None:
 
     assert confidence_schema is not None
     assert {"type": "string", "enum": ["high", "medium", "low"]} in confidence_schema["anyOf"]
+
+
+def test_apply_url_resolution_llm_schema_excludes_local_trace_metadata() -> None:
+    from openai.lib._pydantic import to_strict_json_schema
+
+    schema = to_strict_json_schema(LLMApplyUrlResolutionResponse)
+
+    assert "workflow_trace" not in schema["properties"]
 
 
 def test_extract_job_data_uses_llm_safe_response_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,20 +80,21 @@ def test_extract_job_data_uses_llm_safe_response_model(monkeypatch: pytest.Monke
     assert parse_calls[0]["timeout"] == 90
     assert parse_calls[0]["truncation"] == "disabled"
     assert parse_calls[0]["max_tool_calls"] == 4
-    assert extracted == ExtractedJobData(
-        title="Automation Engineer",
-        company="Example Co",
-        requirements=["Python"],
-        confidence="high",
-        dynamic_fields=[
-            DynamicJobDetail(
-                name="Travel",
-                value="10%",
-                confidence="medium",
-            )
-        ],
-        missing_or_uncertain=["Salary not listed"],
-    )
+    assert extracted.title == "Automation Engineer"
+    assert extracted.company == "Example Co"
+    assert extracted.requirements == ["Python"]
+    assert extracted.confidence == "high"
+    assert extracted.dynamic_fields == [
+        DynamicJobDetail(
+            name="Travel",
+            value="10%",
+            confidence="medium",
+        )
+    ]
+    assert extracted.missing_or_uncertain == ["Salary not listed"]
+    assert extracted.workflow_trace is not None
+    assert extracted.workflow_trace.workflow_name == "job_extraction"
+    assert extracted.workflow_trace.profile_name == "job_extraction"
 
 
 def test_extract_job_data_normalizes_missing_fields(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,12 +111,14 @@ def test_extract_job_data_normalizes_missing_fields(monkeypatch: pytest.MonkeyPa
 
     extracted = extract_job_data_from_url("https://example.com/jobs/automation-engineer")
 
-    assert extracted == ExtractedJobData(confidence="low")
+    assert extracted.confidence == "low"
+    assert extracted.workflow_trace is not None
+    assert extracted.workflow_trace.operation == "AI job extraction"
 
 
 def test_resolve_apply_url_uses_resolution_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     parse_calls = []
-    parsed_payload = ApplyUrlResolution(
+    parsed_payload = LLMApplyUrlResolutionResponse(
         status="resolved",
         apply_url="https://ats.example.com/apply/automation-engineer",
         evidence=["Apply button points to the ATS page."],
@@ -129,7 +141,15 @@ def test_resolve_apply_url_uses_resolution_profile(monkeypatch: pytest.MonkeyPat
         company="Example Co",
     )
 
-    assert resolution == parsed_payload
+    assert parse_calls[0]["text_format"] is LLMApplyUrlResolutionResponse
+    assert parse_calls[0]["text_format"] is not ApplyUrlResolution
+    assert resolution.status == "resolved"
+    assert resolution.apply_url == "https://ats.example.com/apply/automation-engineer"
+    assert resolution.evidence == ["Apply button points to the ATS page."]
+    assert resolution.confidence == "high"
+    assert resolution.workflow_trace is not None
+    assert resolution.workflow_trace.workflow_name == "apply_url_resolution"
+    assert resolution.workflow_trace.profile_name == "apply_url_resolution"
     assert parse_calls[0]["temperature"] == 0.0
     assert parse_calls[0]["max_output_tokens"] == 3000
     assert parse_calls[0]["timeout"] == 90

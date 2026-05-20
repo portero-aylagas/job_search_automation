@@ -11,7 +11,12 @@ from pydantic import BaseModel
 from src import llm_client
 from src.paths import cv_upload_path, optional_document_upload_path
 from src.prompt_templates import get_prompt
-from src.schemas import CandidateCVExtracted, CandidateCVIdentity, CandidateSupplementalExtracted
+from src.schemas import (
+    AIWorkflowTrace,
+    CandidateCVExtracted,
+    CandidateCVIdentity,
+    CandidateSupplementalExtracted,
+)
 
 
 class CVDocumentSnapshot(BaseModel):
@@ -155,6 +160,12 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
+    workflow_trace: AIWorkflowTrace | None = None
+
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
+
     response = llm_client.parse_structured_response(
         input=[
             {
@@ -179,13 +190,22 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
         operation="AI CV extraction",
         # CV extraction should stay evidence-first and repeatable.
         profile=llm_client.CV_EXTRACTION_PROFILE,
+        trace_sink=capture_trace,
     )
-    return normalize_cv_extracted(response)
+    extracted = normalize_cv_extracted(response)
+    extracted.workflow_trace = workflow_trace
+    return extracted
 
 
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
+    workflow_trace: AIWorkflowTrace | None = None
+
+    def capture_trace(trace: AIWorkflowTrace) -> None:
+        nonlocal workflow_trace
+        workflow_trace = trace
+
     response = llm_client.parse_structured_response(
         input=[
             {
@@ -218,8 +238,11 @@ def extract_optional_document_data_with_llm(
         operation="AI optional document extraction",
         # Supplemental documents are also parsed as factual evidence, not prose generation.
         profile=llm_client.OPTIONAL_DOCUMENT_EXTRACTION_PROFILE,
+        trace_sink=capture_trace,
     )
-    return normalize_optional_document_extracted(response)
+    extracted = normalize_optional_document_extracted(response)
+    extracted.workflow_trace = workflow_trace
+    return extracted
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
