@@ -185,7 +185,7 @@ def _extract_application_requirements_node(
 ) -> dict[str, ApplicationRequirements]:
     job = state["job"]
     snapshot = state["snapshot"]
-    blocked_requirements = _blocked_requirements_from_unusable_snapshot(job, snapshot)
+    blocked_requirements = _blocked_requirements_from_snapshot(job, snapshot)
     if blocked_requirements is not None:
         return {"requirements": blocked_requirements}
 
@@ -560,12 +560,12 @@ def normalize_application_requirements(
     return normalized
 
 
-def _blocked_requirements_from_unusable_snapshot(
+def _blocked_requirements_from_snapshot(
     job: JobListing,
     snapshot: ApplicationPageSnapshot,
 ) -> ApplicationRequirements | None:
     if _snapshot_has_application_evidence(snapshot):
-        return None
+        return _blocked_requirements_from_non_preserving_snapshot(job, snapshot)
 
     return ApplicationRequirements(
         job_id=job.id,
@@ -576,6 +576,35 @@ def _blocked_requirements_from_unusable_snapshot(
         job_preserving=False,
         missing_or_uncertain=[
             "Verify the apply URL manually or provide a job-specific application page snapshot."
+        ],
+        source_evidence=_snapshot_source_evidence(snapshot),
+        confidence="low",
+    )
+
+
+def _blocked_requirements_from_non_preserving_snapshot(
+    job: JobListing,
+    snapshot: ApplicationPageSnapshot,
+) -> ApplicationRequirements | None:
+    if snapshot.job_preserving_signals:
+        return None
+
+    if _snapshot_looks_like_generic_career_page(snapshot):
+        reason = "Apply page is a generic careers page and does not preserve the selected job."
+    elif _snapshot_looks_like_redirected_non_job_page(job, snapshot):
+        reason = "Apply page redirected without preserving the selected job identity."
+    else:
+        return None
+
+    return ApplicationRequirements(
+        job_id=job.id,
+        apply_url=job.apply_url,
+        source_url=job.source_url,
+        status="blocked",
+        blocked_reason=reason,
+        job_preserving=False,
+        missing_or_uncertain=[
+            "Verify the apply URL manually or resolve a job-specific application URL."
         ],
         source_evidence=_snapshot_source_evidence(snapshot),
         confidence="low",
@@ -598,6 +627,37 @@ def _snapshot_has_application_evidence(snapshot: ApplicationPageSnapshot) -> boo
     return True
 
 
+def _snapshot_looks_like_generic_career_page(snapshot: ApplicationPageSnapshot) -> bool:
+    haystack = " ".join(
+        [
+            snapshot.final_url,
+            snapshot.page_title,
+            snapshot.visible_text_excerpt,
+            *snapshot.evidence_matches,
+            *[label for form in snapshot.forms for label in form.labels],
+            *[control.label for control in snapshot.controls],
+        ]
+    ).casefold()
+    generic_terms = (
+        "search jobs",
+        "browse openings",
+        "talent community",
+        "job alerts",
+        "all jobs",
+        "open positions",
+    )
+    return any(term in haystack for term in generic_terms)
+
+
+def _snapshot_looks_like_redirected_non_job_page(
+    job: JobListing,
+    snapshot: ApplicationPageSnapshot,
+) -> bool:
+    if _normalized_url(snapshot.final_url) == _normalized_url(str(job.apply_url)):
+        return False
+    return not _find_job_preserving_signals(job, snapshot.final_url, snapshot.visible_text_excerpt)
+
+
 def _snapshot_blocked_reason(snapshot: ApplicationPageSnapshot) -> str:
     if snapshot.errors:
         return "Apply page could not be inspected: " + "; ".join(snapshot.errors)
@@ -611,6 +671,10 @@ def _snapshot_source_evidence(snapshot: ApplicationPageSnapshot) -> list[str]:
         snapshot.visible_text_excerpt.strip(),
     ]
     return [item for item in evidence if item]
+
+
+def _normalized_url(value: str) -> str:
+    return value.strip().rstrip("/").casefold()
 
 
 def extract_application_requirements_with_llm(
