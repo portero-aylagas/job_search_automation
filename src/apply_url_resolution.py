@@ -10,7 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
-from src.llm_client import MODEL, get_openai_client
+from src import llm_client
 from src.llm_job_extraction import (
     ApplyUrlResolution,
     RejectedApplyCandidate,
@@ -551,7 +551,6 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
     if not state.get("candidates"):
         return no_candidate_resolution(state)
 
-    client = get_openai_client()
     evidence_payload = {
         "source_url": state["source_url"],
         "final_source_url": state.get("final_source_url", ""),
@@ -577,43 +576,36 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
         MAX_LLM_EVIDENCE_CHARS,
     )
 
-    try:
-        response = client.responses.parse(
-            model=MODEL,
-            input=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You rank collected apply URL candidates for a bounded, controlled "
-                        "job-application discovery workflow. You do not browse, log in, "
-                        "submit forms, upload files, enter personal data, or invent unseen "
-                        "URLs.\n\n"
-                        "Use only the supplied candidate and verification evidence. Return "
-                        "status='resolved' only when a candidate is verified and clearly "
-                        "preserves the selected job identity. Return needs_review when an "
-                        "apply-like candidate exists but verification is uncertain. Return "
-                        "not_found when no plausible application destination was found.\n\n"
-                        "Never choose mailto, tel, social share, newsletter, job alert, saved "
-                        "search, talent-community, contact/privacy/imprint pages, the source "
-                        "job-description URL, or generic career pages that lost job identity."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "Choose the best job-preserving application URL from this evidence.\n\n"
-                        f"{evidence_json}"
-                    ),
-                },
-            ],
-            text_format=ApplyUrlResolution,
-        )
-    except Exception as exc:
-        raise RuntimeError(f"AI apply URL ranking failed: {exc}") from exc
-
-    if response.output_parsed is None:
-        raise RuntimeError("AI apply URL ranking did not return structured data.")
-    return response.output_parsed
+    return llm_client.parse_structured_response(
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You rank collected apply URL candidates for a bounded, controlled "
+                    "job-application discovery workflow. You do not browse, log in, "
+                    "submit forms, upload files, enter personal data, or invent unseen "
+                    "URLs.\n\n"
+                    "Use only the supplied candidate and verification evidence. Return "
+                    "status='resolved' only when a candidate is verified and clearly "
+                    "preserves the selected job identity. Return needs_review when an "
+                    "apply-like candidate exists but verification is uncertain. Return "
+                    "not_found when no plausible application destination was found.\n\n"
+                    "Never choose mailto, tel, social share, newsletter, job alert, saved "
+                    "search, talent-community, contact/privacy/imprint pages, the source "
+                    "job-description URL, or generic career pages that lost job identity."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Choose the best job-preserving application URL from this evidence.\n\n"
+                    f"{evidence_json}"
+                ),
+            },
+        ],
+        text_format=ApplyUrlResolution,
+        operation="AI apply URL ranking",
+    )
 
 
 def choose_apply_url_deterministically(state: ApplyUrlResolutionState) -> ApplyUrlResolution:

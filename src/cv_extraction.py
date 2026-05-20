@@ -8,7 +8,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel
 
-from src.llm_client import MODEL, get_openai_client
+from src import llm_client
 from src.paths import cv_upload_path, optional_document_upload_path
 from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
 
@@ -110,9 +110,8 @@ def _extract_cv_data_node(state: CVExtractionState) -> dict[str, CandidateCVExtr
 
 def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
     path = _validate_cv_path(cv_path)
-    client = get_openai_client()
     with path.open("rb") as file:
-        uploaded_file = client.files.create(file=file, purpose="user_data")
+        uploaded_file = llm_client.upload_user_file(file)
 
     return CVDocumentSnapshot(
         file_path=str(path),
@@ -123,9 +122,7 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
-    client = get_openai_client()
-    response = client.responses.parse(
-        model=MODEL,
+    return llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -159,19 +156,14 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
             },
         ],
         text_format=CandidateCVExtracted,
+        operation="AI CV extraction",
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("AI extraction did not return structured CV data.")
-    return response.output_parsed
 
 
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
-    client = get_openai_client()
-    response = client.responses.parse(
-        model=MODEL,
+    return llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -206,11 +198,8 @@ def extract_optional_document_data_with_llm(
             },
         ],
         text_format=CandidateSupplementalExtracted,
+        operation="AI optional document extraction",
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("AI extraction did not return structured optional document data.")
-    return response.output_parsed
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:

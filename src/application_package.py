@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.llm_client import MODEL, get_openai_client
+from src import llm_client
 from src.paths import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME as _APPLICATION_PACKAGE_MARKDOWN_FILENAME,
 )
@@ -235,10 +235,8 @@ def generate_application_package_with_llm(
 ) -> ApplicationPackage:
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
-    client = get_openai_client()
 
-    response = client.responses.parse(
-        model=MODEL,
+    response = llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -270,12 +268,10 @@ def generate_application_package_with_llm(
             },
         ],
         text_format=LLMApplicationPackageResponse,
+        operation="AI package generation",
     )
 
-    if response.output_parsed is None:
-        raise RuntimeError("AI package generation did not return structured application data.")
-
-    payload = response.output_parsed.model_dump(mode="json")
+    payload = response.model_dump(mode="json")
     payload["job_id"] = job.id
     payload["missing_information"] = _dedupe(
         [*missing_defaults, *payload.get("missing_information", [])]
