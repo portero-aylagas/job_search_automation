@@ -388,24 +388,51 @@ def test_invalid_apply_url_values_stop_before_llm_extraction(
         )
 
 
-def test_missing_local_page_content_still_delegates_to_llm_extraction() -> None:
+def test_missing_local_page_content_blocks_before_llm_extraction() -> None:
     job = make_job()
-    calls = []
 
-    def fake_extractor(received_job, snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
-        calls.append((received_job, snapshot))
-        return discovered_requirements(received_job)
+    def fail_extractor(_job, _snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
+        raise AssertionError("The LLM extractor should not run without inspectable content.")
 
     requirements = discover_application_requirements(
         job,
         page_content="",
-        extractor=fake_extractor,
+        extractor=fail_extractor,
     )
 
-    assert calls[0][0] == job
-    assert calls[0][1].requested_url == str(job.apply_url)
-    assert calls[0][1].errors
-    assert requirements.status == "discovered"
+    assert requirements.status == "blocked"
+    assert requirements.job_preserving is False
+    assert "No local page content supplied." in requirements.blocked_reason
+    assert "No static HTML content was available" in requirements.blocked_reason
+    assert requirements.confidence == "low"
+
+
+def test_js_shell_snapshot_blocks_before_llm_extraction() -> None:
+    job = make_job()
+
+    def fake_inspector(received_job) -> ApplicationPageSnapshot:
+        return ApplicationPageSnapshot(
+            requested_url=str(received_job.apply_url),
+            final_url=str(received_job.apply_url),
+            fetch_status=200,
+            visible_text_excerpt="Loading app",
+            errors=["Playwright browser fallback is unavailable or failed."],
+        )
+
+    def fail_extractor(_job, _snapshot: ApplicationPageSnapshot) -> ApplicationRequirements:
+        raise AssertionError("The LLM extractor should not run for a JS shell snapshot.")
+
+    state = run_requirements_discovery_graph(
+        job,
+        inspector=fake_inspector,
+        extractor=fail_extractor,
+    )
+
+    assert state["requirements"].status == "blocked"
+    assert state["requirements"].blocked_reason == (
+        "Apply page could not be inspected: "
+        "Playwright browser fallback is unavailable or failed."
+    )
 
 
 def test_application_requirements_are_saved_separately_from_normalized_job(

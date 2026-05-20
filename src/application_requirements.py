@@ -183,8 +183,13 @@ def _extract_application_requirements_node(
     state: RequirementsDiscoveryState,
 ) -> dict[str, ApplicationRequirements]:
     job = state["job"]
+    snapshot = state["snapshot"]
+    blocked_requirements = _blocked_requirements_from_unusable_snapshot(job, snapshot)
+    if blocked_requirements is not None:
+        return {"requirements": blocked_requirements}
+
     extractor = state.get("extractor") or extract_application_requirements_with_llm
-    requirements = extractor(job, state["snapshot"])
+    requirements = extractor(job, snapshot)
     return {"requirements": normalize_application_requirements(job, requirements)}
 
 
@@ -552,6 +557,59 @@ def normalize_application_requirements(
             or "Apply page does not preserve the selected job identity."
         )
     return normalized
+
+
+def _blocked_requirements_from_unusable_snapshot(
+    job: JobListing,
+    snapshot: ApplicationPageSnapshot,
+) -> ApplicationRequirements | None:
+    if _snapshot_has_application_evidence(snapshot):
+        return None
+
+    return ApplicationRequirements(
+        job_id=job.id,
+        apply_url=job.apply_url,
+        source_url=job.source_url,
+        status="blocked",
+        blocked_reason=_snapshot_blocked_reason(snapshot),
+        job_preserving=False,
+        missing_or_uncertain=[
+            "Verify the apply URL manually or provide a job-specific application page snapshot."
+        ],
+        source_evidence=_snapshot_source_evidence(snapshot),
+        confidence="low",
+    )
+
+
+def _snapshot_has_application_evidence(snapshot: ApplicationPageSnapshot) -> bool:
+    if snapshot.forms or snapshot.controls or snapshot.embedded_json_summaries:
+        return True
+    if snapshot.evidence_matches or snapshot.job_preserving_signals:
+        return True
+
+    text = snapshot.visible_text_excerpt.strip().lower()
+    if not text:
+        return False
+
+    js_shell_terms = ("loading", "enable javascript", "root", "app")
+    if len(text) < 200 and any(term in text for term in js_shell_terms):
+        return False
+    return True
+
+
+def _snapshot_blocked_reason(snapshot: ApplicationPageSnapshot) -> str:
+    if snapshot.errors:
+        return "Apply page could not be inspected: " + "; ".join(snapshot.errors)
+    return "Apply page did not contain enough inspectable application evidence."
+
+
+def _snapshot_source_evidence(snapshot: ApplicationPageSnapshot) -> list[str]:
+    evidence = [
+        *snapshot.errors,
+        *snapshot.evidence_matches,
+        snapshot.visible_text_excerpt.strip(),
+    ]
+    return [item for item in evidence if item]
 
 
 def extract_application_requirements_with_llm(
