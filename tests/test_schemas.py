@@ -1,3 +1,5 @@
+import pytest
+
 from src.schemas import (
     AIWorkflowTrace,
     ApplicationArtifact,
@@ -171,6 +173,83 @@ def test_job_listing_allows_distinct_apply_url() -> None:
     )
 
     assert str(listing.apply_url).startswith("https://apply.example.com/start/")
+
+
+def test_job_listing_normalizes_dynamic_job_details() -> None:
+    listing = JobListing(
+        id="job-123",
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/job-description.185158.html",
+        retrieval_mode="url",
+        job_details={
+            "dynamic_fields": [
+                {
+                    "dynamic": True,
+                    "name": " Hiring team ",
+                    "value": "Platform",
+                }
+            ]
+        },
+    )
+
+    assert listing.job_details["dynamic_fields"] == [
+        {
+            "dynamic": True,
+            "name": "Hiring team",
+            "value": "Platform",
+            "category": "",
+            "source_text": "",
+            "confidence": "medium",
+        }
+    ]
+
+
+def test_job_listing_rejects_invalid_dynamic_job_details() -> None:
+    with pytest.raises(ValueError, match="require a name"):
+        JobListing(
+            id="job-123",
+            title="Automation Engineer",
+            company="Example Co",
+            source_url="https://example.com/jobs/job-description.185158.html",
+            retrieval_mode="url",
+            job_details={"dynamic_fields": [{"dynamic": True, "value": "Platform"}]},
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_job_id",
+    ["../outside", "nested/job", "job\\nested", " job-123", ""],
+)
+def test_storage_backed_models_reject_path_like_job_ids(bad_job_id: str) -> None:
+    with pytest.raises(ValueError, match="Job ID"):
+        JobListing(
+            id=bad_job_id,
+            title="Automation Engineer",
+            company="Example Co",
+            source_url="https://example.com/jobs/job-description.185158.html",
+            retrieval_mode="url",
+        )
+
+    with pytest.raises(ValueError, match="Job ID"):
+        TrackerRecord(
+            job_id=bad_job_id,
+            title="Automation Engineer",
+            company="Example Co",
+            source_url="https://example.com/jobs/job-description.185158.html",
+            retrieval_mode="url",
+        )
+
+    with pytest.raises(ValueError, match="Job ID"):
+        ApplicationRequirements(
+            job_id=bad_job_id,
+            apply_url="https://example.com/apply/automation-engineer",
+            source_url="https://example.com/jobs/job-description.185158.html",
+        )
+
+    with pytest.raises(ValueError, match="Job ID"):
+        ApplicationPackage(job_id=bad_job_id)
+
 
 def test_application_package_round_trip() -> None:
     trace = AIWorkflowTrace(
