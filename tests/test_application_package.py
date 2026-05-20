@@ -257,6 +257,54 @@ def test_generate_application_package_accepts_fake_generator() -> None:
     assert package.selected_experience_units == ["exp-001"]
 
 
+def test_application_package_adds_artifact_traceability_metadata() -> None:
+    job = make_job()
+
+    def fake_generator(candidate_profile, experience_units, received_job, requirements):
+        assert requirements is not None
+        return ApplicationPackage(
+            job_id=received_job.id,
+            artifacts=[
+                ApplicationArtifact(
+                    id="screening-answer",
+                    type="form_answer",
+                    label="Screening Answer",
+                    required=True,
+                    source_prompt="Which locations are suitable for you?",
+                    source_requirement="Select all suitable locations.",
+                    content="Remote and hybrid locations are suitable.",
+                )
+            ],
+            selected_experience_units=["exp-001"],
+        )
+
+    package = generate_application_package(
+        get_sample_candidate_profile(),
+        get_sample_experience_units(),
+        job,
+        make_requirements(job),
+        generator=fake_generator,
+    )
+
+    traceability = package.artifacts[0].metadata["traceability"]
+
+    assert traceability["source_requirements"] == [
+        {
+            "kind": "screening_question",
+            "label": "Which locations are suitable for you?",
+            "evidence": "Select all suitable locations.",
+            "confidence": "high",
+        }
+    ]
+    assert traceability["source_experience_units"][0]["id"] == "exp-001"
+    assert traceability["source_experience_units"][0]["title"] == (
+        "Workflow Automation Analyst"
+    )
+    assert "Automated weekly KPI reporting" in (
+        traceability["source_experience_units"][0]["evidence_points"][0]
+    )
+
+
 def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
     job = make_job()
     package = ApplicationPackage(
@@ -268,6 +316,25 @@ def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
                 label="Cover Letter",
                 required=True,
                 content="Dear hiring team, I am interested.",
+                metadata={
+                    "traceability": {
+                        "source_requirements": [
+                            {
+                                "kind": "motivation_letter",
+                                "label": "Cover letter",
+                                "evidence": "Please upload a cover letter.",
+                                "confidence": "high",
+                            }
+                        ],
+                        "source_experience_units": [
+                            {
+                                "id": "exp-001",
+                                "title": "Workflow Automation Analyst",
+                                "organization": "Northwind Logistics",
+                            }
+                        ],
+                    }
+                },
             )
         ],
         missing_information=["Confirm location."],
@@ -279,6 +346,10 @@ def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
 
     assert "# Application Package: Example Co / Automation Engineer" in markdown
     assert "Dear hiring team" in markdown
+    assert "## Cover Letter" in markdown
+    assert "### Traceability" in markdown
+    assert "Cover letter (confidence: high)" in markdown
+    assert "Workflow Automation Analyst / Northwind Logistics" in markdown
     assert reloaded == package
     assert json_path.exists()
     assert markdown_path.name == APPLICATION_PACKAGE_MARKDOWN_FILENAME

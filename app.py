@@ -806,11 +806,44 @@ def render_application_package(package: ApplicationPackage) -> None:
             if artifact.source_requirement:
                 st.markdown("**Source Requirement**")
                 st.caption(artifact.source_requirement)
+            render_artifact_traceability(artifact.metadata)
             st.markdown("**Content**")
             st.write(artifact.content or "No content generated.")
 
     if package.generation_notes:
         render_list("Generation Notes", package.generation_notes)
+
+
+def render_artifact_traceability(metadata: dict[str, object]) -> None:
+    traceability = metadata.get("traceability")
+    if not isinstance(traceability, dict):
+        return
+
+    source_requirements = traceability.get("source_requirements")
+    source_experience_units = traceability.get("source_experience_units")
+    if not source_requirements and not source_experience_units:
+        return
+
+    st.markdown("**Traceability**")
+    if isinstance(source_requirements, list) and source_requirements:
+        st.caption("Source requirements")
+        for requirement in source_requirements:
+            if not isinstance(requirement, dict):
+                continue
+            label = requirement.get("label") or requirement.get("evidence") or "Requirement"
+            confidence = requirement.get("confidence") or "unknown"
+            st.write(f"- {label} (confidence: {confidence})")
+            if requirement.get("evidence"):
+                st.caption(str(requirement["evidence"]))
+
+    if isinstance(source_experience_units, list) and source_experience_units:
+        st.caption("Source experience")
+        for experience in source_experience_units:
+            if not isinstance(experience, dict):
+                continue
+            label = experience.get("title") or experience.get("id") or "Experience"
+            organization = experience.get("organization")
+            st.write(f"- {label}{f' / {organization}' if organization else ''}")
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:

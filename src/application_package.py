@@ -23,6 +23,7 @@ from src.prompt_templates import get_prompt
 from src.schemas import (
     AIWorkflowTrace,
     ApplicationPackage,
+    ApplicationRequirementFinding,
     ApplicationRequirements,
     CandidateProfile,
     ExperienceUnit,
@@ -78,6 +79,7 @@ def generate_application_package(
 ) -> ApplicationPackage:
     selected_generator = generator or generate_application_package_with_llm
     package = selected_generator(candidate_profile, experience_units, job, requirements)
+    package = attach_application_package_traceability(package, requirements, experience_units)
     return normalize_application_package(job, package)
 
 
@@ -279,7 +281,36 @@ def generate_application_package_with_llm(
     )
     package = ApplicationPackage.model_validate(payload)
     package.workflow_trace = workflow_trace
-    return package
+    return attach_application_package_traceability(package, requirements, experience_units)
+
+
+def attach_application_package_traceability(
+    package: ApplicationPackage,
+    requirements: ApplicationRequirements | None,
+    experience_units: list[ExperienceUnit],
+) -> ApplicationPackage:
+    traced_package = package.model_copy(deep=True)
+    selected_experience = _selected_experience_trace(
+        traced_package.selected_experience_units,
+        experience_units,
+    )
+    requirement_traces = _requirement_trace_entries(requirements)
+
+    for artifact in traced_package.artifacts:
+        metadata = dict(artifact.metadata)
+        metadata["traceability"] = {
+            "source_requirements": _matching_requirement_traces(
+                artifact.type,
+                artifact.source_prompt,
+                artifact.source_requirement,
+                requirement_traces,
+                requirements,
+            ),
+            "source_experience_units": selected_experience,
+        }
+        artifact.metadata = metadata
+
+    return traced_package
 
 
 def normalize_application_package(
@@ -346,6 +377,9 @@ def render_application_package_markdown(
             lines.extend(["### Source Prompt", "", artifact.source_prompt, ""])
         if artifact.source_requirement:
             lines.extend(["### Source Requirement", "", artifact.source_requirement, ""])
+        traceability_lines = _render_artifact_traceability_markdown(artifact.metadata)
+        if traceability_lines:
+            lines.extend(["### Traceability", "", *traceability_lines, ""])
         lines.extend([artifact.content or "_No content generated._", ""])
 
     if package.generation_notes:
@@ -369,6 +403,34 @@ def render_application_package_markdown(
         )
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_artifact_traceability_markdown(metadata: dict[str, Any]) -> list[str]:
+    traceability = metadata.get("traceability")
+    if not isinstance(traceability, dict):
+        return []
+
+    lines: list[str] = []
+    source_requirements = traceability.get("source_requirements")
+    if isinstance(source_requirements, list) and source_requirements:
+        lines.append("Source requirements:")
+        for requirement in source_requirements:
+            if isinstance(requirement, dict):
+                label = requirement.get("label") or requirement.get("evidence") or "Requirement"
+                confidence = requirement.get("confidence") or "unknown"
+                lines.append(f"- {label} (confidence: {confidence})")
+
+    source_experience_units = traceability.get("source_experience_units")
+    if isinstance(source_experience_units, list) and source_experience_units:
+        if lines:
+            lines.append("")
+        lines.append("Source experience:")
+        for experience in source_experience_units:
+            if isinstance(experience, dict):
+                label = experience.get("title") or experience.get("id") or "Experience"
+                organization = experience.get("organization")
+                lines.append(f"- {label}{f' / {organization}' if organization else ''}")
+    return lines
 
 
 def save_application_package(
@@ -445,6 +507,148 @@ def _requirements_hint_at_cover_letter(
         ]
     ).casefold()
     return any(term in haystack for term in ("cover letter", "motivation", "anschreiben"))
+
+
+def _selected_experience_trace(
+    selected_ids: list[str],
+    experience_units: list[ExperienceUnit],
+) -> list[dict[str, Any]]:
+    experience_by_id = {unit.id: unit for unit in experience_units}
+    traces: list[dict[str, Any]] = []
+    for selected_id in selected_ids:
+        unit = experience_by_id.get(selected_id)
+        if unit is None:
+            traces.append({"id": selected_id})
+            continue
+        traces.append(
+            {
+                "id": unit.id,
+                "title": unit.title,
+                "organization": unit.organization,
+                "summary": unit.summary,
+                "skills": unit.skills,
+                "evidence_points": unit.evidence_points,
+            }
+        )
+    return traces
+
+
+def _requirement_trace_entries(
+    requirements: ApplicationRequirements | None,
+) -> list[dict[str, str]]:
+    if requirements is None:
+        return []
+
+    traces: list[dict[str, str]] = []
+    for kind, findings in (
+        ("required_document", requirements.required_documents),
+        ("upload_expectation", requirements.upload_expectations),
+        ("consent_requirement", requirements.consent_requirements),
+        ("privacy_login_ats_gate", requirements.privacy_login_ats_gates),
+        ("deadline", requirements.deadlines),
+        ("contact_or_fallback", requirements.contact_or_fallback),
+    ):
+        traces.extend(
+            _finding_trace(kind, finding)
+            for finding in findings
+        )
+
+    if requirements.motivation_letter is not None:
+        traces.append(_finding_trace("motivation_letter", requirements.motivation_letter))
+
+    traces.extend(
+        {
+            "kind": "screening_question",
+            "label": question.question,
+            "evidence": question.evidence,
+            "confidence": question.confidence,
+        }
+        for question in requirements.screening_questions
+    )
+    traces.extend(
+        {
+            "kind": "custom_form_field",
+            "label": field.label or field.name,
+            "evidence": field.evidence,
+            "confidence": field.confidence,
+        }
+        for field in requirements.custom_form_fields
+    )
+    traces.extend(
+        {
+            "kind": "missing_or_uncertain",
+            "label": item,
+            "evidence": item,
+            "confidence": "low",
+        }
+        for item in requirements.missing_or_uncertain
+    )
+    return traces
+
+
+def _finding_trace(
+    kind: str,
+    finding: ApplicationRequirementFinding,
+) -> dict[str, str]:
+    return {
+        "kind": kind,
+        "label": finding.label,
+        "evidence": finding.evidence,
+        "confidence": finding.confidence,
+    }
+
+
+def _matching_requirement_traces(
+    artifact_type: str,
+    source_prompt: str | None,
+    source_requirement: str | None,
+    requirement_traces: list[dict[str, str]],
+    requirements: ApplicationRequirements | None,
+) -> list[dict[str, str]]:
+    if not requirement_traces:
+        return []
+
+    selected = [
+        trace
+        for trace in requirement_traces
+        if _trace_matches_source(trace, source_prompt, source_requirement)
+    ]
+    if selected:
+        return selected
+
+    if artifact_type == "cover_letter" and requirements and requirements.motivation_letter:
+        return [
+            trace for trace in requirement_traces if trace["kind"] == "motivation_letter"
+        ]
+    if artifact_type == "document_upload_checklist":
+        return [
+            trace
+            for trace in requirement_traces
+            if trace["kind"] in {"required_document", "upload_expectation"}
+        ]
+    if artifact_type == "missing_information_checklist":
+        return [
+            trace for trace in requirement_traces if trace["kind"] == "missing_or_uncertain"
+        ]
+    return []
+
+
+def _trace_matches_source(
+    trace: dict[str, str],
+    source_prompt: str | None,
+    source_requirement: str | None,
+) -> bool:
+    source_text = " ".join(
+        item.casefold()
+        for item in (source_prompt or "", source_requirement or "")
+        if item
+    )
+    if not source_text:
+        return False
+    return any(
+        value and value.casefold() in source_text
+        for value in (trace["label"], trace["evidence"])
+    )
 
 
 def _is_sensitive_or_user_decision_field(value: str) -> bool:
