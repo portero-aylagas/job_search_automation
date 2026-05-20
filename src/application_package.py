@@ -8,7 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.llm_job_extraction import MODEL, _get_openai_client
+from src.llm_client import MODEL, get_openai_client
 from src.schemas import (
     ApplicationPackage,
     ApplicationRequirements,
@@ -228,7 +228,7 @@ def generate_application_package_with_llm(
 ) -> ApplicationPackage:
     manifest = build_application_artifact_manifest(job, requirements)
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
-    client = _get_openai_client()
+    client = get_openai_client()
 
     response = client.responses.parse(
         model=MODEL,

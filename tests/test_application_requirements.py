@@ -184,7 +184,7 @@ def test_llm_extractor_uses_llm_safe_response_model(monkeypatch: pytest.MonkeyPa
             return SimpleNamespace(output_parsed=parsed_payload)
 
     monkeypatch.setattr(
-        "src.application_requirements._get_openai_client",
+        "src.application_requirements.get_openai_client",
         lambda: SimpleNamespace(responses=FakeResponses()),
     )
 
@@ -225,7 +225,7 @@ def test_llm_extractor_converts_output_to_persisted_requirements_model(
             return SimpleNamespace(output_parsed=parsed_payload)
 
     monkeypatch.setattr(
-        "src.application_requirements._get_openai_client",
+        "src.application_requirements.get_openai_client",
         lambda: SimpleNamespace(responses=FakeResponses()),
     )
 
@@ -254,7 +254,7 @@ def test_llm_extractor_wraps_openai_api_errors(monkeypatch: pytest.MonkeyPatch) 
             raise Exception("Invalid schema for response_format")
 
     monkeypatch.setattr(
-        "src.application_requirements._get_openai_client",
+        "src.application_requirements.get_openai_client",
         lambda: SimpleNamespace(responses=FakeResponses()),
     )
 

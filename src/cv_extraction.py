@@ -8,7 +8,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel
 
-from src.llm_job_extraction import MODEL, _get_openai_client
+from src.llm_client import MODEL, get_openai_client
 from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
 
 CV_UPLOAD_DIR = Path("data/runtime/candidate_profile/cv")
@@ -112,7 +112,7 @@ def _extract_cv_data_node(state: CVExtractionState) -> dict[str, CandidateCVExtr
 
 def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
     path = _validate_cv_path(cv_path)
-    client = _get_openai_client()
+    client = get_openai_client()
     with path.open("rb") as file:
         uploaded_file = client.files.create(file=file, purpose="user_data")
 
@@ -125,7 +125,7 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
-    client = _get_openai_client()
+    client = get_openai_client()
     response = client.responses.parse(
         model=MODEL,
         input=[
@@ -171,7 +171,7 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
-    client = _get_openai_client()
+    client = get_openai_client()
     response = client.responses.parse(
         model=MODEL,
         input=[

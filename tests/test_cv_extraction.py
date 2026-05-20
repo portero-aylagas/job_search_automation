@@ -69,7 +69,7 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
             return SimpleNamespace(output_parsed=parsed_payload)
 
     monkeypatch.setattr(
-        "src.cv_extraction._get_openai_client",
+        "src.cv_extraction.get_openai_client",
         lambda: SimpleNamespace(responses=FakeResponses()),
     )
     snapshot = CVDocumentSnapshot(
@@ -134,7 +134,7 @@ def test_extract_optional_document_data_with_llm_uses_structured_response(monkey
             return SimpleNamespace(output_parsed=parsed_payload)
 
     monkeypatch.setattr(
-        "src.cv_extraction._get_openai_client",
+        "src.cv_extraction.get_openai_client",
         lambda: SimpleNamespace(responses=FakeResponses()),
     )
     snapshot = CVDocumentSnapshot(
@@ -165,7 +165,7 @@ def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) 
             return SimpleNamespace(id="file-uploaded-cv")
 
     monkeypatch.setattr(
-        "src.cv_extraction._get_openai_client",
+        "src.cv_extraction.get_openai_client",
         lambda: SimpleNamespace(files=FakeFiles()),
     )
 

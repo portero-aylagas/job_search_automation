@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
 from src.job_intake import validate_apply_url
-from src.llm_job_extraction import MODEL, _get_openai_client
+from src.llm_client import MODEL, get_openai_client
 from src.schemas import (
     ApplicationFormField,
     ApplicationPageControl,
@@ -547,7 +547,7 @@ def extract_application_requirements_with_llm(
     job: JobListing,
     snapshot: ApplicationPageSnapshot,
 ) -> ApplicationRequirements:
-    client = _get_openai_client()
+    client = get_openai_client()
     apply_url = str(job.apply_url)
     snapshot_json = json.dumps(snapshot.model_dump(mode="json"), indent=2, ensure_ascii=True)
 

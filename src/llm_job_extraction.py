@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+from src.llm_client import MODEL, get_openai_client
+from src.url_validation import validate_source_url
 
 
 class DynamicJobDetail(BaseModel):
@@ -49,30 +49,6 @@ class ApplyUrlResolution(BaseModel):
     confidence: Literal["high", "medium", "low"] = "low"
 
 
-def _validate_source_url(source_url: str) -> str:
-    normalized_url = source_url.strip()
-
-    if not normalized_url:
-        raise ValueError("Enter a job URL.")
-
-    if not normalized_url.startswith(("http://", "https://")):
-        raise ValueError("Enter a full job URL, including https://.")
-
-    return normalized_url
-
-
-def _get_openai_client():
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError("Set OPENAI_API_KEY before extracting job data with AI.")
-
-    try:
-        from openai import OpenAI
-    except ImportError as exc:
-        raise RuntimeError("Install the OpenAI Python package before using AI extraction.") from exc
-
-    return OpenAI()
-
-
 def _web_search_tool() -> dict:
     return {
         "type": "web_search",
@@ -81,8 +57,8 @@ def _web_search_tool() -> dict:
 
 
 def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
-    normalized_url = _validate_source_url(source_url)
-    client = _get_openai_client()
+    normalized_url = validate_source_url(source_url)
+    client = get_openai_client()
 
     response = client.responses.parse(
         model=MODEL,
@@ -132,8 +108,8 @@ def resolve_apply_url_from_url(
     title: str = "",
     company: str = "",
 ) -> ApplyUrlResolution:
-    normalized_url = _validate_source_url(source_url)
-    client = _get_openai_client()
+    normalized_url = validate_source_url(source_url)
+    client = get_openai_client()
 
     response = client.responses.parse(
         model=MODEL,

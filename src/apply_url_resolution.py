@@ -10,14 +10,13 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
+from src.llm_client import MODEL, get_openai_client
 from src.llm_job_extraction import (
-    MODEL,
     ApplyUrlResolution,
     RejectedApplyCandidate,
-    _get_openai_client,
-    _validate_source_url,
     resolve_apply_url_from_url,
 )
+from src.url_validation import validate_source_url
 
 MAX_SOURCE_PAGE_CHARS = 100_000
 MAX_CANDIDATE_PAGE_CHARS = 60_000
@@ -180,7 +179,7 @@ def run_apply_url_resolution_graph(
     fetcher: Callable[[str], FetchResult] | None = None,
     ranker: Callable[[ApplyUrlResolutionState], ApplyUrlResolution] | None = None,
 ) -> ApplyUrlResolutionState:
-    normalized_url = _validate_source_url(source_url)
+    normalized_url = validate_source_url(source_url)
     state: ApplyUrlResolutionState = {
         "source_url": normalized_url,
         "title": title.strip(),
@@ -552,7 +551,7 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
     if not state.get("candidates"):
         return no_candidate_resolution(state)
 
-    client = _get_openai_client()
+    client = get_openai_client()
     evidence_payload = {
         "source_url": state["source_url"],
         "final_source_url": state.get("final_source_url", ""),
