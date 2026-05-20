@@ -32,11 +32,18 @@ Do not start new feature phases with web search, browser automation, or external
   identity deterministically, records rejected candidates, and uses the older
   LLM resolver only as a fallback candidate generator when no static candidates
   are found.
+- Application requirements discovery is implemented as a read-only
+  LangGraph-compatible slice that stores page snapshots and interpreted
+  requirements for review.
+- Application package generation is implemented with manifest-driven artifacts,
+  requirement traceability, package quality checks, JSON persistence, Markdown
+  export, and manual edit/reject recovery actions.
 
 ### Not Delivered Yet
 
 - Deterministic match analysis is still pending.
-- Application package generation and downstream human review are still pending.
+- Explicit package approval, ready-to-apply status, and downstream final review
+  workflow are still pending.
 - Complex nested CV editors, multiple CV versions, excluded roles, excluded
   companies, profile scoring, passport/ID upload, and job matching from the
   Candidate Profile page remain out of scope.
