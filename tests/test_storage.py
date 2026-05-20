@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import pytest
+
 from src.schemas import CandidateProfile
-from src.storage import load_json, load_model, save_json, save_model
+from src.storage import JsonStorageError, load_json, load_model, save_json, save_model
 
 
 def test_save_and_load_json_round_trip(tmp_path: Path) -> None:
@@ -19,6 +21,19 @@ def test_load_json_returns_default_for_missing_file(tmp_path: Path) -> None:
     loaded = load_json(tmp_path / "missing.json", default=default_payload)
 
     assert loaded is default_payload
+
+
+def test_load_json_reports_path_for_malformed_json(tmp_path: Path) -> None:
+    target = tmp_path / "broken.json"
+    target.write_text('{"name": "Alex"', encoding="utf-8")
+
+    with pytest.raises(JsonStorageError) as exc_info:
+        load_json(target)
+
+    message = str(exc_info.value)
+    assert str(target) in message
+    assert "line" in message
+    assert "column" in message
 
 
 def test_save_model_creates_parent_directories_and_loads_model(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 
@@ -72,6 +73,11 @@ class RequirementsDiscoveryState(TypedDict, total=False):
     extractor: RequirementsExtractor | None
     snapshot: ApplicationPageSnapshot
     requirements: ApplicationRequirements
+
+
+@dataclass(frozen=True)
+class BrowserInspectionFailure:
+    error: str
 
 
 class LLMApplicationRequirementsResponse(BaseModel):
@@ -215,10 +221,13 @@ def inspect_application_page_agent(
     fetch_result = fetch_application_page(apply_url)
     snapshot = build_application_page_snapshot(job, **fetch_result)
     if _needs_browser_fallback(snapshot):
-        browser_snapshot = inspect_application_page_with_browser(job, apply_url)
-        if browser_snapshot is not None:
-            return browser_snapshot
-        snapshot.errors.append("Playwright browser fallback is unavailable or failed.")
+        browser_result = inspect_application_page_with_browser(job, apply_url)
+        if isinstance(browser_result, ApplicationPageSnapshot):
+            return browser_result
+        if isinstance(browser_result, BrowserInspectionFailure):
+            snapshot.errors.append(browser_result.error)
+        else:
+            snapshot.errors.append("Playwright browser fallback is unavailable or failed.")
     return snapshot
 
 
@@ -317,11 +326,13 @@ def build_application_page_snapshot(
 def inspect_application_page_with_browser(
     job: JobListing,
     url: str,
-) -> ApplicationPageSnapshot | None:
+) -> ApplicationPageSnapshot | BrowserInspectionFailure | None:
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        return None
+        return BrowserInspectionFailure(
+            "Playwright browser fallback is unavailable: playwright is not installed."
+        )
 
     try:
         with sync_playwright() as playwright:
@@ -333,8 +344,10 @@ def inspect_application_page_with_browser(
             status = response.status if response is not None else None
             content_type = response.headers.get("content-type", "") if response is not None else ""
             browser.close()
-    except Exception:
-        return None
+    except Exception as exc:
+        return BrowserInspectionFailure(
+            f"Playwright browser fallback failed: {exc.__class__.__name__}: {exc}"
+        )
 
     return build_application_page_snapshot(
         job,
