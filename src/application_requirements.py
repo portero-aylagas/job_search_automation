@@ -10,8 +10,8 @@ import requests
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
+from src import llm_client
 from src.job_intake import validate_apply_url
-from src.llm_client import MODEL, get_openai_client
 from src.paths import (
     APPLICATION_PAGE_SNAPSHOT_FILENAME as _APPLICATION_PAGE_SNAPSHOT_FILENAME,
 )
@@ -557,56 +557,49 @@ def extract_application_requirements_with_llm(
     job: JobListing,
     snapshot: ApplicationPageSnapshot,
 ) -> ApplicationRequirements:
-    client = get_openai_client()
     apply_url = str(job.apply_url)
     snapshot_json = json.dumps(snapshot.model_dump(mode="json"), indent=2, ensure_ascii=True)
 
-    try:
-        response = client.responses.parse(
-            model=MODEL,
-            input=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You interpret a read-only ApplicationPageSnapshot for a controlled, "
-                        "human-in-the-loop job application workflow. The snapshot is the "
-                        "primary source of truth. Do not browse, submit forms, upload files, "
-                        "log in, enter personal data, or infer requirements from hiring norms.\n\n"
-                        "Extract only requirements supported by snapshot evidence: documents, "
-                        "upload constraints, screening questions, requested profile fields, "
-                        "custom fields, motivation or cover letter needs, consent requirements, "
-                        "privacy/login/ATS gates, deadlines, contact/fallback information, "
-                        "missing or uncertain items, source evidence, job preservation, and "
-                        "confidence.\n\n"
-                        "If the snapshot is empty, blocked, generic, not job-preserving, or too "
-                        "uncertain, return status='blocked' or list missing_or_uncertain items. "
-                        "Never invent requirements that are not visible in the snapshot."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "Discover application requirements for this selected job from the "
-                        "snapshot evidence.\n\n"
-                        f"Internal job ID: {job.id}\n"
-                        f"Job title: {job.title}\n"
-                        f"Company: {job.company}\n"
-                        f"Source job URL: {job.source_url}\n"
-                        f"Verified apply URL: {apply_url}\n"
-                        f"Source job ID: {job.source_job_id or 'Unknown'}\n\n"
-                        f"ApplicationPageSnapshot:\n{snapshot_json}"
-                    ),
-                },
-            ],
-            text_format=LLMApplicationRequirementsResponse,
-        )
-    except Exception as exc:
-        raise RuntimeError(f"AI application requirements extraction failed: {exc}") from exc
+    response = llm_client.parse_structured_response(
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You interpret a read-only ApplicationPageSnapshot for a controlled, "
+                    "human-in-the-loop job application workflow. The snapshot is the "
+                    "primary source of truth. Do not browse, submit forms, upload files, "
+                    "log in, enter personal data, or infer requirements from hiring norms.\n\n"
+                    "Extract only requirements supported by snapshot evidence: documents, "
+                    "upload constraints, screening questions, requested profile fields, "
+                    "custom fields, motivation or cover letter needs, consent requirements, "
+                    "privacy/login/ATS gates, deadlines, contact/fallback information, "
+                    "missing or uncertain items, source evidence, job preservation, and "
+                    "confidence.\n\n"
+                    "If the snapshot is empty, blocked, generic, not job-preserving, or too "
+                    "uncertain, return status='blocked' or list missing_or_uncertain items. "
+                    "Never invent requirements that are not visible in the snapshot."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Discover application requirements for this selected job from the "
+                    "snapshot evidence.\n\n"
+                    f"Internal job ID: {job.id}\n"
+                    f"Job title: {job.title}\n"
+                    f"Company: {job.company}\n"
+                    f"Source job URL: {job.source_url}\n"
+                    f"Verified apply URL: {apply_url}\n"
+                    f"Source job ID: {job.source_job_id or 'Unknown'}\n\n"
+                    f"ApplicationPageSnapshot:\n{snapshot_json}"
+                ),
+            },
+        ],
+        text_format=LLMApplicationRequirementsResponse,
+        operation="AI application requirements extraction",
+    )
 
-    if response.output_parsed is None:
-        raise RuntimeError("AI extraction did not return structured application requirements.")
-
-    payload = response.output_parsed.model_dump(mode="json")
+    payload = response.model_dump(mode="json")
     payload.update(
         {
             "job_id": job.id,

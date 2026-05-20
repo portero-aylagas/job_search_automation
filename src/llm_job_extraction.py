@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.llm_client import MODEL, get_openai_client
+from src import llm_client
 from src.url_validation import validate_source_url
 
 
@@ -58,10 +58,8 @@ def _web_search_tool() -> dict:
 
 def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
     normalized_url = validate_source_url(source_url)
-    client = get_openai_client()
 
-    response = client.responses.parse(
-        model=MODEL,
+    return llm_client.parse_structured_response(
         tools=[_web_search_tool()],
         tool_choice={"type": "web_search"},
         input=[
@@ -94,12 +92,8 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
             },
         ],
         text_format=ExtractedJobData,
+        operation="AI job extraction",
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("AI extraction did not return structured job data.")
-
-    return response.output_parsed
 
 
 def resolve_apply_url_from_url(
@@ -109,10 +103,8 @@ def resolve_apply_url_from_url(
     company: str = "",
 ) -> ApplyUrlResolution:
     normalized_url = validate_source_url(source_url)
-    client = get_openai_client()
 
-    response = client.responses.parse(
-        model=MODEL,
+    return llm_client.parse_structured_response(
         tools=[_web_search_tool()],
         tool_choice={"type": "web_search"},
         input=[
@@ -176,9 +168,5 @@ def resolve_apply_url_from_url(
             },
         ],
         text_format=ApplyUrlResolution,
+        operation="AI apply URL resolution",
     )
-
-    if response.output_parsed is None:
-        raise RuntimeError("AI extraction did not return structured apply URL data.")
-
-    return response.output_parsed
