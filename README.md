@@ -156,7 +156,8 @@ Stores structured candidate information:
 - languages
 - constraints
 - salary expectation
-- documents used
+- source documents used
+- optional supporting documents such as references and certificates
 
 ### Experience Units
 

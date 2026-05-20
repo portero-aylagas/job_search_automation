@@ -7,9 +7,11 @@ import src.cv_extraction as cv_extraction
 from src.cv_extraction import (
     CVDocumentSnapshot,
     extract_cv_data_with_llm,
+    extract_optional_document_data_with_llm,
     run_cv_extraction_task,
+    run_optional_document_extraction_task,
 )
-from src.schemas import CandidateCVExtracted, CandidateCVIdentity
+from src.schemas import CandidateCVExtracted, CandidateCVIdentity, CandidateSupplementalExtracted
 
 
 def test_run_cv_extraction_task_uses_agent_nodes(tmp_path: Path) -> None:
@@ -85,6 +87,70 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
     input_file = next(item for item in user_content if item["type"] == "input_file")
     assert input_file == {"type": "input_file", "file_id": "file-cv"}
     assert "filename" not in input_file
+
+
+def test_run_optional_document_extraction_task_uses_injected_agents(tmp_path: Path) -> None:
+    document_path = tmp_path / "certificate.txt"
+    document_path.write_text("Cloud Fundamentals certificate", encoding="utf-8")
+    calls = []
+    snapshot = CVDocumentSnapshot(
+        file_path=str(document_path),
+        file_name="certificate.txt",
+        file_id="file-certificate",
+        mime_type="text/plain",
+    )
+    extracted = CandidateSupplementalExtracted(certifications=["Cloud Fundamentals"])
+
+    def fake_inspector(path: Path) -> CVDocumentSnapshot:
+        calls.append("inspect_cv_document_agent")
+        assert path == document_path
+        return snapshot
+
+    def fake_extractor(received_snapshot: CVDocumentSnapshot) -> CandidateSupplementalExtracted:
+        calls.append("extract_optional_document_data")
+        assert received_snapshot is snapshot
+        return extracted
+
+    result = run_optional_document_extraction_task(
+        document_path,
+        inspector=fake_inspector,
+        extractor=fake_extractor,
+    )
+
+    assert calls == ["inspect_cv_document_agent", "extract_optional_document_data"]
+    assert result == extracted
+
+
+def test_extract_optional_document_data_with_llm_uses_structured_response(monkeypatch) -> None:
+    parse_calls = []
+    parsed_payload = CandidateSupplementalExtracted(
+        certifications=["Cloud Fundamentals"],
+        references=["Reference letter from Example Manager"],
+    )
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            parse_calls.append(kwargs)
+            return SimpleNamespace(output_parsed=parsed_payload)
+
+    monkeypatch.setattr(
+        "src.cv_extraction._get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+    snapshot = CVDocumentSnapshot(
+        file_path="/tmp/reference.pdf",
+        file_name="reference.pdf",
+        file_id="file-reference",
+        mime_type="application/pdf",
+    )
+
+    extracted = extract_optional_document_data_with_llm(snapshot)
+
+    assert extracted == parsed_payload
+    assert parse_calls[0]["text_format"] is CandidateSupplementalExtracted
+    user_content = parse_calls[0]["input"][1]["content"]
+    input_file = next(item for item in user_content if item["type"] == "input_file")
+    assert input_file == {"type": "input_file", "file_id": "file-reference"}
 
 
 def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) -> None:

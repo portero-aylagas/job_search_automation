@@ -68,3 +68,7 @@ data/runtime/
 
 # Local candidate profile contains CV-derived personal data
 data/candidate_profile.json
+
+# Derived application exports
+outputs/*
+!outputs/.gitkeep

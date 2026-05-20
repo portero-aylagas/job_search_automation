@@ -86,8 +86,54 @@ def test_career_level_options_are_flat_and_unique() -> None:
     assert len(option_labels) == len(set(option_labels))
 
 
+def test_employment_type_labels_are_not_grouped() -> None:
+    app = importlib.import_module("app")
+
+    assert not hasattr(app, "EMPLOYMENT_TYPE_GROUPS")
+    assert [label for _, label in app.EMPLOYMENT_TYPE_OPTIONS] == [
+        "Full-time",
+        "Part-time",
+        "Contract",
+        "Freelance",
+    ]
+
+
 def test_salary_labels_and_defaults_are_annual() -> None:
     app = importlib.import_module("app")
 
     assert "EUR / year" in app.required_label("Salary min (EUR / year)")
     assert "EUR / year" in app.required_label("Salary max (EUR / year)")
+
+
+def test_optional_document_upload_menus_match_supported_categories() -> None:
+    app = importlib.import_module("app")
+
+    assert app.OPTIONAL_DOCUMENT_UPLOAD_MENUS == [
+        ("reference", "Upload references"),
+        ("certificate", "Upload certificates"),
+        ("other", "Upload other documents"),
+    ]
+    assert set(app.OPTIONAL_DOCUMENT_TYPES) == {
+        document_type for document_type, _ in app.OPTIONAL_DOCUMENT_UPLOAD_MENUS
+    }
+
+
+def test_merge_supplemental_extracted_data_appends_unique_items() -> None:
+    app = importlib.import_module("app")
+    from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
+
+    target = CandidateCVExtracted(
+        skills=["Python"],
+        certifications=["Cloud Fundamentals"],
+    )
+    supplemental = CandidateSupplementalExtracted(
+        skills=["python", "SQL"],
+        certifications=["Cloud Fundamentals", "Security Basics"],
+        references=["Reference letter from Example Manager"],
+    )
+
+    app.merge_supplemental_extracted_data(target, supplemental)
+
+    assert target.skills == ["Python", "SQL"]
+    assert target.certifications == ["Cloud Fundamentals", "Security Basics"]
+    assert target.references == ["Reference letter from Example Manager"]
