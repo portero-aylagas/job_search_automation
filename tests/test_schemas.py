@@ -1,4 +1,9 @@
-from src.schemas import CandidatePreferences, CandidateProfile, TrackerRecord
+from src.schemas import (
+    CandidatePreferences,
+    CandidateProfile,
+    JobListing,
+    TrackerRecord,
+)
 
 
 def test_candidate_profile_round_trip() -> None:
@@ -84,3 +89,34 @@ def test_tracker_record_accepts_known_statuses() -> None:
     )
 
     assert record.status == "application_draft"
+
+
+def test_job_listing_rejects_apply_url_that_matches_source_url() -> None:
+    source_url = "https://example.com/jobs/job-description.185158.html"
+
+    try:
+        JobListing(
+            id="job-123",
+            title="Automation Engineer",
+            company="Example Co",
+            source_url=source_url,
+            retrieval_mode="url",
+            apply_url=source_url,
+        )
+    except ValueError as exc:
+        assert "application destination" in str(exc)
+    else:
+        raise AssertionError("JobListing should reject apply_url matching source_url.")
+
+
+def test_job_listing_allows_distinct_apply_url() -> None:
+    listing = JobListing(
+        id="job-123",
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/job-description.185158.html",
+        retrieval_mode="url",
+        apply_url="https://apply.example.com/start/job-description.185158",
+    )
+
+    assert str(listing.apply_url).startswith("https://apply.example.com/start/")

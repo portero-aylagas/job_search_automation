@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.sample_data import bootstrap_sample_data
+from src.sample_data import bootstrap_sample_data, get_sample_job_listing
 
 
 def test_bootstrap_sample_data_creates_expected_files(tmp_path: Path) -> None:
@@ -28,3 +28,9 @@ def test_bootstrap_sample_data_does_not_overwrite_existing_files(tmp_path: Path)
     bootstrap_sample_data(tmp_path)
 
     assert profile_path.read_text(encoding="utf-8") == original
+
+
+def test_sample_job_listing_uses_distinct_apply_url() -> None:
+    job = get_sample_job_listing()
+
+    assert str(job.apply_url) != str(job.source_url)

@@ -243,6 +243,9 @@ The package JSON is the source of truth. Markdown exports are generated from the
 full package when needed. When `application_requirements.json` exists, package
 generation uses it to decide which artifacts and answers are needed.
 
+Apply URLs that are the same as the source job page, or that are not valid
+http(s) application destinations, are rejected at validation time and cannot be
+saved as normalized jobs.
 ### Tracker Record
 
 Application tracking information:

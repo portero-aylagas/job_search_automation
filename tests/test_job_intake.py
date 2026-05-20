@@ -117,6 +117,23 @@ def test_validate_apply_url_rejects_blank_value() -> None:
         validate_apply_url(" ", "https://example.com/jobs/automation-engineer")
 
 
+@pytest.mark.parametrize(
+    "apply_url",
+    [
+        "mailto:jobs@example.com",
+        "jobs@example.com",
+        "tel:+49123456789",
+        "ftp://example.com/apply",
+    ],
+)
+def test_validate_apply_url_rejects_non_http_application_targets(apply_url: str) -> None:
+    with pytest.raises(
+        ValueError,
+        match="Apply URL must be a working http or https URL",
+    ):
+        validate_apply_url(apply_url, "https://example.com/jobs/automation-engineer")
+
+
 def test_validate_apply_url_rejects_apply_url_that_matches_source_url() -> None:
     with pytest.raises(
         ValueError,
