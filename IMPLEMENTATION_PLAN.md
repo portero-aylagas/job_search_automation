@@ -314,6 +314,8 @@ units + job data guided by those requirements.
 - application form answer generation
 - markdown package rendering from JSON
 - application package save/load
+- apply URL validation that rejects source-page URLs, non-http(s) targets, and
+  other invalid application destinations before jobs are saved
 
 ### Generated Outputs
 
