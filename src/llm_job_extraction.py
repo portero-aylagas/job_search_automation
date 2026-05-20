@@ -99,6 +99,8 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
         ],
         text_format=LLMExtractedJobDataResponse,
         operation="AI job extraction",
+        # Job extraction should describe what the source says, not invent missing fields.
+        profile=llm_client.JOB_EXTRACTION_PROFILE,
     )
     return normalize_extracted_job_data(response)
 
@@ -133,6 +135,8 @@ def resolve_apply_url_from_url(
         ],
         text_format=ApplyUrlResolution,
         operation="AI apply URL resolution",
+        # URL resolution is a verification task, so we keep it deterministic as well.
+        profile=llm_client.APPLY_URL_RESOLUTION_PROFILE,
     )
 
 

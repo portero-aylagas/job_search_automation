@@ -202,6 +202,10 @@ def test_llm_extractor_uses_llm_safe_response_model(monkeypatch: pytest.MonkeyPa
 
     assert parse_calls[0]["text_format"] is LLMApplicationRequirementsResponse
     assert parse_calls[0]["text_format"] is not ApplicationRequirements
+    assert parse_calls[0]["temperature"] == 0.0
+    assert parse_calls[0]["max_output_tokens"] == 6000
+    assert parse_calls[0]["timeout"] == 60
+    assert parse_calls[0]["truncation"] == "disabled"
     assert isinstance(requirements, ApplicationRequirements)
     assert requirements.required_documents[0].label == "CV"
 

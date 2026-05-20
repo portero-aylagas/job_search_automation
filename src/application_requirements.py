@@ -589,6 +589,8 @@ def extract_application_requirements_with_llm(
         ],
         text_format=LLMApplicationRequirementsResponse,
         operation="AI application requirements extraction",
+        # Requirements extraction is a contract-reading step, so it stays deterministic.
+        profile=llm_client.APPLICATION_REQUIREMENTS_PROFILE,
     )
 
     payload = response.model_dump(mode="json")

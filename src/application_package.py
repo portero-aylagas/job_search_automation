@@ -261,6 +261,8 @@ def generate_application_package_with_llm(
         ],
         text_format=LLMApplicationPackageResponse,
         operation="AI package generation",
+        # This is the one workflow where some phrasing flexibility is useful.
+        profile=llm_client.APPLICATION_PACKAGE_PROFILE,
     )
 
     payload = response.model_dump(mode="json")
