@@ -149,6 +149,9 @@ and template-style assets belong in `tests/fixtures/`.
 AI prompt text is stored in `src/prompts.yaml` and loaded through
 `src/prompt_templates.py`. Live OpenAI calls remain behind `src/llm_client.py`,
 so prompt edits and provider-boundary changes stay reviewable and separate.
+LLM-facing structured response schemas for CV and job extraction live next to
+their extraction modules and are normalized into the persisted application
+models before anything is stored or shown in the UI.
 
 ---
 
