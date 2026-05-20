@@ -6,6 +6,9 @@ from types import SimpleNamespace
 import src.cv_extraction as cv_extraction
 from src.cv_extraction import (
     CVDocumentSnapshot,
+    LLMCandidateCVExtractedResponse,
+    LLMCandidateCVIdentityResponse,
+    LLMCandidateSupplementalExtractedResponse,
     extract_cv_data_with_llm,
     extract_optional_document_data_with_llm,
     run_cv_extraction_task,
@@ -53,11 +56,14 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
     monkeypatch,
 ) -> None:
     parse_calls = []
-    parsed_payload = CandidateCVExtracted(
-        identity=CandidateCVIdentity(full_name="Taylor Rivera", email="taylor@example.com"),
-        work_experience=["Automation Engineer at Example Co"],
+    parsed_payload = LLMCandidateCVExtractedResponse(
+        identity=LLMCandidateCVIdentityResponse(
+            full_name="Taylor Rivera",
+            email="taylor@example.com",
+        ),
+        work_experience=["Automation Engineer at Example Co", "  "],
         education=["BSc Computer Science"],
-        skills=["Python", "SQL"],
+        skills=["Python", "SQL", "python"],
         languages=["English"],
         certifications=["Cloud Fundamentals"],
         projects=["Application workflow automation"],
@@ -81,8 +87,17 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
 
     extracted = extract_cv_data_with_llm(snapshot)
 
-    assert extracted == parsed_payload
-    assert parse_calls[0]["text_format"] is CandidateCVExtracted
+    assert extracted == CandidateCVExtracted(
+        identity=CandidateCVIdentity(full_name="Taylor Rivera", email="taylor@example.com"),
+        work_experience=["Automation Engineer at Example Co"],
+        education=["BSc Computer Science"],
+        skills=["Python", "SQL"],
+        languages=["English"],
+        certifications=["Cloud Fundamentals"],
+        projects=["Application workflow automation"],
+    )
+    assert parse_calls[0]["text_format"] is LLMCandidateCVExtractedResponse
+    assert parse_calls[0]["text_format"] is not CandidateCVExtracted
     user_content = parse_calls[0]["input"][1]["content"]
     input_file = next(item for item in user_content if item["type"] == "input_file")
     assert input_file == {"type": "input_file", "file_id": "file-cv"}
@@ -123,9 +138,10 @@ def test_run_optional_document_extraction_task_uses_injected_agents(tmp_path: Pa
 
 def test_extract_optional_document_data_with_llm_uses_structured_response(monkeypatch) -> None:
     parse_calls = []
-    parsed_payload = CandidateSupplementalExtracted(
+    parsed_payload = LLMCandidateSupplementalExtractedResponse(
         certifications=["Cloud Fundamentals"],
-        references=["Reference letter from Example Manager"],
+        references=["Reference letter from Example Manager", ""],
+        notes=[" Available on request "],
     )
 
     class FakeResponses:
@@ -146,11 +162,42 @@ def test_extract_optional_document_data_with_llm_uses_structured_response(monkey
 
     extracted = extract_optional_document_data_with_llm(snapshot)
 
-    assert extracted == parsed_payload
-    assert parse_calls[0]["text_format"] is CandidateSupplementalExtracted
+    assert extracted == CandidateSupplementalExtracted(
+        certifications=["Cloud Fundamentals"],
+        references=["Reference letter from Example Manager"],
+        notes=["Available on request"],
+    )
+    assert parse_calls[0]["text_format"] is LLMCandidateSupplementalExtractedResponse
+    assert parse_calls[0]["text_format"] is not CandidateSupplementalExtracted
     user_content = parse_calls[0]["input"][1]["content"]
     input_file = next(item for item in user_content if item["type"] == "input_file")
     assert input_file == {"type": "input_file", "file_id": "file-reference"}
+
+
+def test_extract_cv_data_with_llm_normalizes_missing_fields(monkeypatch) -> None:
+    parsed_payload = LLMCandidateCVExtractedResponse()
+
+    class FakeResponses:
+        def parse(self, **_kwargs):
+            return SimpleNamespace(output_parsed=parsed_payload)
+
+    monkeypatch.setattr(
+        "src.llm_client.get_openai_client",
+        lambda: SimpleNamespace(responses=FakeResponses()),
+    )
+
+    extracted = extract_cv_data_with_llm(
+        CVDocumentSnapshot(
+            file_path="/tmp/cv.pdf",
+            file_name="cv.pdf",
+            file_id="file-cv",
+            mime_type="application/pdf",
+        )
+    )
+
+    assert extracted == CandidateCVExtracted(
+        identity=CandidateCVIdentity(),
+    )
 
 
 def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) -> None:

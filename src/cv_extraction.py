@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from src import llm_client
 from src.paths import cv_upload_path, optional_document_upload_path
 from src.prompt_templates import get_prompt
-from src.schemas import CandidateCVExtracted, CandidateSupplementalExtracted
+from src.schemas import CandidateCVExtracted, CandidateCVIdentity, CandidateSupplementalExtracted
 
 
 class CVDocumentSnapshot(BaseModel):
@@ -19,6 +19,38 @@ class CVDocumentSnapshot(BaseModel):
     file_name: str
     file_id: str
     mime_type: str = ""
+
+
+class LLMCandidateCVIdentityResponse(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    location: str | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    portfolio_url: str | None = None
+
+
+class LLMCandidateCVExtractedResponse(BaseModel):
+    identity: LLMCandidateCVIdentityResponse | None = None
+    work_experience: list[str] | None = None
+    education: list[str] | None = None
+    skills: list[str] | None = None
+    languages: list[str] | None = None
+    certifications: list[str] | None = None
+    projects: list[str] | None = None
+    references: list[str] | None = None
+
+
+class LLMCandidateSupplementalExtractedResponse(BaseModel):
+    work_experience: list[str] | None = None
+    education: list[str] | None = None
+    skills: list[str] | None = None
+    languages: list[str] | None = None
+    certifications: list[str] | None = None
+    projects: list[str] | None = None
+    references: list[str] | None = None
+    notes: list[str] | None = None
 
 
 CVDocumentInspector = Callable[[Path], CVDocumentSnapshot]
@@ -123,7 +155,7 @@ def inspect_cv_document_agent(cv_path: Path) -> CVDocumentSnapshot:
 
 
 def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtracted:
-    return llm_client.parse_structured_response(
+    response = llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -143,15 +175,16 @@ def extract_cv_data_with_llm(snapshot: CVDocumentSnapshot) -> CandidateCVExtract
                 ],
             },
         ],
-        text_format=CandidateCVExtracted,
+        text_format=LLMCandidateCVExtractedResponse,
         operation="AI CV extraction",
     )
+    return normalize_cv_extracted(response)
 
 
 def extract_optional_document_data_with_llm(
     snapshot: CVDocumentSnapshot,
 ) -> CandidateSupplementalExtracted:
-    return llm_client.parse_structured_response(
+    response = llm_client.parse_structured_response(
         input=[
             {
                 "role": "system",
@@ -179,9 +212,10 @@ def extract_optional_document_data_with_llm(
                 ],
             },
         ],
-        text_format=CandidateSupplementalExtracted,
+        text_format=LLMCandidateSupplementalExtractedResponse,
         operation="AI optional document extraction",
     )
+    return normalize_optional_document_extracted(response)
 
 
 def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes) -> Path:
@@ -229,3 +263,61 @@ def _safe_filename(value: str, *, fallback: str = "cv") -> str:
         for character in value
     ).strip("-")
     return normalized or fallback
+
+
+def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> CandidateCVExtracted:
+    identity = response.identity or LLMCandidateCVIdentityResponse()
+    return CandidateCVExtracted(
+        identity=CandidateCVIdentity(
+            full_name=_normalize_text(identity.full_name),
+            email=_normalize_text(identity.email),
+            phone=_normalize_text(identity.phone),
+            location=_normalize_text(identity.location),
+            linkedin_url=_normalize_text(identity.linkedin_url),
+            github_url=_normalize_text(identity.github_url),
+            portfolio_url=_normalize_text(identity.portfolio_url),
+        ),
+        work_experience=_normalize_string_list(response.work_experience),
+        education=_normalize_string_list(response.education),
+        skills=_normalize_string_list(response.skills),
+        languages=_normalize_string_list(response.languages),
+        certifications=_normalize_string_list(response.certifications),
+        projects=_normalize_string_list(response.projects),
+        references=_normalize_string_list(response.references),
+    )
+
+
+def normalize_optional_document_extracted(
+    response: LLMCandidateSupplementalExtractedResponse,
+) -> CandidateSupplementalExtracted:
+    return CandidateSupplementalExtracted(
+        work_experience=_normalize_string_list(response.work_experience),
+        education=_normalize_string_list(response.education),
+        skills=_normalize_string_list(response.skills),
+        languages=_normalize_string_list(response.languages),
+        certifications=_normalize_string_list(response.certifications),
+        projects=_normalize_string_list(response.projects),
+        references=_normalize_string_list(response.references),
+        notes=_normalize_string_list(response.notes),
+    )
+
+
+def _normalize_string_list(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = value.strip()
+        if not item:
+            continue
+        key = item.casefold()
+        if key in seen:
+            continue
+        normalized.append(item)
+        seen.add(key)
+    return normalized
+
+
+def _normalize_text(value: str | None) -> str:
+    return (value or "").strip()
