@@ -554,6 +554,10 @@ def get_application_package_blockers(
         blockers.append(
             "Resolve application requirements before generating application material."
         )
+    elif requirements.review_status != "reviewed":
+        blockers.append(
+            "Review the application requirements before generating application material."
+        )
 
     return blockers
 
@@ -724,6 +728,7 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         return
 
     render_application_requirements(requirements)
+    render_requirements_review_actions(base_dir, requirements)
 
 
 def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
@@ -805,10 +810,11 @@ def render_application_package(package: ApplicationPackage) -> None:
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:
-    status_columns = st.columns(3)
+    status_columns = st.columns(4)
     status_columns[0].metric("Status", requirements.status)
-    status_columns[1].metric("Job Preserving", "Yes" if requirements.job_preserving else "No")
-    status_columns[2].metric("Confidence", requirements.confidence)
+    status_columns[1].metric("Review", requirements.review_status)
+    status_columns[2].metric("Job Preserving", "Yes" if requirements.job_preserving else "No")
+    status_columns[3].metric("Confidence", requirements.confidence)
 
     if requirements.blocked_reason:
         st.warning(requirements.blocked_reason)
@@ -842,6 +848,28 @@ def render_application_requirements(requirements: ApplicationRequirements) -> No
         with st.expander("Source Evidence", expanded=False):
             for evidence in requirements.source_evidence:
                 st.write(f"- {evidence}")
+
+
+def render_requirements_review_actions(
+    base_dir: Path,
+    requirements: ApplicationRequirements,
+) -> None:
+    if requirements.status != "discovered" or requirements.review_status == "reviewed":
+        return
+
+    if st.button("Mark Requirements Reviewed"):
+        reviewed_requirements = mark_requirements_reviewed(requirements)
+        save_application_requirements(base_dir, reviewed_requirements)
+        st.success("Requirements were marked as reviewed.")
+        st.rerun()
+
+
+def mark_requirements_reviewed(
+    requirements: ApplicationRequirements,
+) -> ApplicationRequirements:
+    reviewed_requirements = requirements.model_copy(deep=True)
+    reviewed_requirements.review_status = "reviewed"
+    return reviewed_requirements
 
 
 def render_requirement_findings(

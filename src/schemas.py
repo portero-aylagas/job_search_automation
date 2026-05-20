@@ -419,6 +419,7 @@ class ApplicationRequirements(BaseModel):
     apply_url: HttpUrl
     source_url: HttpUrl
     status: Literal["discovered", "blocked"] = "discovered"
+    review_status: Literal["draft", "reviewed"] = "draft"
     blocked_reason: str | None = None
     job_preserving: bool = False
     required_documents: list[ApplicationRequirementFinding] = Field(default_factory=list)

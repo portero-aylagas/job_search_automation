@@ -168,3 +168,20 @@ def test_application_package_round_trip() -> None:
     reloaded = ApplicationPackage.model_validate(package.model_dump(mode="json"))
 
     assert reloaded == package
+
+
+def test_application_requirements_round_trip_includes_review_status() -> None:
+    from src.schemas import ApplicationRequirements
+
+    requirements = ApplicationRequirements(
+        job_id="job-123",
+        apply_url="https://example.com/apply/automation-engineer",
+        source_url="https://example.com/jobs/automation-engineer",
+        review_status="reviewed",
+        status="discovered",
+        job_preserving=True,
+    )
+
+    reloaded = ApplicationRequirements.model_validate(requirements.model_dump(mode="json"))
+
+    assert reloaded == requirements
