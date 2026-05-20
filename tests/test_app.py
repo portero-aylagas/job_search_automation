@@ -70,6 +70,22 @@ def test_get_latest_candidate_profile_uses_current_draft(monkeypatch) -> None:
     assert profile.candidate_profile.candidate_preferences.availability == "Available next month"
 
 
+def test_load_candidate_profile_prefers_active_saved_profile(tmp_path: Path) -> None:
+    app = importlib.import_module("app")
+    active_profile = make_complete_candidate_profile()
+    runtime_profile = make_complete_candidate_profile()
+    runtime_profile.candidate_profile.cv_extracted.identity.full_name = "Stale Runtime"
+
+    app.save_candidate_profile(tmp_path, active_profile)
+    runtime_path = tmp_path / "data" / "runtime" / "candidate_profile.json"
+    runtime_path.parent.mkdir(parents=True)
+    runtime_path.write_text(runtime_profile.model_dump_json(), encoding="utf-8")
+
+    loaded_profile = app.load_candidate_profile(tmp_path)
+
+    assert loaded_profile.candidate_profile.cv_extracted.identity.full_name == "Taylor Rivera"
+
+
 def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfile:
     return CandidateProfile.model_validate(
         {

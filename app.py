@@ -109,14 +109,14 @@ def load_app_data() -> tuple[CandidateProfile, list[TrackerRecord]]:
 
 
 def load_candidate_profile(base_dir: Path) -> CandidateProfile:
+    active_path = base_dir / "data" / "candidate_profile.json"
     runtime_path = base_dir / "data" / "runtime" / "candidate_profile.json"
-    template_path = base_dir / "data" / "candidate_profile.json"
     legacy_path = base_dir / "data" / "profile.json"
 
+    if active_path.exists():
+        return load_model(active_path, CandidateProfile)
     if runtime_path.exists():
         return load_model(runtime_path, CandidateProfile)
-    if template_path.exists():
-        return load_model(template_path, CandidateProfile)
     if legacy_path.exists():
         return load_model(legacy_path, CandidateProfile)
     return CandidateProfile()
