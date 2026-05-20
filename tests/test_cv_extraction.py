@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import src.cv_extraction as cv_extraction
 from src.cv_extraction import (
     CVDocumentSnapshot,
@@ -13,6 +15,8 @@ from src.cv_extraction import (
     extract_optional_document_data_with_llm,
     run_cv_extraction_task,
     run_optional_document_extraction_task,
+    save_uploaded_cv,
+    save_uploaded_optional_document,
 )
 from src.schemas import CandidateCVExtracted, CandidateCVIdentity, CandidateSupplementalExtracted
 
@@ -50,6 +54,33 @@ def test_run_cv_extraction_task_uses_agent_nodes(tmp_path: Path) -> None:
 
     assert calls == ["inspect_cv_document_agent", "extract_cv_data"]
     assert result == extracted
+
+
+def test_save_uploaded_cv_rejects_empty_file(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="CV upload is empty"):
+        save_uploaded_cv(tmp_path, "cv.pdf", b"")
+
+
+def test_save_uploaded_cv_rejects_unsupported_file_type(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="CV must use one of these file types"):
+        save_uploaded_cv(tmp_path, "cv.exe", b"not a cv")
+
+
+def test_save_uploaded_optional_document_rejects_oversized_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(cv_extraction, "MAX_UPLOAD_BYTES", 3)
+
+    with pytest.raises(ValueError, match="Optional document upload must be"):
+        save_uploaded_optional_document(tmp_path, "certificate.pdf", b"1234")
+
+
+def test_save_uploaded_cv_accepts_supported_file_type(tmp_path: Path) -> None:
+    saved_path = save_uploaded_cv(tmp_path, "Taylor CV.PDF", b"%PDF test")
+
+    assert saved_path.name.endswith("-Taylor-CV.PDF")
+    assert saved_path.read_bytes() == b"%PDF test"
 
 
 def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
