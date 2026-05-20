@@ -6,15 +6,17 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
+from src.paths import DATA_DIR, OUTPUTS_DIR, RUNTIME_DATA_DIR, RUNTIME_JOBS_DIR, TEMPLATE_JOBS_DIR
+
 
 def ensure_data_dirs(base_dir: Path | str = ".") -> None:
     root = Path(base_dir)
     for relative_path in (
-        "data",
-        "data/jobs",
-        "data/runtime",
-        "data/runtime/jobs",
-        "outputs",
+        DATA_DIR,
+        TEMPLATE_JOBS_DIR,
+        RUNTIME_DATA_DIR,
+        RUNTIME_JOBS_DIR,
+        OUTPUTS_DIR,
     ):
         (root / relative_path).mkdir(parents=True, exist_ok=True)
 

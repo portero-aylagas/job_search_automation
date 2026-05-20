@@ -86,6 +86,20 @@ def test_load_candidate_profile_prefers_active_saved_profile(tmp_path: Path) -> 
     assert loaded_profile.candidate_profile.cv_extracted.identity.full_name == "Taylor Rivera"
 
 
+def test_format_cv_parse_error_explains_saved_upload_and_runtime_requirements(
+    tmp_path: Path,
+) -> None:
+    app = importlib.import_module("app")
+    saved_path = tmp_path / "data" / "runtime" / "candidate_profile" / "cv" / "cv.pdf"
+
+    message = app.format_cv_parse_error(saved_path, RuntimeError("Connection error."))
+
+    assert str(saved_path) in message
+    assert "AI parsing failed: Connection error." in message
+    assert "OPENAI_API_KEY" in message
+    assert "network access" in message
+
+
 def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfile:
     return CandidateProfile.model_validate(
         {

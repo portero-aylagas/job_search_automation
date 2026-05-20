@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.paths import (
+    candidate_profile_path,
+    experience_units_paths,
+    jobs_index_paths,
+    normalized_job_paths,
+)
 from src.schemas import (
     CandidateProfile,
     ExperienceUnit,
@@ -169,16 +175,27 @@ def get_sample_tracker_records() -> list[TrackerRecord]:
 def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
     root = Path(base_dir)
     ensure_data_dirs(root)
+    _, template_experience_units_path = experience_units_paths(root)
+    (
+        runtime_jobs_index_path,
+        runtime_tracker_path,
+        template_jobs_index_path,
+        template_tracker_path,
+    ) = jobs_index_paths(root)
+    runtime_normalized_job_path, template_normalized_job_path = normalized_job_paths(
+        root,
+        "job-001",
+    )
 
     files_to_seed = {
-        root / "data/candidate_profile.json": get_sample_candidate_profile(),
-        root / "data/experience_units.json": get_sample_experience_units(),
-        root / "data/jobs.json": get_sample_tracker_records(),
-        root / "data/tracker.json": get_sample_tracker_records(),
-        root / "data/runtime/jobs.json": get_sample_tracker_records(),
-        root / "data/runtime/tracker.json": get_sample_tracker_records(),
-        root / "data/runtime/jobs/job-001/normalized_job.json": get_sample_job_listing(),
-        root / "data/jobs/job-001/normalized_job.json": get_sample_job_listing(),
+        candidate_profile_path(root): get_sample_candidate_profile(),
+        template_experience_units_path: get_sample_experience_units(),
+        template_jobs_index_path: get_sample_tracker_records(),
+        template_tracker_path: get_sample_tracker_records(),
+        runtime_jobs_index_path: get_sample_tracker_records(),
+        runtime_tracker_path: get_sample_tracker_records(),
+        runtime_normalized_job_path: get_sample_job_listing(),
+        template_normalized_job_path: get_sample_job_listing(),
     }
 
     for path, payload in files_to_seed.items():

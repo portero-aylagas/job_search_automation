@@ -12,6 +12,16 @@ from pydantic import BaseModel, Field
 
 from src.job_intake import validate_apply_url
 from src.llm_client import MODEL, get_openai_client
+from src.paths import (
+    APPLICATION_PAGE_SNAPSHOT_FILENAME as _APPLICATION_PAGE_SNAPSHOT_FILENAME,
+)
+from src.paths import (
+    APPLICATION_REQUIREMENTS_FILENAME as _APPLICATION_REQUIREMENTS_FILENAME,
+)
+from src.paths import (
+    runtime_application_page_snapshot_path,
+    runtime_application_requirements_path,
+)
 from src.schemas import (
     ApplicationFormField,
     ApplicationPageControl,
@@ -25,9 +35,9 @@ from src.schemas import (
 )
 from src.storage import save_model
 
-APPLICATION_REQUIREMENTS_FILENAME = "application_requirements.json"
-APPLICATION_PAGE_SNAPSHOT_FILENAME = "application_page_snapshot.json"
-RUNTIME_DATA_DIR = Path("data/runtime")
+APPLICATION_REQUIREMENTS_FILENAME = _APPLICATION_REQUIREMENTS_FILENAME
+APPLICATION_PAGE_SNAPSHOT_FILENAME = _APPLICATION_PAGE_SNAPSHOT_FILENAME
+
 MAX_APPLY_PAGE_CHARS = 80_000
 MAX_SNAPSHOT_TEXT_CHARS = 20_000
 MAX_EVIDENCE_MATCHES = 80
@@ -612,13 +622,7 @@ def save_application_page_snapshot(
     job_id: str,
     snapshot: ApplicationPageSnapshot,
 ) -> Path:
-    target = (
-        Path(base_dir)
-        / RUNTIME_DATA_DIR
-        / "jobs"
-        / job_id
-        / APPLICATION_PAGE_SNAPSHOT_FILENAME
-    )
+    target = runtime_application_page_snapshot_path(base_dir, job_id)
     save_model(target, snapshot)
     return target
 
@@ -627,12 +631,6 @@ def save_application_requirements(
     base_dir: Path | str,
     requirements: ApplicationRequirements,
 ) -> Path:
-    target = (
-        Path(base_dir)
-        / RUNTIME_DATA_DIR
-        / "jobs"
-        / requirements.job_id
-        / APPLICATION_REQUIREMENTS_FILENAME
-    )
+    target = runtime_application_requirements_path(base_dir, requirements.job_id)
     save_model(target, requirements)
     return target
