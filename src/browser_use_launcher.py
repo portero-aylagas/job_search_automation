@@ -182,8 +182,11 @@ def build_test_application_fill_task(
 Use the job application page already open in the browser for a small apply-form
 test.
 
-Fill exactly one non-file field:
-- Find the field labelled "Vorname *" and enter exactly "TestName".
+Perform the actions in this order:
+1. Find a file upload control that clearly requests a CV, resume, or Lebenslauf.
+2. Upload the CV using Browser Use's upload_file action only.
+3. After the upload action has completed, find the field labelled "Vorname *"
+   and enter exactly "TestName".
 
 Do not fill any other text field. Do not select radio buttons, checkboxes,
 dropdowns, or consent controls. Do not enter random data. This run is only for
@@ -209,6 +212,9 @@ Hard safety rules:
   must be exactly "TestName".
 - Only interact with upload controls that clearly request a CV, resume, or
   Lebenslauf.
+- Do not click the upload control to open the operating-system file picker. Use
+  the upload_file action directly on the upload control.
+- Never type or paste the CV file path into any page field or file picker.
 - Do not upload cover letters, portfolios, certificates, photos, or any other
   attachments.
 - Do not type into or modify any other non-file form field.
@@ -219,6 +225,10 @@ Hard safety rules:
 - Stop after "Vorname *" is set to "TestName" and the CV is uploaded, or after
   you determine that either target action is blocked. Leave the page ready for
   manual inspection.
+
+If upload_file reports an error or says the file is not available, stop
+immediately and report the upload as failed. Do not retry by clicking the upload
+control, opening the file picker, typing the path, or claiming success.
 
 Your final answer should summarize whether "Vorname *" was filled, whether the
 CV was uploaded, which upload control was used, and whether anything blocked the

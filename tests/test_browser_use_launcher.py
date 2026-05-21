@@ -154,6 +154,9 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert "translation prompts" in agent_task
     assert "cookie, privacy, newsletter, chat" in agent_task
     assert "Weiter & Prüfen" in agent_task
+    assert "upload_file action only" in agent_task
+    assert "Do not click the upload control" in agent_task
+    assert "Never type or paste the CV file path" in agent_task
     assert "Only interact with upload controls" in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
@@ -168,6 +171,7 @@ def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_gua
     assert "https://example.com/apply" not in task
     assert 'field labelled "Vorname *"' in task
     assert 'enter exactly "TestName"' in task
+    assert "Upload the CV using Browser Use's upload_file action only" in task
     assert 'only non-file form field you may type into is "Vorname *"' in task
     assert "Do not enter random data" in task
     assert 'Upload this CV file' in task
@@ -179,7 +183,11 @@ def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_gua
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
     assert "Only interact with upload controls" in task
+    assert "Do not click the upload control" in task
+    assert "Never type or paste the CV file path" in task
     assert "Do not type into or modify any other non-file form field" in task
+    assert "If upload_file reports an error" in task
+    assert "Do not retry by clicking the upload" in task
     assert "Do not upload cover letters" in task
     assert "reviewed candidate data" not in task
     assert "random, clearly fake test data" not in task
