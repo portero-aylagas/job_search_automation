@@ -23,7 +23,7 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.schemas import CandidateOptionalDocument, CandidateProfile
-from src.ui_components import render_ai_usage_summary, render_workflow_trace
+from src.ui_components import render_optional_ai_details
 
 EMPLOYMENT_TYPE_OPTIONS = [
     ("full_time", "Full-time"),
@@ -40,6 +40,7 @@ WORK_AUTHORIZATION_OPTIONS = [
     ("eu_authorized", "EU authorized"),
     ("eu_sponsorship_required", "EU sponsorship required"),
 ]
+GENDER_OPTIONS = ["Male", "Female", "Diverse"]
 OPTIONAL_DOCUMENT_TYPES = {
     "reference": "Reference",
     "certificate": "Certificate",
@@ -108,6 +109,14 @@ def work_authorization_index(value: str) -> int | None:
     for index, (option_value, _) in enumerate(WORK_AUTHORIZATION_OPTIONS):
         if option_value == value:
             return index
+    return None
+
+
+def gender_index(value: str | None) -> int | None:
+    """Return the select index for the saved gender value."""
+
+    if value in GENDER_OPTIONS:
+        return GENDER_OPTIONS.index(value)
     return None
 
 
@@ -246,7 +255,6 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
 
     with st.container(border=True):
         st.subheader("2. Optional documents")
-        st.caption("Upload references, certificates, or other supporting documents.")
 
         existing_documents = candidate_profile.candidate_profile.source_documents.optional_documents
         if existing_documents:
@@ -268,8 +276,7 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
                 key=f"candidate_profile_optional_documents_upload_{document_type}",
             )
 
-        st.caption("This action uploads each selected document to the AI provider for parsing.")
-        if st.button("Upload and parse optional documents"):
+        if st.button("Parse optional documents", type="primary"):
             uploaded_document_entries = [
                 (document_type, uploaded_document)
                 for document_type, uploaded_documents in uploaded_documents_by_type.items()
@@ -281,37 +288,38 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
 
             updated_profile = candidate_profile.model_copy(deep=True)
             parsed_count = 0
-            for document_type, uploaded_document in uploaded_document_entries:
-                saved_path = save_uploaded_optional_document(
-                    base_dir,
-                    uploaded_document.name,
-                    uploaded_document.getvalue(),
-                )
-                document = CandidateOptionalDocument(
-                    file_path=str(saved_path),
-                    file_name=uploaded_document.name,
-                    document_type=document_type,
-                    parsed=False,
-                )
+            with st.spinner("Parsing optional documents with the AI extractor..."):
+                for document_type, uploaded_document in uploaded_document_entries:
+                    saved_path = save_uploaded_optional_document(
+                        base_dir,
+                        uploaded_document.name,
+                        uploaded_document.getvalue(),
+                    )
+                    document = CandidateOptionalDocument(
+                        file_path=str(saved_path),
+                        file_name=uploaded_document.name,
+                        document_type=document_type,
+                        parsed=False,
+                    )
 
-                try:
-                    extracted = run_optional_document_extraction_task(saved_path)
-                except Exception as exc:
+                    try:
+                        extracted = run_optional_document_extraction_task(saved_path)
+                    except Exception as exc:
+                        updated_profile.candidate_profile.source_documents.optional_documents.append(
+                            document
+                        )
+                        st.error(f"{uploaded_document.name}: {exc}")
+                        continue
+
+                    merge_supplemental_extracted_data(
+                        updated_profile.candidate_profile.cv_extracted,
+                        extracted,
+                    )
+                    document.parsed = True
                     updated_profile.candidate_profile.source_documents.optional_documents.append(
                         document
                     )
-                    st.error(f"{uploaded_document.name}: {exc}")
-                    continue
-
-                merge_supplemental_extracted_data(
-                    updated_profile.candidate_profile.cv_extracted,
-                    extracted,
-                )
-                document.parsed = True
-                updated_profile.candidate_profile.source_documents.optional_documents.append(
-                    document
-                )
-                parsed_count += 1
+                    parsed_count += 1
 
             set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
             if parsed_count:
@@ -332,11 +340,6 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
         if not profile_data.source_documents.cv.parsed:
             st.info("Upload and parse a CV to populate these review fields.")
-        render_ai_usage_summary(
-            "CV AI Usage Summary",
-            [extracted.workflow_trace],
-        )
-        render_workflow_trace("CV Extraction Trace", extracted.workflow_trace)
 
         with st.form("candidate_profile_review_form"):
             st.markdown("**Identity**")
@@ -350,7 +353,12 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                     required_label("Surname"),
                     value=extracted.identity.last_name,
                 )
-                salutation = st.text_input("Salutation", value=extracted.identity.salutation)
+                gender = st.selectbox(
+                    required_label("Gender"),
+                    options=GENDER_OPTIONS,
+                    index=gender_index(extracted.identity.gender),
+                    placeholder="Select gender",
+                )
                 email = st.text_input(required_label("Email"), value=extracted.identity.email)
                 phone = st.text_input(required_label("Phone"), value=extracted.identity.phone)
                 location = st.text_input("Location", value=extracted.identity.location)
@@ -441,7 +449,17 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                 height=adaptive_text_area_height(references_text, min_rows=4, max_rows=16),
             )
 
-            save_extracted = st.form_submit_button("Save CV review changes")
+            save_extracted = st.form_submit_button(
+                "Save CV review changes",
+                type="primary",
+            )
+
+        render_optional_ai_details(
+            "CV review",
+            [("CV Extraction Trace", extracted.workflow_trace)],
+            summary_label="CV AI Usage Summary",
+            summary_traces=[extracted.workflow_trace],
+        )
 
         if not save_extracted:
             return
@@ -457,7 +475,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
         updated_profile.candidate_profile.cv_extracted.identity.full_name = " ".join(
             item for item in (first_name.strip(), last_name.strip()) if item
         )
-        updated_profile.candidate_profile.cv_extracted.identity.salutation = salutation.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.gender = gender
         updated_profile.candidate_profile.cv_extracted.identity.email = normalized_email
         updated_profile.candidate_profile.cv_extracted.identity.phone = phone.strip()
         updated_profile.candidate_profile.cv_extracted.identity.location = location.strip()
@@ -507,86 +525,96 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
         profile_data = candidate_profile.candidate_profile
         preferences = profile_data.candidate_preferences
 
-        target_roles = st.text_area(
-            required_label("Target roles"),
-            value="\n".join(preferences.target_roles),
-            height=100,
-        )
-        target_locations = st.text_area(
-            required_label("Target locations"),
-            value="\n".join(preferences.target_locations),
-            height=100,
-        )
-        st.markdown("**Remote preference** *")
-        selected_remote_preferences: list[str] = []
-        remote_preference_values = set(preferences.remote_preference)
-        remote_columns = st.columns(2)
-        for index, (value, label) in enumerate(REMOTE_PREFERENCE_OPTIONS):
-            column = remote_columns[index % 2]
-            with column:
-                if st.checkbox(
-                    label,
-                    value=value in remote_preference_values,
-                    key=f"remote_preference_{value}",
-                ):
-                    selected_remote_preferences.append(value)
-
-        st.markdown("**Employment type** *")
-        selected_employment_types: list[str] = []
-        employment_type_values = set(preferences.employment_type)
-        type_columns = st.columns(2)
-        for index, (value, label) in enumerate(EMPLOYMENT_TYPE_OPTIONS):
-            column = type_columns[index % 2]
-            with column:
-                if st.checkbox(
-                    label,
-                    value=value in employment_type_values,
-                    key=f"employment_type_{value}",
-                ):
-                    selected_employment_types.append(value)
-
-        st.markdown("**Career level** *")
-        selected_seniority_levels: list[str] = []
-        seniority_level_values = set(preferences.seniority_level)
-        seniority_columns = st.columns(2)
-        for index, (value, label) in enumerate(CAREER_LEVEL_OPTIONS):
-            column = seniority_columns[index % 2]
-            with column:
-                if st.checkbox(
-                    label,
-                    value=value in seniority_level_values,
-                    help=CAREER_LEVEL_HELP.get(value),
-                    key=f"seniority_level_{value}",
-                ):
-                    selected_seniority_levels.append(value)
-
-        availability = st.text_input(required_label("Availability"), value=preferences.availability)
-        work_authorization = st.radio(
-            required_label("Work authorization"),
-            options=[value for value, _ in WORK_AUTHORIZATION_OPTIONS],
-            format_func=dict(WORK_AUTHORIZATION_OPTIONS).get,
-            index=work_authorization_index(preferences.work_authorization),
-            horizontal=True,
-            key="candidate_profile_work_authorization",
-        )
-        salary_left, salary_right = st.columns(2)
-        with salary_left:
-            salary_min_eur = st.number_input(
-                required_label("Salary min (EUR / year)"),
-                min_value=0,
-                step=1000,
-                value=preferences.salary_min_eur or 50000,
-                key="candidate_profile_salary_min_eur",
+        with st.form("candidate_profile_preferences_form"):
+            target_roles = st.text_area(
+                required_label("Target roles"),
+                value="\n".join(preferences.target_roles),
+                height=100,
             )
-        with salary_right:
-            salary_max_eur = st.number_input(
-                required_label("Salary max (EUR / year)"),
-                min_value=0,
-                step=1000,
-                value=preferences.salary_max_eur or 100000,
-                key="candidate_profile_salary_max_eur",
+            target_locations = st.text_area(
+                required_label("Target locations"),
+                value="\n".join(preferences.target_locations),
+                height=100,
             )
-        st.caption("Currency: EUR per year")
+            st.markdown("**Remote preference** *")
+            selected_remote_preferences: list[str] = []
+            remote_preference_values = set(preferences.remote_preference)
+            remote_columns = st.columns(2)
+            for index, (value, label) in enumerate(REMOTE_PREFERENCE_OPTIONS):
+                column = remote_columns[index % 2]
+                with column:
+                    if st.checkbox(
+                        label,
+                        value=value in remote_preference_values,
+                        key=f"remote_preference_{value}",
+                    ):
+                        selected_remote_preferences.append(value)
+
+            st.markdown("**Employment type** *")
+            selected_employment_types: list[str] = []
+            employment_type_values = set(preferences.employment_type)
+            type_columns = st.columns(2)
+            for index, (value, label) in enumerate(EMPLOYMENT_TYPE_OPTIONS):
+                column = type_columns[index % 2]
+                with column:
+                    if st.checkbox(
+                        label,
+                        value=value in employment_type_values,
+                        key=f"employment_type_{value}",
+                    ):
+                        selected_employment_types.append(value)
+
+            st.markdown("**Career level** *")
+            selected_seniority_levels: list[str] = []
+            seniority_level_values = set(preferences.seniority_level)
+            seniority_columns = st.columns(2)
+            for index, (value, label) in enumerate(CAREER_LEVEL_OPTIONS):
+                column = seniority_columns[index % 2]
+                with column:
+                    if st.checkbox(
+                        label,
+                        value=value in seniority_level_values,
+                        help=CAREER_LEVEL_HELP.get(value),
+                        key=f"seniority_level_{value}",
+                    ):
+                        selected_seniority_levels.append(value)
+
+            availability = st.text_input(
+                required_label("Availability"),
+                value=preferences.availability,
+            )
+            work_authorization = st.radio(
+                required_label("Work authorization"),
+                options=[value for value, _ in WORK_AUTHORIZATION_OPTIONS],
+                format_func=dict(WORK_AUTHORIZATION_OPTIONS).get,
+                index=work_authorization_index(preferences.work_authorization),
+                horizontal=True,
+                key="candidate_profile_work_authorization",
+            )
+            salary_left, salary_right = st.columns(2)
+            with salary_left:
+                salary_min_eur = st.number_input(
+                    required_label("Salary min (EUR / year)"),
+                    min_value=0,
+                    step=1000,
+                    value=preferences.salary_min_eur or 50000,
+                    key="candidate_profile_salary_min_eur",
+                )
+            with salary_right:
+                salary_max_eur = st.number_input(
+                    required_label("Salary max (EUR / year)"),
+                    min_value=0,
+                    step=1000,
+                    value=preferences.salary_max_eur or 100000,
+                    key="candidate_profile_salary_max_eur",
+                )
+            save_preferences = st.form_submit_button(
+                "Save manual preferences",
+                type="primary",
+            )
+
+        if not save_preferences:
+            return
 
         updated_profile = candidate_profile.model_copy(deep=True)
         updated_profile.candidate_profile.candidate_preferences.target_roles = lines_from_text(
@@ -615,6 +643,7 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
             work_authorization or ""
         )
         set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
+        st.success("Manual preferences updated.")
 
 
 def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
@@ -627,7 +656,6 @@ def render_profile_save_section(base_dir: Path, _candidate_profile: CandidatePro
     """Render the profile save action and persist a valid reviewed profile."""
 
     st.subheader("Save")
-    st.caption("This writes the reviewed profile to data/candidate_profile.json.")
     if st.button("Save profile", type="primary"):
         current_profile = get_latest_candidate_profile(base_dir)
         validation_errors = validate_candidate_profile(current_profile)

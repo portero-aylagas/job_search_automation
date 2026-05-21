@@ -61,14 +61,13 @@ from src.schemas import (
 )
 from src.ui_components import (
     render_additional_details,
-    render_ai_usage_summary,
     render_artifact_traceability,
     render_field,
     render_form_fields,
     render_list,
+    render_optional_ai_details,
     render_requirement_findings,
     render_screening_questions,
-    render_workflow_trace,
 )
 
 
@@ -192,11 +191,13 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         st.info("No application requirements have been discovered yet.")
         return
 
-    render_ai_usage_summary(
-        "Requirements AI Usage Summary",
-        [requirements.workflow_trace],
-    )
     render_application_requirements(requirements)
+    render_optional_ai_details(
+        "application requirements",
+        [("Requirements Extraction Trace", requirements.workflow_trace)],
+        summary_label="Requirements AI Usage Summary",
+        summary_traces=[requirements.workflow_trace],
+    )
     render_requirements_review_actions(base_dir, requirements)
 
 
@@ -242,12 +243,14 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
         st.info("No application package has been generated yet.")
         return
 
-    render_ai_usage_summary(
-        "Package AI Usage Summary",
-        [package.workflow_trace],
-    )
     package = render_application_package_recovery_actions(base_dir, job, package)
     render_application_package(package)
+    render_optional_ai_details(
+        "application package",
+        [("Package Generation Trace", package.workflow_trace)],
+        summary_label="Package AI Usage Summary",
+        summary_traces=[package.workflow_trace],
+    )
 
 
 def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
@@ -783,8 +786,6 @@ def render_application_package(package: ApplicationPackage) -> None:
     if package.selected_experience_units:
         render_list("Selected Experience Units", package.selected_experience_units)
 
-    render_workflow_trace("Package Generation Trace", package.workflow_trace)
-
     if package.missing_information:
         st.markdown("**Missing Information**")
         for item in package.missing_information:
@@ -824,8 +825,6 @@ def render_application_requirements(requirements: ApplicationRequirements) -> No
 
     if requirements.blocked_reason:
         st.warning(requirements.blocked_reason)
-
-    render_workflow_trace("Requirements Extraction Trace", requirements.workflow_trace)
 
     render_requirement_findings("Required Documents", requirements.required_documents)
     render_requirement_findings("Upload Expectations", requirements.upload_expectations)

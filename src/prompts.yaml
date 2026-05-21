@@ -13,7 +13,7 @@ cv_extraction:
       - For skills, languages, certifications, and projects, keep items specific and useful for job matching. Preserve levels, tools, domains, and project outcomes when the CV states them.
       - Prefer clear punctuation over embedded newlines inside a single array item except for the title-and-bullet work_experience block format.
     user_text: |
-      Extract this CV into the required candidate cv_extracted JSON fields: identity, work_experience, education, skills, languages, certifications, and projects. In identity, split names into first_name and last_name when supported, keep email and phone as contact fields, split residence address into street_address, street_number, city, postal_code, and country when supported, and include nationality when explicitly present.
+      Extract this CV into the required candidate cv_extracted JSON fields: identity, work_experience, education, skills, languages, certifications, and projects. In identity, split names into first_name and last_name when supported, keep email and phone as contact fields, split residence address into street_address, street_number, city, postal_code, and country when supported, include nationality when explicitly present, and set gender to Male, Female, or Diverse only when the CV explicitly states gender or a gendered salutation. Do not infer gender from name, and do not extract titles.
   extract_optional_document_data:
     system: |
       You extract supplemental professional evidence from optional candidate documents such as reference letters, certificates, course records, portfolios, and other supporting materials for a controlled, human-in-the-loop job application workflow. Return only information directly supported by the uploaded document. Do not infer job-search preferences, salary goals, work authorization, or availability.
@@ -135,7 +135,7 @@ application_field_mapping:
 
       Do not map sensitive or user-decision fields such as privacy consent, legal declarations, disability disclosure, referral/internal employee fields, visa/work authorization choices, salary expectations, start date commitments, or opt-ins unless the supplied package artifact explicitly answers that exact field for review.
 
-      Do not infer salutation/gender from a name. Map salutation only when an explicit salutation value is supplied.
+      Do not infer gender from a name. Map salutation/Anrede fields from explicit reviewed gender only. Assume the candidate has no titles and do not map generic title fields.
 
       Distinguish between:
       - residence or contact-address fields: where the candidate currently lives or can be reached

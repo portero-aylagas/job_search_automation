@@ -20,7 +20,7 @@ from src.app_workflow import (
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.schemas import JobListing
-from src.ui_components import render_ai_usage_summary, render_workflow_trace
+from src.ui_components import render_optional_ai_details
 
 
 @dataclass(frozen=True)
@@ -97,22 +97,10 @@ def render_job_intake_review_header(
     apply_resolution: ApplyUrlResolution | None,
     source_url: str,
 ) -> str:
-    """Render job-intake trace metadata and return the verified apply URL."""
+    """Render job-intake header and return the verified apply URL."""
 
     st.subheader("Review Extracted Data")
     st.caption("Review what the AI found before adding it to the application workflow.")
-    render_ai_usage_summary(
-        "Job Intake AI Usage Summary",
-        [
-            extracted_data.workflow_trace,
-            apply_resolution.workflow_trace if apply_resolution else None,
-        ],
-    )
-    render_workflow_trace("Job Extraction Trace", extracted_data.workflow_trace)
-    render_workflow_trace(
-        "Apply URL Resolution Trace",
-        apply_resolution.workflow_trace if apply_resolution else None,
-    )
 
     final_apply_url = resolved_apply_url(source_url, apply_resolution)
     if apply_resolution and apply_resolution.status != "resolved":
@@ -293,6 +281,21 @@ def render_job_intake_page(base_dir: Path) -> None:
         source_url,
     )
     form_state = render_job_review_form(extracted_data, source_url, final_apply_url)
+    render_optional_ai_details(
+        "job intake review",
+        [
+            ("Job Extraction Trace", extracted_data.workflow_trace),
+            (
+                "Apply URL Resolution Trace",
+                apply_resolution.workflow_trace if apply_resolution else None,
+            ),
+        ],
+        summary_label="Job Intake AI Usage Summary",
+        summary_traces=[
+            extracted_data.workflow_trace,
+            apply_resolution.workflow_trace if apply_resolution else None,
+        ],
+    )
 
     if form_state.clear_submitted:
         clear_job_intake_session_state()

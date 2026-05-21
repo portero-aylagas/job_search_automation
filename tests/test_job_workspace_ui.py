@@ -53,6 +53,7 @@ def make_profile() -> CandidateProfile:
                     "identity": {
                         "first_name": "Taylor",
                         "last_name": "Rivera",
+                        "gender": "Female",
                         "email": "taylor@example.com",
                         "phone": "+49170123456",
                         "street_address": "Example Street",

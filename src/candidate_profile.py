@@ -39,6 +39,8 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
         errors.append("Phone")
     elif len(PHONE_DIGIT_PATTERN.findall(identity.phone)) < 7:
         errors.append("Phone must be valid")
+    if identity.gender is None:
+        errors.append("Gender")
     if not identity.street_address.strip():
         errors.append("Street")
     if not identity.street_number.strip():
