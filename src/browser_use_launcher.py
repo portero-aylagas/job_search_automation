@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from src.schemas import CandidateProfile
+from src.schemas import ApplicationFillPlan
 
 STARTUP_WAIT_SECONDS = 30.0
 STARTUP_POLL_SECONDS = 0.25
@@ -143,56 +143,55 @@ def open_url_with_browser_use(
     )
 
 
-def open_apply_url_with_browser_use_candidate_agent(
+def open_apply_url_with_browser_use_fill_plan(
     url: str,
     *,
-    candidate_profile: CandidateProfile,
+    fill_plan: ApplicationFillPlan,
     log_dir: Path | str,
     startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
 ) -> BrowserUseOpenResult:
-    """Open an apply URL and start a Browser Use agent for a small upload test."""
+    """Open an apply URL and start a Browser Use agent from a reviewed fill plan."""
 
     normalized_url = _require_http_url(url)
+    if fill_plan.review_status != "reviewed":
+        raise BrowserUseLaunchError("Review the application fill plan before applying.")
     return _launch_browser_use_runner(
         normalized_url,
         log_dir=log_dir,
         startup_wait_seconds=startup_wait_seconds,
-        agent_task=build_test_application_fill_task(
-            normalized_url,
-            candidate_profile,
-        ),
-        available_file_paths=_candidate_available_file_paths(candidate_profile),
+        agent_task=build_fill_plan_application_task(fill_plan),
+        available_file_paths=_fill_plan_available_file_paths(fill_plan),
     )
 
 
-def build_test_application_fill_task(
-    url: str,
-    candidate_profile: CandidateProfile,
+def build_fill_plan_application_task(
+    fill_plan: ApplicationFillPlan,
 ) -> str:
-    """Return the guarded Browser Use task for CV upload and one probe field."""
+    """Return the guarded Browser Use task for a reviewed application fill plan."""
 
-    cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
-    cv_instruction = (
-        f'Upload this CV file if a resume or CV upload control is available: "{cv_file_path}".'
-        if cv_file_path
-        else "No CV file path is available, so do not upload any file."
-    )
+    execution_payload = {
+        "review_status": fill_plan.review_status,
+        "field_values": [
+            field.model_dump(mode="json") for field in fill_plan.field_values
+        ],
+        "upload_files": [
+            upload.model_dump(mode="json") for upload in fill_plan.upload_files
+        ],
+        "blocked_fields": [
+            field.model_dump(mode="json") for field in fill_plan.blocked_fields
+        ],
+        "submit_guard_labels": fill_plan.submit_guard_labels,
+    }
+    payload = json.dumps(execution_payload, indent=2, ensure_ascii=True)
 
     return f"""
-Use the job application page already open in the browser for a small apply-form
-test.
+Use the job application page already open in the browser and execute only this
+reviewed application fill plan.
 
-Perform the actions in this order:
-1. Find a file upload control that clearly requests a CV, resume, or Lebenslauf.
-2. Upload the CV using Browser Use's upload_file action only.
-3. After the upload action has completed, find the field labelled "Vorname *"
-   and enter exactly "TestName".
+Reviewed application fill plan:
+{payload}
 
-Do not fill any other text field. Do not select radio buttons, checkboxes,
-dropdowns, or consent controls. Do not enter random data. This run is only for
-testing whether the agent can visibly fill one field and upload the CV.
-
-Before uploading:
+Before filling or uploading:
 - Do not translate the page and do not switch the page language unless the form
   cannot be reached otherwise.
 - Ignore browser translation prompts and site translation prompts. If they block
@@ -202,37 +201,28 @@ Before uploading:
   option that lets you continue. Prefer reject, necessary-only, close, or later
   over broad marketing consent when those choices are available.
 - Wait for the page to settle after any redirect or popup dismissal before
-  looking for upload controls.
-
-CV upload instruction:
-{cv_instruction}
+  looking for upload controls or fillable fields.
 
 Hard safety rules:
-- The only non-file form field you may type into is "Vorname *", and its value
-  must be exactly "TestName".
-- Only interact with upload controls that clearly request a CV, resume, or
-  Lebenslauf.
-- Do not click the upload control to open the operating-system file picker. Use
-  the upload_file action directly on the upload control.
-- Never type or paste the CV file path into any page field or file picker.
-- Do not upload cover letters, portfolios, certificates, photos, or any other
-  attachments.
-- Do not type into or modify any other non-file form field.
+- Fill only fields listed in field_values.
+- Upload only files listed in upload_files, using Browser Use's upload_file
+  action directly on matching upload controls.
+- Never click upload controls to open the operating-system file picker.
+- Never type or paste the CV file path, or any other file path, into any page
+  field or file picker.
+- Never touch fields listed in blocked_fields.
+- Do not fill, select, type into, click, or modify any field that is not listed
+  in field_values or upload_files.
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
   "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
-  or any equivalent button that would proceed to review, submit, or finalize the
-  application.
-- Stop after "Vorname *" is set to "TestName" and the CV is uploaded, or after
-  you determine that either target action is blocked. Leave the page ready for
-  manual inspection.
+  or any label from submit_guard_labels.
+- If upload_file reports an error or says the file is not available, stop
+  immediately and report the upload as failed.
+- Stop after all fill-plan actions are completed or blocked. Leave the page
+  ready for manual inspection.
 
-If upload_file reports an error or says the file is not available, stop
-immediately and report the upload as failed. Do not retry by clicking the upload
-control, opening the file picker, typing the path, or claiming success.
-
-Your final answer should summarize whether "Vorname *" was filled, whether the
-CV was uploaded, which upload control was used, and whether anything blocked the
-test.
+Your final answer should summarize filled fields, uploaded files, blocked
+fields, failed actions, and whether the page is ready for human review.
 """.strip()
 
 
@@ -303,11 +293,8 @@ def _launch_browser_use_runner(
     return BrowserUseOpenResult(url=normalized_url, pid=process.pid, log_path=log_path)
 
 
-def _candidate_available_file_paths(candidate_profile: CandidateProfile) -> list[Path]:
-    cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
-    if not cv_file_path:
-        return []
-    return [Path(cv_file_path)]
+def _fill_plan_available_file_paths(fill_plan: ApplicationFillPlan) -> list[Path]:
+    return [Path(upload.file_path) for upload in fill_plan.upload_files if upload.file_path]
 
 
 def _require_http_url(url: str) -> str:

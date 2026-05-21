@@ -610,6 +610,61 @@ class ApplicationPackage(BaseModel):
         return _validate_storage_identifier(value, "Job ID")
 
 
+ApplicationFillPlanReviewStatus = Literal["draft", "reviewed"]
+
+
+class ApplicationFillFieldValue(BaseModel):
+    """Reviewed field value that Browser Use may fill."""
+
+    label: str
+    value: str
+    name: str = ""
+    required: bool = False
+    input_type: str = ""
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+
+
+class ApplicationFillUploadFile(BaseModel):
+    """Reviewed upload file that Browser Use may upload."""
+
+    label: str
+    file_path: str
+    document_type: str = "other"
+    required: bool = False
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+
+
+class ApplicationFillBlockedField(BaseModel):
+    """Application field that Browser Use must not fill automatically."""
+
+    label: str
+    reason: str
+    name: str = ""
+    required: bool = False
+    input_type: str = ""
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+
+
+class ApplicationFillPlan(BaseModel):
+    """Reviewed fill contract passed to Browser Use apply assistance."""
+
+    job_id: str
+    apply_url: HttpUrl
+    review_status: ApplicationFillPlanReviewStatus = "draft"
+    field_values: list[ApplicationFillFieldValue] = Field(default_factory=list)
+    upload_files: list[ApplicationFillUploadFile] = Field(default_factory=list)
+    blocked_fields: list[ApplicationFillBlockedField] = Field(default_factory=list)
+    submit_guard_labels: list[str] = Field(default_factory=list)
+
+    @field_validator("job_id")
+    @classmethod
+    def _validate_job_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
+
+
 class TrackerRecord(BaseModel):
     """Application tracker row for a saved job."""
 

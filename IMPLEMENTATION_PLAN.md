@@ -338,6 +338,7 @@ units + job data guided by those requirements.
 data/jobs/<job_id>/application_page_snapshot.json
 data/jobs/<job_id>/application_requirements.json
 data/jobs/<job_id>/application_package.json
+data/jobs/<job_id>/application_fill_plan.json
 outputs/<job_id>/application_package.md
 ```
 
@@ -351,7 +352,9 @@ The package JSON is the source of truth. Markdown output is a derived review or
 export file generated from the full package.
 `normalized_job.json` describes the job offer. `application_requirements.json`
 describes required documents, motivation letter needs, screening questions, and
-form fields discovered later from `apply_url`.
+form fields discovered later from `apply_url`. `application_fill_plan.json` is
+the reviewed execution contract for Browser Use and remains separate from the
+read-only requirements contract.
 
 ### Acceptance Criteria
 
@@ -365,6 +368,9 @@ form fields discovered later from `apply_url`.
 - package generation uses `application_requirements.json` when present
 - generated material is visible in UI
 - package is saved
+- app generates an editable application fill plan from reviewed requirements,
+  reviewed package content, and safe candidate profile data
+- Browser Use apply assistance is blocked until the fill plan is reviewed
 - tracker status can move to `application_draft`
 
 ### Current Browser Use Pilot
@@ -375,9 +381,10 @@ form fields discovered later from `apply_url`.
   application pages, not autonomous submission.
 - Each run starts a fresh local Browser Use process with an isolated Chromium
   profile and local reset controls.
-- The current test harness uploads the saved CV and fills exactly one probe
-  field (`Vorname * = TestName`) to verify reliable browser interaction before
-  broader form-filling work continues.
+- Browser Use receives only the reviewed application fill plan: approved field
+  values, approved uploads, blocked fields, and submit guard labels. It does
+  not receive raw candidate profile JSON and remains guarded against proceeding
+  to review or submission.
 - Final submission remains out of scope and blocked by explicit agent/task
   guardrails.
 
@@ -589,6 +596,7 @@ job_search_automation/
 │   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
+│   │           ├── application_fill_plan.json
 │   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
@@ -596,6 +604,7 @@ job_search_automation/
 │           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json
+│           ├── application_fill_plan.json
 │           └── application_package.json
 ├── outputs/
 ├── tests/

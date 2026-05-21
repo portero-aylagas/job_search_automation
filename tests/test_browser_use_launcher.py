@@ -9,15 +9,20 @@ import pytest
 
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
-    build_test_application_fill_task,
+    build_fill_plan_application_task,
     get_active_browser_use_session,
-    open_apply_url_with_browser_use_candidate_agent,
+    open_apply_url_with_browser_use_fill_plan,
     open_url_with_browser_use,
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
 from src.browser_use_visible_runner import _close_existing_pages, _write_stable_profile_preferences
-from src.schemas import CandidateProfile
+from src.schemas import (
+    ApplicationFillBlockedField,
+    ApplicationFillFieldValue,
+    ApplicationFillPlan,
+    ApplicationFillUploadFile,
+)
 
 
 class FakeRunningProcess:
@@ -108,7 +113,7 @@ def test_open_url_with_browser_use_starts_visible_runner(
     assert session.url == "https://example.com/jobs/automation-engineer"
 
 
-def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
+def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -131,9 +136,9 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     monkeypatch.setattr(subprocess, "run", no_stale_processes)
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
-    result = open_apply_url_with_browser_use_candidate_agent(
+    result = open_apply_url_with_browser_use_fill_plan(
         "https://example.com/apply/automation-engineer",
-        candidate_profile=make_profile(),
+        fill_plan=make_fill_plan(),
         log_dir=tmp_path,
         startup_wait_seconds=0,
     )
@@ -144,37 +149,37 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert "--available-file-path" in command
     assert command[command.index("--available-file-path") + 1] == "/tmp/candidate/cv.pdf"
     agent_task = command[command.index("--agent-task") + 1]
-    assert "small apply-form" in agent_task
+    assert "reviewed application fill plan" in agent_task
     assert "https://example.com/apply/automation-engineer" not in agent_task
-    assert 'field labelled "Vorname *"' in agent_task
-    assert 'enter exactly "TestName"' in agent_task
-    assert "Do not enter random data" in agent_task
+    assert '"field_values"' in agent_task
+    assert '"upload_files"' in agent_task
+    assert '"blocked_fields"' in agent_task
+    assert '"value": "Taylor"' in agent_task
+    assert '"label": "Lebenslauf"' in agent_task
     assert "/tmp/candidate/cv.pdf" in agent_task
     assert "Do not translate the page" in agent_task
     assert "translation prompts" in agent_task
     assert "cookie, privacy, newsletter, chat" in agent_task
     assert "Weiter & Prüfen" in agent_task
-    assert "upload_file action only" in agent_task
-    assert "Do not click the upload control" in agent_task
+    assert "using Browser Use's upload_file" in agent_task
+    assert "Never click upload controls" in agent_task
     assert "Never type or paste the CV file path" in agent_task
-    assert "Only interact with upload controls" in agent_task
+    assert "Never touch fields listed in blocked_fields" in agent_task
+    assert "candidate_profile" not in agent_task
+    assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
 
-def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_guard() -> None:
-    task = build_test_application_fill_task(
-        "https://example.com/apply",
-        make_profile(),
-    )
+def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> None:
+    task = build_fill_plan_application_task(make_fill_plan())
 
-    assert "small apply-form" in task
-    assert "https://example.com/apply" not in task
-    assert 'field labelled "Vorname *"' in task
-    assert 'enter exactly "TestName"' in task
-    assert "Upload the CV using Browser Use's upload_file action only" in task
-    assert 'only non-file form field you may type into is "Vorname *"' in task
-    assert "Do not enter random data" in task
-    assert 'Upload this CV file' in task
+    assert "reviewed application fill plan" in task
+    assert '"field_values"' in task
+    assert '"upload_files"' in task
+    assert '"blocked_fields"' in task
+    assert '"label": "Vorname"' in task
+    assert '"value": "Taylor"' in task
+    assert "Upload only files listed in upload_files" in task
     assert '"/tmp/candidate/cv.pdf"' in task
     assert "Do not translate the page" in task
     assert "dismiss them instead of accepting translation" in task
@@ -182,15 +187,13 @@ def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_gua
     assert "Never click" in task
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
-    assert "Only interact with upload controls" in task
-    assert "Do not click the upload control" in task
+    assert "Never touch fields listed in blocked_fields" in task
+    assert "Never click upload controls" in task
     assert "Never type or paste the CV file path" in task
-    assert "Do not type into or modify any other non-file form field" in task
+    assert "Do not fill, select, type into, click, or modify any field" in task
     assert "If upload_file reports an error" in task
-    assert "Do not retry by clicking the upload" in task
-    assert "Do not upload cover letters" in task
-    assert "reviewed candidate data" not in task
-    assert "random, clearly fake test data" not in task
+    assert "candidate_profile" not in task
+    assert "cv_extracted" not in task
 
 
 def test_open_url_with_browser_use_starts_fresh_when_session_exists(
@@ -327,40 +330,40 @@ def test_close_existing_pages_closes_tabs_before_navigation() -> None:
     assert browser.closed_pages == ["about:blank", "old-job"]
 
 
-def make_profile() -> CandidateProfile:
-    return CandidateProfile.model_validate(
-        {
-            "candidate_profile": {
-                "source_documents": {
-                    "cv": {
-                        "file_path": "/tmp/candidate/cv.pdf",
-                        "parsed": True,
-                    }
-                },
-                "cv_extracted": {
-                    "identity": {
-                        "full_name": "Taylor Rivera",
-                        "email": "taylor@example.com",
-                        "phone": "+49 123 456789",
-                        "location": "Berlin, Germany",
-                        "linkedin_url": "https://linkedin.com/in/taylor-rivera",
-                    },
-                    "skills": ["Python", "Playwright"],
-                    "languages": ["English", "German"],
-                    "work_experience": ["Automation Engineer at Example Co"],
-                    "education": ["BSc Computer Science"],
-                },
-                "candidate_preferences": {
-                    "target_roles": ["Automation Engineer"],
-                    "target_locations": ["Berlin", "Remote"],
-                    "remote_preference": ["remote"],
-                    "employment_type": ["full_time"],
-                    "seniority_level": ["mid_level"],
-                    "availability": "Immediately",
-                    "salary_min_eur": 65000,
-                    "salary_max_eur": 80000,
-                    "work_authorization": "eu_authorized",
-                },
-            }
-        }
+def make_fill_plan() -> ApplicationFillPlan:
+    return ApplicationFillPlan(
+        job_id="job-123",
+        apply_url="https://example.com/apply/automation-engineer",
+        review_status="reviewed",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="Vorname",
+                value="Taylor",
+                required=True,
+                input_type="text",
+                source="manual_review",
+                confidence="high",
+            )
+        ],
+        upload_files=[
+            ApplicationFillUploadFile(
+                label="Lebenslauf",
+                file_path="/tmp/candidate/cv.pdf",
+                document_type="cv",
+                required=True,
+                source="manual_review",
+                confidence="high",
+            )
+        ],
+        blocked_fields=[
+            ApplicationFillBlockedField(
+                label="Privacy acknowledgement",
+                reason="Consent requires user review.",
+                required=True,
+                input_type="checkbox",
+                source="application_requirements",
+                confidence="high",
+            )
+        ],
+        submit_guard_labels=["Weiter & Prüfen", "Submit"],
     )

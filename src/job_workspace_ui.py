@@ -14,6 +14,13 @@ from src.app_workflow import (
     load_normalized_job,
     mark_requirements_reviewed,
 )
+from src.application_fill_plan import (
+    apply_fill_plan_edits,
+    generate_application_fill_plan,
+    load_application_fill_plan,
+    mark_application_fill_plan_reviewed,
+    save_application_fill_plan,
+)
 from src.application_package import (
     apply_manual_artifact_edits,
     generate_application_package,
@@ -30,12 +37,13 @@ from src.application_requirements import (
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
     get_active_browser_use_session,
-    open_apply_url_with_browser_use_candidate_agent,
+    open_apply_url_with_browser_use_fill_plan,
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
+    ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
     JobListing,
@@ -94,6 +102,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
     render_job_intake_summary(job_listing)
     render_application_requirements_panel(base_dir, job_listing)
     render_application_package_panel(base_dir, job_listing)
+    render_application_fill_plan_panel(base_dir, job_listing)
     render_apply_assistance_panel(base_dir, job_listing)
 
 
@@ -237,10 +246,10 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
     st.divider()
     st.subheader("Apply Assistance")
     requirements = load_application_requirements(base_dir, job.id)
-    candidate_profile = load_candidate_profile(base_dir)
     package = load_application_package(base_dir, job.id)
+    fill_plan = load_application_fill_plan(base_dir, job.id)
     browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
-    blockers = get_apply_assistance_blockers(job, requirements, package)
+    blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
 
     if blockers:
         st.warning("Apply assistance is blocked until these review steps are complete:")
@@ -272,18 +281,21 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
         st.rerun()
 
     st.caption(
-        "This action opens the reviewed apply URL and asks Browser Use to test only "
-        "the saved CV upload."
+        "This action opens the reviewed apply URL and asks Browser Use to execute "
+        "the reviewed application fill plan."
     )
     if st.button("Apply To Job", disabled=bool(blockers)):
         if blockers:
             st.error("Complete the required review steps before opening the apply flow.")
             return
+        if fill_plan is None:
+            st.error("Generate and review the application fill plan before applying.")
+            return
         try:
             with st.spinner("Starting Browser Use apply agent..."):
-                result = open_apply_url_with_browser_use_candidate_agent(
+                result = open_apply_url_with_browser_use_fill_plan(
                     str(job.apply_url),
-                    candidate_profile=candidate_profile,
+                    fill_plan=fill_plan,
                     log_dir=browser_use_log_dir,
                 )
         except BrowserUseLaunchError as exc:
@@ -292,6 +304,132 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
 
         st.success(f"Started Browser Use apply agent for {result.url}.")
         st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
+
+
+def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
+    """Render fill-plan generation, review, and edit controls."""
+
+    st.divider()
+    st.subheader("Application Fill Plan")
+    candidate_profile = load_candidate_profile(base_dir)
+    requirements = load_application_requirements(base_dir, job.id)
+    package = load_application_package(base_dir, job.id)
+    fill_plan = load_application_fill_plan(base_dir, job.id)
+
+    generation_blockers = get_fill_plan_generation_blockers(requirements, package)
+    if generation_blockers:
+        st.warning("Fill plan generation is blocked until these steps are complete:")
+        for blocker in generation_blockers:
+            st.write(f"- {blocker}")
+
+    if st.button("Generate / Refresh Fill Plan", disabled=bool(generation_blockers)):
+        if requirements is None or package is None:
+            st.error("Complete fill plan prerequisites before generating.")
+            return
+        fill_plan = generate_application_fill_plan(candidate_profile, requirements, package)
+        saved_path = save_application_fill_plan(base_dir, fill_plan)
+        st.success(f"Application fill plan saved to {saved_path}.")
+        st.rerun()
+
+    if fill_plan is None:
+        st.info("No application fill plan has been generated yet.")
+        return
+
+    render_application_fill_plan(fill_plan)
+    fill_plan = render_application_fill_plan_edit_actions(base_dir, fill_plan)
+    if fill_plan.review_status != "reviewed" and st.button("Mark Fill Plan Reviewed"):
+        reviewed_fill_plan = mark_application_fill_plan_reviewed(fill_plan)
+        save_application_fill_plan(base_dir, reviewed_fill_plan)
+        st.success("Application fill plan was marked as reviewed.")
+        st.rerun()
+
+
+def get_fill_plan_generation_blockers(
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+) -> list[str]:
+    """Return blockers that prevent generating an application fill plan."""
+
+    blockers: list[str] = []
+    if requirements is None:
+        blockers.append("Discover application requirements.")
+    elif requirements.status != "discovered" or not requirements.job_preserving:
+        blockers.append("Resolve reviewed application requirements.")
+    elif requirements.review_status != "reviewed":
+        blockers.append("Review the discovered application requirements.")
+
+    if package is None:
+        blockers.append("Generate the application package.")
+    elif package.status == "rejected":
+        blockers.append("Regenerate or manually edit the rejected application package.")
+
+    return blockers
+
+
+def render_application_fill_plan(fill_plan: ApplicationFillPlan) -> None:
+    """Render the reviewed fill contract that will be passed to Browser Use."""
+
+    status_columns = st.columns(4)
+    status_columns[0].metric("Review", fill_plan.review_status)
+    status_columns[1].metric("Fields", len(fill_plan.field_values))
+    status_columns[2].metric("Uploads", len(fill_plan.upload_files))
+    status_columns[3].metric("Blocked", len(fill_plan.blocked_fields))
+
+    if fill_plan.field_values:
+        st.markdown("**Fields To Fill**")
+        for field in fill_plan.field_values:
+            st.write(
+                f"- {field.label}: {field.value} "
+                f"({'required' if field.required else 'optional or unclear'}, "
+                f"source: {field.source or 'unknown'})"
+            )
+
+    if fill_plan.upload_files:
+        st.markdown("**Files To Upload**")
+        for upload in fill_plan.upload_files:
+            st.write(
+                f"- {upload.label}: {upload.file_path} "
+                f"({upload.document_type}, source: {upload.source or 'unknown'})"
+            )
+
+    if fill_plan.blocked_fields:
+        st.markdown("**Blocked Fields**")
+        for field in fill_plan.blocked_fields:
+            st.write(
+                f"- {field.label}: {field.reason} "
+                f"({'required' if field.required else 'optional or unclear'})"
+            )
+
+
+def render_application_fill_plan_edit_actions(
+    base_dir: Path,
+    fill_plan: ApplicationFillPlan,
+) -> ApplicationFillPlan:
+    """Render fill-plan edit controls and return the current fill plan."""
+
+    if not fill_plan.field_values:
+        return fill_plan
+
+    with st.expander("Edit fill-plan values", expanded=False):
+        with st.form(f"application_fill_plan_edit_form_{fill_plan.job_id}"):
+            edited_values = {
+                field.label: st.text_input(
+                    field.label,
+                    value=field.value,
+                    key=f"application_fill_plan_{fill_plan.job_id}_{index}",
+                )
+                for index, field in enumerate(fill_plan.field_values)
+            }
+            save_edits = st.form_submit_button("Save Fill Plan Edits")
+
+    if not save_edits:
+        return fill_plan
+
+    edited_fill_plan = apply_fill_plan_edits(fill_plan, edited_values)
+    save_application_fill_plan(base_dir, edited_fill_plan)
+    st.success("Fill plan edits saved. Review status reset to draft.")
+    st.rerun()
+    return edited_fill_plan
 
 
 def render_application_package_recovery_actions(
@@ -429,6 +567,7 @@ def get_apply_assistance_blockers(
     job: JobListing,
     requirements: ApplicationRequirements | None,
     package: ApplicationPackage | None,
+    fill_plan: ApplicationFillPlan | None,
 ) -> list[str]:
     """Return blockers that prevent opening the apply page from the Jobs workspace."""
 
@@ -447,6 +586,11 @@ def get_apply_assistance_blockers(
         blockers.append("Generate the application package before applying.")
     elif package.status == "rejected":
         blockers.append("Regenerate or manually edit the rejected application package.")
+
+    if fill_plan is None:
+        blockers.append("Generate the application fill plan before applying.")
+    elif fill_plan.review_status != "reviewed":
+        blockers.append("Review the application fill plan before applying.")
 
     return blockers
 

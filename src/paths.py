@@ -20,6 +20,7 @@ APPLICATION_REQUIREMENTS_FILENAME = "application_requirements.json"
 APPLICATION_PAGE_SNAPSHOT_FILENAME = "application_page_snapshot.json"
 APPLICATION_PACKAGE_FILENAME = "application_package.json"
 APPLICATION_PACKAGE_MARKDOWN_FILENAME = "application_package.md"
+APPLICATION_FILL_PLAN_FILENAME = "application_fill_plan.json"
 
 CV_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "cv"
 OPTIONAL_DOCUMENT_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "optional_documents"
@@ -120,6 +121,21 @@ def application_package_paths(base_dir: Path | str, job_id: str) -> tuple[Path, 
         runtime_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME,
         template_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME,
     )
+
+
+def application_fill_plan_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template application-fill-plan paths."""
+
+    return (
+        runtime_job_dir(base_dir, job_id) / APPLICATION_FILL_PLAN_FILENAME,
+        template_job_dir(base_dir, job_id) / APPLICATION_FILL_PLAN_FILENAME,
+    )
+
+
+def runtime_application_fill_plan_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable application-fill-plan JSON path for a job."""
+
+    return runtime_job_dir(base_dir, job_id) / APPLICATION_FILL_PLAN_FILENAME
 
 
 def runtime_application_package_path(base_dir: Path | str, job_id: str) -> Path:
