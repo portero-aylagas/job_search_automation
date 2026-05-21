@@ -17,16 +17,8 @@ from src.app_workflow import (
     validate_reviewed_apply_url,
     workflow_trace_payload,
 )
-from src.browser_use_launcher import (
-    BrowserUseLaunchError,
-    get_active_browser_use_session,
-    open_url_with_browser_use,
-    stop_all_browser_use_processes,
-    stop_browser_use_session,
-)
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
-from src.paths import RUNTIME_DATA_DIR
 from src.schemas import JobListing
 from src.ui_components import render_ai_usage_summary, render_workflow_trace
 
@@ -52,68 +44,14 @@ class JobReviewFormState:
     clear_submitted: bool
 
 
-def render_job_url_extraction_form() -> tuple[bool, bool, str]:
+def render_job_url_extraction_form() -> tuple[bool, str]:
     """Render the initial job URL extraction form."""
 
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
-        st.caption(
-            "Extract uses AI to resolve application data. Open launches a visible Browser Use "
-            "session with headless=False."
-        )
-        left, right = st.columns(2)
-        with left:
-            extract_submitted = st.form_submit_button("Extract Application Data")
-        with right:
-            open_submitted = st.form_submit_button("Open URL With Browser Use")
-    return extract_submitted, open_submitted, source_url
-
-
-def render_browser_use_session_status(base_dir: Path) -> None:
-    """Render active Browser Use session status and stop control."""
-
-    log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
-    active_session = get_active_browser_use_session(log_dir)
-    if active_session is None:
-        st.caption("Browser Use session status: idle.")
-    else:
-        st.info(
-            "Browser Use session running: "
-            f"PID {active_session.pid} for {active_session.url}"
-        )
-        st.caption(
-            f"Started: {active_session.started_at}. "
-            f"Log: {active_session.log_path}"
-        )
-        if st.button("Stop Browser Use Session", key="stop_browser_use_session_intake"):
-            stopped = stop_browser_use_session(log_dir)
-            if stopped:
-                st.success("Stopped the active Browser Use session.")
-                st.rerun()
-            st.warning("No active Browser Use session was found.")
-
-    if st.button("Kill All Browser Use Processes", key="kill_all_browser_use_intake"):
-        stopped_count = stop_all_browser_use_processes(log_dir)
-        st.success(f"Killed {stopped_count} Browser Use process group(s).")
-        st.rerun()
-
-
-def handle_job_url_browser_use_open(base_dir: Path, source_url: str) -> bool:
-    """Open the submitted job URL in Browser Use visible mode."""
-
-    try:
-        with st.spinner("Opening visible Browser Use session..."):
-            result = open_url_with_browser_use(
-                source_url,
-                log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
-            )
-    except BrowserUseLaunchError as exc:
-        st.error(str(exc))
-        return False
-
-    st.success(f"Opened Browser Use visible session for {result.url}.")
-    st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
-    return True
+        st.caption("Extract uses AI to resolve application data.")
+        extract_submitted = st.form_submit_button("Extract Application Data")
+    return extract_submitted, source_url
 
 
 def handle_job_url_extraction(source_url: str) -> bool:
@@ -337,11 +275,7 @@ def render_job_intake_page(base_dir: Path) -> None:
     if success_message:
         st.success(success_message)
 
-    render_browser_use_session_status(base_dir)
-    extract_submitted, open_submitted, source_url = render_job_url_extraction_form()
-    if open_submitted:
-        handle_job_url_browser_use_open(base_dir, source_url)
-        return
+    extract_submitted, source_url = render_job_url_extraction_form()
 
     if extract_submitted:
         if handle_job_url_extraction(source_url):

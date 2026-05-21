@@ -179,8 +179,8 @@ def build_test_application_fill_task(
     )
 
     return f"""
-Open this job application page for a small apply-form test:
-{url}
+Use the job application page already open in the browser for a small apply-form
+test.
 
 Fill exactly one non-file field:
 - Find the field labelled "Vorname *" and enter exactly "TestName".

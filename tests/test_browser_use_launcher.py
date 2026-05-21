@@ -144,7 +144,8 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert "--available-file-path" in command
     assert command[command.index("--available-file-path") + 1] == "/tmp/candidate/cv.pdf"
     agent_task = command[command.index("--agent-task") + 1]
-    assert "small apply-form test" in agent_task
+    assert "small apply-form" in agent_task
+    assert "https://example.com/apply/automation-engineer" not in agent_task
     assert 'field labelled "Vorname *"' in agent_task
     assert 'enter exactly "TestName"' in agent_task
     assert "Do not enter random data" in agent_task
@@ -163,7 +164,8 @@ def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_gua
         make_profile(),
     )
 
-    assert "small apply-form test" in task
+    assert "small apply-form" in task
+    assert "https://example.com/apply" not in task
     assert 'field labelled "Vorname *"' in task
     assert 'enter exactly "TestName"' in task
     assert 'only non-file form field you may type into is "Vorname *"' in task
