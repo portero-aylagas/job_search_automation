@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import mimetypes
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.schemas import (
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 CV_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md"}
 OPTIONAL_DOCUMENT_UPLOAD_EXTENSIONS = {".pdf", ".txt", ".md", ".docx"}
+_LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*•]+|\d+[.)])\s*")
 
 
 class CVDocumentSnapshot(BaseModel):
@@ -406,16 +408,24 @@ def _normalize_string_list(values: list[str] | None) -> list[str]:
     normalized: list[str] = []
     seen: set[str] = set()
     for value in values:
-        item = value.strip()
-        if not item:
-            continue
-        key = item.casefold()
-        if key in seen:
-            continue
-        normalized.append(item)
-        seen.add(key)
+        for item in _split_reviewable_items(value):
+            key = item.casefold()
+            if key in seen:
+                continue
+            normalized.append(item)
+            seen.add(key)
     return normalized
 
 
 def _normalize_text(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _split_reviewable_items(value: str) -> list[str]:
+    items: list[str] = []
+    for raw_line in value.replace("\r\n", "\n").replace("\r", "\n").splitlines():
+        item = _LIST_PREFIX_RE.sub("", raw_line).strip()
+        if not item:
+            continue
+        items.append(item)
+    return items

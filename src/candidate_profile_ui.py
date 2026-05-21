@@ -74,6 +74,9 @@ CAREER_LEVEL_HELP = {
     "principal": "Expert individual contributor with broad technical depth.",
     "manager": "People or team leadership role.",
 }
+TEXTAREA_PIXELS_PER_ROW = 26
+TEXTAREA_VERTICAL_PADDING = 24
+TEXTAREA_WRAP_CHARS = 92
 
 
 def get_candidate_profile_draft(base_dir: Path) -> dict:
@@ -105,6 +108,29 @@ def work_authorization_index(value: str) -> int | None:
         if option_value == value:
             return index
     return None
+
+
+def review_text_from_items(items: list[str]) -> str:
+    """Return extracted CV items as a readable editable bullet list."""
+
+    return "\n".join(f"- {item.strip()}" for item in items if item.strip())
+
+
+def adaptive_text_area_height(
+    value: str,
+    *,
+    min_rows: int,
+    max_rows: int = 24,
+) -> int:
+    """Estimate a Streamlit text area height from visible review text."""
+
+    visible_lines = value.splitlines() or [""]
+    wrapped_rows = sum(
+        max(1, (len(line) + TEXTAREA_WRAP_CHARS - 1) // TEXTAREA_WRAP_CHARS)
+        for line in visible_lines
+    )
+    rows = min(max_rows, max(min_rows, wrapped_rows + 1))
+    return rows * TEXTAREA_PIXELS_PER_ROW + TEXTAREA_VERTICAL_PADDING
 
 
 def render_candidate_profile_page(base_dir: Path) -> None:
@@ -303,28 +329,51 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                 )
 
             st.markdown("**Professional data**")
+            work_experience_text = review_text_from_items(extracted.work_experience)
             work_experience = st.text_area(
                 "Work experience",
-                value="\n".join(extracted.work_experience),
-                height=120,
+                value=work_experience_text,
+                height=adaptive_text_area_height(work_experience_text, min_rows=6),
             )
+            education_text = review_text_from_items(extracted.education)
             education = st.text_area(
                 "Education",
-                value="\n".join(extracted.education),
-                height=120,
+                value=education_text,
+                height=adaptive_text_area_height(education_text, min_rows=6),
             )
-            skills = st.text_area("Skills", value="\n".join(extracted.skills), height=100)
-            languages = st.text_area("Languages", value="\n".join(extracted.languages), height=80)
+            skills_text = review_text_from_items(extracted.skills)
+            skills = st.text_area(
+                "Skills",
+                value=skills_text,
+                height=adaptive_text_area_height(skills_text, min_rows=5, max_rows=18),
+            )
+            languages_text = review_text_from_items(extracted.languages)
+            languages = st.text_area(
+                "Languages",
+                value=languages_text,
+                height=adaptive_text_area_height(languages_text, min_rows=4, max_rows=14),
+            )
+            certifications_text = review_text_from_items(extracted.certifications)
             certifications = st.text_area(
                 "Certifications",
-                value="\n".join(extracted.certifications),
-                height=80,
+                value=certifications_text,
+                height=adaptive_text_area_height(
+                    certifications_text,
+                    min_rows=4,
+                    max_rows=16,
+                ),
             )
-            projects = st.text_area("Projects", value="\n".join(extracted.projects), height=100)
+            projects_text = review_text_from_items(extracted.projects)
+            projects = st.text_area(
+                "Projects",
+                value=projects_text,
+                height=adaptive_text_area_height(projects_text, min_rows=5, max_rows=18),
+            )
+            references_text = review_text_from_items(extracted.references)
             references = st.text_area(
                 "References",
-                value="\n".join(extracted.references),
-                height=80,
+                value=references_text,
+                height=adaptive_text_area_height(references_text, min_rows=4, max_rows=16),
             )
 
             save_extracted = st.form_submit_button("Save CV review changes")

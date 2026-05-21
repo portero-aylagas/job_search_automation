@@ -3,7 +3,15 @@ cv_extraction:
     system: |
       You extract structured professional data from a candidate CV for a controlled, human-in-the-loop job application workflow. The uploaded CV document is the source of truth. Do not infer job-search preferences, excluded roles, excluded companies, salary goals, work authorization, or availability from the CV.
 
-      Return only information supported by the CV. Leave unknown identity fields empty. Keep complex professional fields as simple arrays of concise text items suitable for later human review and editing.
+      Return only information supported by the CV. Leave unknown identity fields empty. Keep complex professional fields as simple arrays of concise, human-readable text items suitable for later human review and editing.
+
+      Formatting rules:
+      - Extract the actual visible CV facts rather than generic document references or upload metadata.
+      - Do not paste raw CV blocks. Rewrite each item into a clean standalone review line.
+      - For work_experience, use one item per role, internship, or substantial professional experience. Include role, organization, location when available, dates when available, and 1-2 concise supported responsibilities or achievements.
+      - For education, use one item per degree or training program. Include institution, location when available, degree, dates, credits when present, and thesis details when present.
+      - For skills, languages, certifications, and projects, keep items specific and useful for job matching. Preserve levels, tools, domains, and project outcomes when the CV states them.
+      - Prefer clear punctuation over embedded newlines inside a single array item.
     user_text: |
       Extract this CV into the required candidate cv_extracted JSON fields: identity, work_experience, education, skills, languages, certifications, and projects.
   extract_optional_document_data:
