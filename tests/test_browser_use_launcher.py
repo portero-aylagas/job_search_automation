@@ -135,32 +135,38 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert isinstance(command, list)
     assert "--agent-task" in command
     agent_task = command[command.index("--agent-task") + 1]
-    assert "random, clearly fake test data" in agent_task
+    assert "CV upload-only test" in agent_task
+    assert "Do not enter random data" in agent_task
     assert "/tmp/candidate/cv.pdf" in agent_task
     assert "Do not translate the page" in agent_task
     assert "translation prompts" in agent_task
     assert "cookie, privacy, newsletter, chat" in agent_task
     assert "Weiter & Prüfen" in agent_task
-    assert "Only upload the CV file" in agent_task
+    assert "Only interact with upload controls" in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
 
-def test_build_test_application_fill_task_contains_cv_upload_and_submit_guard() -> None:
+def test_build_test_application_fill_task_contains_only_cv_upload_and_submit_guard() -> None:
     task = build_test_application_fill_task(
         "https://example.com/apply",
         make_profile(),
     )
 
-    assert "random, clearly fake test data" in task
-    assert 'upload this file: "/tmp/candidate/cv.pdf"' in task
+    assert "CV upload-only test" in task
+    assert "Do not fill text fields" in task
+    assert "Do not enter random data" in task
+    assert 'Upload this CV file' in task
+    assert '"/tmp/candidate/cv.pdf"' in task
     assert "Do not translate the page" in task
     assert "dismiss them instead of accepting translation" in task
     assert "least intrusive" in task
     assert "Never click" in task
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
-    assert "Only upload the CV file" in task
+    assert "Only interact with upload controls" in task
+    assert "Do not upload cover letters" in task
     assert "reviewed candidate data" not in task
+    assert "random, clearly fake test data" not in task
 
 
 def test_open_url_with_browser_use_rejects_second_active_session(

@@ -272,8 +272,8 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
         st.rerun()
 
     st.caption(
-        "This action opens the reviewed apply URL and asks Browser Use to fill the form "
-        "with fake test data and try the saved CV upload."
+        "This action opens the reviewed apply URL and asks Browser Use to test only "
+        "the saved CV upload."
     )
     if st.button("Apply To Job", disabled=bool(blockers)):
         if blockers:

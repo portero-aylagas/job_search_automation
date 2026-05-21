@@ -150,7 +150,7 @@ def open_apply_url_with_browser_use_candidate_agent(
     log_dir: Path | str,
     startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
 ) -> BrowserUseOpenResult:
-    """Open an apply URL and start a Browser Use test agent with CV upload context."""
+    """Open an apply URL and start a Browser Use agent that only uploads the CV."""
 
     normalized_url = _require_http_url(url)
     return _launch_browser_use_runner(
@@ -168,54 +168,53 @@ def build_test_application_fill_task(
     url: str,
     candidate_profile: CandidateProfile,
 ) -> str:
-    """Return the guarded Browser Use task for test-filling with CV upload."""
+    """Return the guarded Browser Use task for CV-only upload testing."""
 
     cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
     cv_instruction = (
-        f'If the page asks for a CV upload, upload this file: "{cv_file_path}".'
+        f'Upload this CV file if a resume or CV upload control is available: "{cv_file_path}".'
         if cv_file_path
-        else "No CV file path is available, so skip CV upload fields."
+        else "No CV file path is available, so do not upload any file."
     )
 
     return f"""
-Open this job application page and complete the visible application form for a test run:
+Open this job application page for a CV upload-only test:
 {url}
 
-Use only random, clearly fake test data for text fields and other non-file
-inputs. Invent plausible values for required text fields, radio buttons,
-checkboxes, dropdowns, and consent or acknowledgement controls that are
-necessary to mark visible mandatory fields as complete.
+Do not fill text fields. Do not select radio buttons, checkboxes, dropdowns, or
+consent controls. Do not enter random data. This run is only for testing whether
+the CV upload works.
 
-Before filling:
+Before uploading:
 - Do not translate the page and do not switch the page language unless the form
   cannot be reached otherwise.
 - Ignore browser translation prompts and site translation prompts. If they block
   the page, close or dismiss them instead of accepting translation.
 - If a cookie, privacy, newsletter, chat, location, notification, or modal
-  overlay blocks the application form, dismiss it with the least intrusive
+  overlay blocks the upload control, dismiss it with the least intrusive
   option that lets you continue. Prefer reject, necessary-only, close, or later
   over broad marketing consent when those choices are available.
 - Wait for the page to settle after any redirect or popup dismissal before
-  filling fields.
+  looking for upload controls.
 
 CV upload instruction:
 {cv_instruction}
 
 Hard safety rules:
+- Only interact with upload controls that clearly request a CV, resume, or
+  Lebenslauf.
+- Do not upload cover letters, portfolios, certificates, photos, or any other
+  attachments.
+- Do not type into or modify any non-file form field.
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
   "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
   or any equivalent button that would proceed to review, submit, or finalize the
   application.
-- Stop when all visible mandatory fields are filled or marked, leaving the page
-  ready for manual inspection.
+- Stop after the CV is uploaded or after you determine that no safe CV upload
+  control is available, leaving the page ready for manual inspection.
 
-Only upload the CV file when a resume or CV field is required. Do not upload any
-other attachment. Do not create or upload a cover letter, portfolio, certificate,
-or any other document. If a required field cannot be safely completed without
-uploading another document, making a legal declaration, creating an account, or
-proceeding with the application, leave it untouched and report that it is
-blocked. Your final answer should summarize filled fields, uploaded files,
-blocked fields, and whether the page is ready for human review.
+Your final answer should summarize whether the CV was uploaded, which upload
+control was used, and whether anything blocked the upload.
 """.strip()
 
 
