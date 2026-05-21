@@ -116,17 +116,46 @@ def review_text_from_items(items: list[str]) -> str:
     return "\n".join(f"- {item.strip()}" for item in items if item.strip())
 
 
+def review_block_text_from_items(items: list[str]) -> str:
+    """Return extracted CV items as editable title-and-bullet blocks."""
+
+    blocks: list[str] = []
+    for item in items:
+        lines = [line.strip("-*• \t") for line in item.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if len(lines) == 1:
+            blocks.append(lines[0])
+            continue
+        title = lines[0]
+        bullets = "\n".join(f"- {line}" for line in lines[1:])
+        blocks.append(f"{title}\n{bullets}")
+    return "\n\n".join(blocks)
+
+
+def review_blocks_from_text(value: str) -> list[str]:
+    """Parse editable title-and-bullet blocks into stored CV items."""
+
+    items: list[str] = []
+    for raw_block in value.replace("\r\n", "\n").replace("\r", "\n").split("\n\n"):
+        lines = [line.strip("-*• \t") for line in raw_block.splitlines() if line.strip()]
+        if lines:
+            items.append("\n".join(lines))
+    return items
+
+
 def adaptive_text_area_height(
     value: str,
     *,
     min_rows: int,
     max_rows: int = 24,
+    wrap_chars: int = TEXTAREA_WRAP_CHARS,
 ) -> int:
     """Estimate a Streamlit text area height from visible review text."""
 
     visible_lines = value.splitlines() or [""]
     wrapped_rows = sum(
-        max(1, (len(line) + TEXTAREA_WRAP_CHARS - 1) // TEXTAREA_WRAP_CHARS)
+        max(1, (len(line) + wrap_chars - 1) // wrap_chars)
         for line in visible_lines
     )
     rows = min(max_rows, max(min_rows, wrapped_rows + 1))
@@ -329,23 +358,32 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                 )
 
             st.markdown("**Professional data**")
-            work_experience_text = review_text_from_items(extracted.work_experience)
+            work_experience_text = review_block_text_from_items(extracted.work_experience)
             work_experience = st.text_area(
                 "Work experience",
                 value=work_experience_text,
-                height=adaptive_text_area_height(work_experience_text, min_rows=6),
+                height=adaptive_text_area_height(
+                    work_experience_text,
+                    min_rows=4,
+                    max_rows=18,
+                ),
             )
             education_text = review_text_from_items(extracted.education)
             education = st.text_area(
                 "Education",
                 value=education_text,
-                height=adaptive_text_area_height(education_text, min_rows=6),
+                height=adaptive_text_area_height(education_text, min_rows=4, max_rows=18),
             )
             skills_text = review_text_from_items(extracted.skills)
             skills = st.text_area(
                 "Skills",
                 value=skills_text,
-                height=adaptive_text_area_height(skills_text, min_rows=5, max_rows=18),
+                height=adaptive_text_area_height(
+                    skills_text,
+                    min_rows=7,
+                    max_rows=24,
+                    wrap_chars=70,
+                ),
             )
             languages_text = review_text_from_items(extracted.languages)
             languages = st.text_area(
@@ -391,7 +429,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
         updated_profile.candidate_profile.cv_extracted.identity.portfolio_url = (
             portfolio_url.strip()
         )
-        updated_profile.candidate_profile.cv_extracted.work_experience = lines_from_text(
+        updated_profile.candidate_profile.cv_extracted.work_experience = review_blocks_from_text(
             work_experience
         )
         updated_profile.candidate_profile.cv_extracted.education = lines_from_text(education)

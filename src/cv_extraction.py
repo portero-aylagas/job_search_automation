@@ -375,7 +375,7 @@ def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> Candida
             github_url=_normalize_text(identity.github_url),
             portfolio_url=_normalize_text(identity.portfolio_url),
         ),
-        work_experience=_normalize_string_list(response.work_experience),
+        work_experience=_normalize_review_blocks(response.work_experience),
         education=_normalize_string_list(response.education),
         skills=_normalize_string_list(response.skills),
         languages=_normalize_string_list(response.languages),
@@ -391,7 +391,7 @@ def normalize_optional_document_extracted(
     """Convert nullable supplemental LLM output into the persisted model."""
 
     return CandidateSupplementalExtracted(
-        work_experience=_normalize_string_list(response.work_experience),
+        work_experience=_normalize_review_blocks(response.work_experience),
         education=_normalize_string_list(response.education),
         skills=_normalize_string_list(response.skills),
         languages=_normalize_string_list(response.languages),
@@ -419,6 +419,37 @@ def _normalize_string_list(values: list[str] | None) -> list[str]:
 
 def _normalize_text(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _normalize_review_blocks(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _split_reviewable_blocks(value):
+            key = item.casefold()
+            if key in seen:
+                continue
+            normalized.append(item)
+            seen.add(key)
+    return normalized
+
+
+def _split_reviewable_blocks(value: str) -> list[str]:
+    normalized_value = value.replace("\r\n", "\n").replace("\r", "\n")
+    raw_blocks = re.split(r"\n\s*\n+", normalized_value)
+    blocks: list[str] = []
+    for raw_block in raw_blocks:
+        lines = [
+            _LIST_PREFIX_RE.sub("", raw_line).strip()
+            for raw_line in raw_block.splitlines()
+            if raw_line.strip()
+        ]
+        if not lines:
+            continue
+        blocks.append("\n".join(lines))
+    return blocks
 
 
 def _split_reviewable_items(value: str) -> list[str]:

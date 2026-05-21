@@ -247,10 +247,10 @@ def test_extract_cv_data_with_llm_normalizes_missing_fields(monkeypatch) -> None
 def test_normalize_cv_extracted_cleans_review_list_items() -> None:
     response = LLMCandidateCVExtractedResponse(
         work_experience=[
-            "- Engineering Specialist - Sample Organization, Sample City "
-            "(2020-2024): Built internal workflow systems.",
+            "Engineering Specialist - Sample Organization, Sample City (2020-2024)\n"
+            "- Built internal workflow systems.",
             "Engineering Specialist - Sample Organization, Sample City "
-            "(2020-2024): Built internal workflow systems.",
+            "(2020-2024)\nBuilt internal workflow systems.",
         ],
         education=[
             "Sample Institute, Sample City - M.Sc. Engineering, 2020-2022\n"
@@ -262,8 +262,8 @@ def test_normalize_cv_extracted_cleans_review_list_items() -> None:
     extracted = cv_extraction.normalize_cv_extracted(response)
 
     assert extracted.work_experience == [
-        "Engineering Specialist - Sample Organization, Sample City "
-        "(2020-2024): Built internal workflow systems."
+        "Engineering Specialist - Sample Organization, Sample City (2020-2024)\n"
+        "Built internal workflow systems."
     ]
     assert extracted.education == [
         "Sample Institute, Sample City - M.Sc. Engineering, 2020-2022",

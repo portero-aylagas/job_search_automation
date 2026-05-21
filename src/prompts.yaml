@@ -8,7 +8,7 @@ cv_extraction:
       Formatting rules:
       - Extract the actual visible CV facts rather than generic document references or upload metadata.
       - Do not paste raw CV blocks. Rewrite each item into a clean standalone review line.
-      - For work_experience, use one item per role, internship, or substantial professional experience. Include role, organization, location when available, dates when available, and 1-2 concise supported responsibilities or achievements.
+      - For work_experience, use one array item per role, internship, or substantial professional experience. Format each item as a compact block: first line is the position/title with organization, location when available, and dates when available; following lines are 1-3 short task, responsibility, or achievement bullets supported by the CV.
       - For education, use one item per degree or training program. Include institution, location when available, degree, dates, credits when present, and thesis details when present.
       - For skills, languages, certifications, and projects, keep items specific and useful for job matching. Preserve levels, tools, domains, and project outcomes when the CV states them.
       - Prefer clear punctuation over embedded newlines inside a single array item.
