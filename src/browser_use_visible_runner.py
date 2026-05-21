@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import json
 import os
 import signal
 from pathlib import Path
@@ -13,8 +14,30 @@ SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
 STABLE_BROWSER_ARGS = [
     "--disable-translate",
     "--disable-features=Translate,TranslateUI",
+    "--disable-component-update",
     "--lang=en-US",
 ]
+STABLE_BROWSER_PROFILE_PREFERENCES = {
+    "browser": {
+        "enable_spellchecking": False,
+    },
+    "credentials_enable_service": False,
+    "intl": {
+        "accept_languages": "en-US,en",
+    },
+    "profile": {
+        "default_content_setting_values": {
+            "geolocation": 2,
+            "notifications": 2,
+        },
+        "password_manager_enabled": False,
+    },
+    "translate": {
+        "enabled": False,
+        "blocked_languages": ["de", "en"],
+        "site_blacklist": ["*"],
+    },
+}
 
 
 async def open_visible_browser(
@@ -33,6 +56,9 @@ async def open_visible_browser(
             "browser-use is not installed. Run `pip install -r requirements.txt` "
             f"and `browser-use install` before opening a Browser Use session. {SETUP_REFERENCE}"
         ) from exc
+
+    if user_data_dir is not None:
+        _write_stable_profile_preferences(user_data_dir)
 
     browser = Browser(
         headless=False,
@@ -126,6 +152,50 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
             loop.add_signal_handler(selected_signal, stop_event.set)
         except NotImplementedError:
             continue
+
+
+def _write_stable_profile_preferences(user_data_dir: Path) -> None:
+    default_profile_dir = user_data_dir / "Default"
+    default_profile_dir.mkdir(parents=True, exist_ok=True)
+    _merge_json_file(
+        default_profile_dir / "Preferences",
+        STABLE_BROWSER_PROFILE_PREFERENCES,
+    )
+    _merge_json_file(
+        user_data_dir / "Local State",
+        {
+            "translate": {
+                "enabled": False,
+            },
+            "intl": {
+                "app_locale": "en-US",
+            },
+        },
+    )
+
+
+def _merge_json_file(path: Path, updates: dict[str, object]) -> None:
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    else:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+    _deep_merge(payload, updates)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _deep_merge(target: dict[str, object], updates: dict[str, object]) -> None:
+    for key, value in updates.items():
+        existing = target.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            _deep_merge(existing, value)
+        else:
+            target[key] = value
 
 
 if __name__ == "__main__":

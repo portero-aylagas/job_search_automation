@@ -97,6 +97,23 @@ def stop_browser_use_session(log_dir: Path | str) -> bool:
     return True
 
 
+def stop_all_browser_use_processes(log_dir: Path | str) -> int:
+    """Stop all Browser Use runner processes started by this project."""
+
+    stopped_count = 0
+    if stop_browser_use_session(log_dir):
+        stopped_count += 1
+
+    for pid, pgid in _find_browser_use_runner_processes():
+        if not _is_process_running(pid):
+            continue
+        if _terminate_process_group(pgid):
+            stopped_count += 1
+
+    _active_session_path(log_dir).unlink(missing_ok=True)
+    return stopped_count
+
+
 def open_url_with_browser_use(
     url: str,
     *,
@@ -319,6 +336,55 @@ def _is_process_running(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _terminate_process_group(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except ProcessLookupError:
+        return False
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if not _is_process_running(pgid):
+            return True
+        time.sleep(0.1)
+
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    return True
+
+
+def _find_browser_use_runner_processes() -> list[tuple[int, int]]:
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid=,pgid=,args="],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return []
+
+    current_pid = os.getpid()
+    matches: list[tuple[int, int]] = []
+    for line in result.stdout.splitlines():
+        parts = line.strip().split(maxsplit=2)
+        if len(parts) != 3:
+            continue
+        try:
+            pid = int(parts[0])
+            pgid = int(parts[1])
+        except ValueError:
+            continue
+        args = parts[2]
+        if pid == current_pid:
+            continue
+        if "src.browser_use_visible_runner" in args:
+            matches.append((pid, pgid))
+    return matches
 
 
 def _wait_for_browser_ready(

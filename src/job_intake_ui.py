@@ -21,6 +21,7 @@ from src.browser_use_launcher import (
     BrowserUseLaunchError,
     get_active_browser_use_session,
     open_url_with_browser_use,
+    stop_all_browser_use_processes,
     stop_browser_use_session,
 )
 from src.job_intake import create_job_listing, persist_job_listing
@@ -75,22 +76,26 @@ def render_browser_use_session_status(base_dir: Path) -> None:
     active_session = get_active_browser_use_session(log_dir)
     if active_session is None:
         st.caption("Browser Use session status: idle.")
-        return
+    else:
+        st.info(
+            "Browser Use session running: "
+            f"PID {active_session.pid} for {active_session.url}"
+        )
+        st.caption(
+            f"Started: {active_session.started_at}. "
+            f"Log: {active_session.log_path}"
+        )
+        if st.button("Stop Browser Use Session", key="stop_browser_use_session_intake"):
+            stopped = stop_browser_use_session(log_dir)
+            if stopped:
+                st.success("Stopped the active Browser Use session.")
+                st.rerun()
+            st.warning("No active Browser Use session was found.")
 
-    st.info(
-        "Browser Use session running: "
-        f"PID {active_session.pid} for {active_session.url}"
-    )
-    st.caption(
-        f"Started: {active_session.started_at}. "
-        f"Log: {active_session.log_path}"
-    )
-    if st.button("Stop Browser Use Session", key="stop_browser_use_session_intake"):
-        stopped = stop_browser_use_session(log_dir)
-        if stopped:
-            st.success("Stopped the active Browser Use session.")
-            st.rerun()
-        st.warning("No active Browser Use session was found.")
+    if st.button("Kill All Browser Use Processes", key="kill_all_browser_use_intake"):
+        stopped_count = stop_all_browser_use_processes(log_dir)
+        st.success(f"Killed {stopped_count} Browser Use process group(s).")
+        st.rerun()
 
 
 def handle_job_url_browser_use_open(base_dir: Path, source_url: str) -> bool:

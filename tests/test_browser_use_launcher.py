@@ -12,8 +12,10 @@ from src.browser_use_launcher import (
     get_active_browser_use_session,
     open_apply_url_with_browser_use_candidate_agent,
     open_url_with_browser_use,
+    stop_all_browser_use_processes,
     stop_browser_use_session,
 )
+from src.browser_use_visible_runner import _write_stable_profile_preferences
 from src.schemas import CandidateProfile
 
 
@@ -213,6 +215,56 @@ def test_stop_browser_use_session_terminates_process_group(
     assert stop_browser_use_session(tmp_path) is True
     assert signals_sent
     assert get_active_browser_use_session(tmp_path) is None
+
+
+def test_stop_all_browser_use_processes_finds_stale_runners(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "111 111 python -m src.browser_use_visible_runner https://example.com\n"
+                "222 222 python -m unrelated.module\n"
+            ),
+        ),
+    )
+
+    running_pids = {111}
+    killed_groups: list[tuple[int, int]] = []
+
+    def fake_kill(pid: int, sig: int) -> None:
+        if sig == 0 and pid in running_pids:
+            return
+        if sig == 0:
+            raise ProcessLookupError
+
+    def fake_killpg(pgid: int, sig: int) -> None:
+        killed_groups.append((pgid, sig))
+        running_pids.discard(pgid)
+
+    monkeypatch.setattr(os, "kill", fake_kill)
+    monkeypatch.setattr(os, "killpg", fake_killpg)
+
+    assert stop_all_browser_use_processes(tmp_path) == 1
+    assert killed_groups
+
+
+def test_stable_profile_preferences_disable_translate(tmp_path: Path) -> None:
+    user_data_dir = tmp_path / "browser-profile"
+
+    _write_stable_profile_preferences(user_data_dir)
+
+    preferences = (user_data_dir / "Default" / "Preferences").read_text(encoding="utf-8")
+    local_state = (user_data_dir / "Local State").read_text(encoding="utf-8")
+    assert '"translate"' in preferences
+    assert '"enabled": false' in preferences
+    assert '"notifications": 2' in preferences
+    assert '"app_locale": "en-US"' in local_state
 
 
 def make_profile() -> CandidateProfile:

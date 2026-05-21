@@ -31,6 +31,7 @@ from src.browser_use_launcher import (
     BrowserUseLaunchError,
     get_active_browser_use_session,
     open_apply_url_with_browser_use_candidate_agent,
+    stop_all_browser_use_processes,
     stop_browser_use_session,
 )
 from src.paths import RUNTIME_DATA_DIR
@@ -264,6 +265,11 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
                 st.success("Stopped the active Browser Use session.")
                 st.rerun()
             st.warning("No active Browser Use session was found.")
+
+    if st.button("Kill All Browser Use Processes", key=f"kill_all_browser_use_{job.id}"):
+        stopped_count = stop_all_browser_use_processes(browser_use_log_dir)
+        st.success(f"Killed {stopped_count} Browser Use process group(s).")
+        st.rerun()
 
     st.caption(
         "This action opens the reviewed apply URL and asks Browser Use to fill the form "
