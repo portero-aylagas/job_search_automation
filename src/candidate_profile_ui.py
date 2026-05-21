@@ -12,6 +12,7 @@ from src.app_workflow import (
     save_candidate_profile,
 )
 from src.candidate_profile import (
+    is_valid_email,
     merge_supplemental_extracted_data,
     validate_candidate_profile,
 )
@@ -341,14 +342,40 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
             st.markdown("**Identity**")
             identity_left, identity_right = st.columns(2)
             with identity_left:
-                full_name = st.text_input(
-                    required_label("Full name"),
-                    value=extracted.identity.full_name,
+                first_name = st.text_input(
+                    required_label("First name"),
+                    value=extracted.identity.first_name,
                 )
+                last_name = st.text_input(
+                    required_label("Surname"),
+                    value=extracted.identity.last_name,
+                )
+                salutation = st.text_input("Salutation", value=extracted.identity.salutation)
                 email = st.text_input(required_label("Email"), value=extracted.identity.email)
-                phone = st.text_input("Phone", value=extracted.identity.phone)
+                phone = st.text_input(required_label("Phone"), value=extracted.identity.phone)
                 location = st.text_input("Location", value=extracted.identity.location)
             with identity_right:
+                street_address = st.text_input(
+                    required_label("Street"),
+                    value=extracted.identity.street_address,
+                )
+                street_number = st.text_input(
+                    required_label("Street number"),
+                    value=extracted.identity.street_number,
+                )
+                postal_code = st.text_input(
+                    required_label("Postal code"),
+                    value=extracted.identity.postal_code,
+                )
+                city = st.text_input(required_label("City"), value=extracted.identity.city)
+                country = st.text_input(
+                    required_label("Country of residence"),
+                    value=extracted.identity.country,
+                )
+                nationality = st.text_input(
+                    required_label("Nationality"),
+                    value=extracted.identity.nationality,
+                )
                 linkedin_url = st.text_input(
                     "LinkedIn URL", value=extracted.identity.linkedin_url
                 )
@@ -419,11 +446,35 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
         if not save_extracted:
             return
 
+        normalized_email = email.strip().lower()
+        if normalized_email and not is_valid_email(normalized_email):
+            st.error("Email must be a valid address before saving CV review changes.")
+            return
+
         updated_profile = candidate_profile.model_copy(deep=True)
-        updated_profile.candidate_profile.cv_extracted.identity.full_name = full_name.strip()
-        updated_profile.candidate_profile.cv_extracted.identity.email = email.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.first_name = first_name.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.last_name = last_name.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.full_name = " ".join(
+            item for item in (first_name.strip(), last_name.strip()) if item
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.salutation = salutation.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.email = normalized_email
         updated_profile.candidate_profile.cv_extracted.identity.phone = phone.strip()
         updated_profile.candidate_profile.cv_extracted.identity.location = location.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.street_address = (
+            street_address.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.street_number = (
+            street_number.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.postal_code = (
+            postal_code.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.city = city.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.country = country.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.nationality = (
+            nationality.strip()
+        )
         updated_profile.candidate_profile.cv_extracted.identity.linkedin_url = linkedin_url.strip()
         updated_profile.candidate_profile.cv_extracted.identity.github_url = github_url.strip()
         updated_profile.candidate_profile.cv_extracted.identity.portfolio_url = (
@@ -440,6 +491,9 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
         )
         updated_profile.candidate_profile.cv_extracted.projects = lines_from_text(projects)
         updated_profile.candidate_profile.cv_extracted.references = lines_from_text(references)
+        updated_profile = CandidateProfile.model_validate(
+            updated_profile.model_dump(mode="json")
+        )
         set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
         st.success("CV review fields updated.")
         st.rerun()

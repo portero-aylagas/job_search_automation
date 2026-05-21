@@ -40,9 +40,18 @@ class LLMCandidateCVIdentityResponse(BaseModel):
     """LLM-safe nullable identity fields extracted from a CV."""
 
     full_name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    salutation: str | None = None
     email: str | None = None
     phone: str | None = None
     location: str | None = None
+    street_address: str | None = None
+    street_number: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    country: str | None = None
+    nationality: str | None = None
     linkedin_url: str | None = None
     github_url: str | None = None
     portfolio_url: str | None = None
@@ -368,9 +377,18 @@ def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> Candida
     return CandidateCVExtracted(
         identity=CandidateCVIdentity(
             full_name=_normalize_text(identity.full_name),
+            first_name=_normalize_text(identity.first_name),
+            last_name=_normalize_text(identity.last_name),
+            salutation=_normalize_text(identity.salutation),
             email=_normalize_text(identity.email),
             phone=_normalize_text(identity.phone),
             location=_normalize_text(identity.location),
+            street_address=_normalize_text(identity.street_address),
+            street_number=_normalize_text(identity.street_number),
+            postal_code=_normalize_text(identity.postal_code),
+            city=_normalize_text(identity.city),
+            country=_normalize_text(identity.country),
+            nationality=_normalize_text(identity.nationality),
             linkedin_url=_normalize_text(identity.linkedin_url),
             github_url=_normalize_text(identity.github_url),
             portfolio_url=_normalize_text(identity.portfolio_url),

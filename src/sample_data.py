@@ -31,9 +31,17 @@ def get_sample_candidate_profile() -> CandidateProfile:
             "cv_extracted": {
                 "identity": {
                     "full_name": "",
+                    "first_name": "",
+                    "last_name": "",
                     "email": "",
                     "phone": "",
                     "location": "",
+                    "street_address": "",
+                    "street_number": "",
+                    "postal_code": "",
+                    "city": "",
+                    "country": "",
+                    "nationality": "",
                     "linkedin_url": "",
                     "github_url": "",
                     "portfolio_url": "",

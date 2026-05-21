@@ -338,6 +338,7 @@ units + job data guided by those requirements.
 data/jobs/<job_id>/application_page_snapshot.json
 data/jobs/<job_id>/application_requirements.json
 data/jobs/<job_id>/application_package.json
+data/jobs/<job_id>/application_fill_plan.json
 outputs/<job_id>/application_package.md
 ```
 
@@ -351,7 +352,9 @@ The package JSON is the source of truth. Markdown output is a derived review or
 export file generated from the full package.
 `normalized_job.json` describes the job offer. `application_requirements.json`
 describes required documents, motivation letter needs, screening questions, and
-form fields discovered later from `apply_url`.
+form fields discovered later from `apply_url`. `application_fill_plan.json` is
+the reviewed execution contract for Browser Use and remains separate from the
+read-only requirements contract.
 
 ### Acceptance Criteria
 
@@ -365,7 +368,27 @@ form fields discovered later from `apply_url`.
 - package generation uses `application_requirements.json` when present
 - generated material is visible in UI
 - package is saved
+- app generates an editable application fill plan from reviewed requirements,
+  reviewed package content, and safe candidate profile data
+- fill-plan generation uses deterministic identity/contact mapping first, then
+  an AI semantic mapper for remaining non-sensitive fields
+- Browser Use apply assistance is blocked until the fill plan is reviewed
 - tracker status can move to `application_draft`
+
+### Current Browser Use Pilot
+
+- Browser Use is currently wired only into the Jobs `Apply Assistance` panel,
+  not Job Intake.
+- The current pilot scope is benchmarking guarded browser interaction on real
+  application pages, not autonomous submission.
+- Each run starts a fresh local Browser Use process with an isolated Chromium
+  profile and local reset controls.
+- Browser Use receives only the reviewed application fill plan: approved field
+  values, approved uploads, blocked fields, and submit guard labels. It does
+  not receive raw candidate profile JSON and remains guarded against proceeding
+  to review or submission.
+- Final submission remains out of scope and blocked by explicit agent/task
+  guardrails.
 
 ### Follow-up Tickets
 
@@ -499,6 +522,48 @@ Web search only discovers candidate jobs.
 
 It does not apply to jobs, message recruiters, or submit forms.
 
+### Recommended Discovery Stack
+
+Use a hybrid background pipeline rather than a free-running autonomous agent:
+
+```text
+daily deterministic runner
+  -> load reviewed candidate profile
+  -> build sanitized search profile
+  -> generate public web-search queries
+  -> collect candidate job URLs
+  -> extract lightweight job facts with structured AI output
+  -> filter duplicates, stale pages, and hard preference mismatches
+  -> score candidates deterministically
+  -> propose one job for user review
+```
+
+The deterministic Python layer should own scheduling, query templates, URL
+normalization, duplicate detection, already-seen accepted/rejected checks,
+location and remote-policy filtering, salary/seniority hard filters, one-job
+daily limits, JSON persistence, and tracker handoff.
+
+Use the LLM only at controlled boundaries where public web data is messy:
+
+- turn search result snippets or fetched pages into structured candidate jobs
+- extract lightweight title, company, location, remote policy, salary, skills,
+  seniority, and freshness signals
+- decide whether a result is probably a real job post
+- explain match reasons and uncertainty for the user-facing proposal
+
+Discovery should store lightweight candidates separately from normalized jobs.
+Suggested runtime files:
+
+```text
+data/runtime/discovery_runs/<date>.json
+data/runtime/discovery_candidates.json
+```
+
+Accepted candidates enter the existing Job Intake pipeline with
+`retrieval_mode="web_search"`. Rejected candidates remain in discovery history
+so the same job is not proposed again. Application package generation and
+Browser Use apply assistance remain downstream human-gated workflows.
+
 ### Acceptance Criteria
 
 - user can search for jobs online
@@ -575,6 +640,7 @@ job_search_automation/
 │   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
+│   │           ├── application_fill_plan.json
 │   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
@@ -582,6 +648,7 @@ job_search_automation/
 │           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json
+│           ├── application_fill_plan.json
 │           └── application_package.json
 ├── outputs/
 ├── tests/

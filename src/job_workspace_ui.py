@@ -8,11 +8,25 @@ import streamlit as st
 
 from src.app_workflow import (
     get_application_package_blockers,
+    load_application_page_snapshot,
     load_application_requirements,
     load_candidate_profile,
     load_experience_units,
     load_normalized_job,
     mark_requirements_reviewed,
+)
+from src.application_fill_plan import (
+    apply_fill_plan_edits,
+    fill_plan_blocked_field_edit_key,
+    fill_plan_field_edit_key,
+    fill_plan_needs_answer_edit_key,
+    fill_plan_upload_edit_key,
+    generate_application_fill_plan,
+    get_application_fill_plan_review_blockers,
+    load_application_fill_plan,
+    map_application_fields_with_llm,
+    mark_application_fill_plan_reviewed,
+    save_application_fill_plan,
 )
 from src.application_package import (
     apply_manual_artifact_edits,
@@ -27,7 +41,19 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
+from src.browser_use_launcher import (
+    BrowserUseLaunchError,
+    get_active_browser_use_session,
+    open_apply_url_with_browser_use_fill_plan,
+    stop_all_browser_use_processes,
+    stop_browser_use_session,
+)
+from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
+    ApplicationFillBlockedField,
+    ApplicationFillFieldValue,
+    ApplicationFillNeedsAnswerField,
+    ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
     JobListing,
@@ -86,6 +112,8 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
     render_job_intake_summary(job_listing)
     render_application_requirements_panel(base_dir, job_listing)
     render_application_package_panel(base_dir, job_listing)
+    render_application_fill_plan_panel(base_dir, job_listing)
+    render_apply_assistance_panel(base_dir, job_listing)
 
 
 def job_option_label(record: TrackerRecord) -> str:
@@ -222,6 +250,483 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
     render_application_package(package)
 
 
+def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
+    """Render the first apply-assistance action for a reviewed job workspace."""
+
+    st.divider()
+    st.subheader("Apply Assistance")
+    requirements = load_application_requirements(base_dir, job.id)
+    package = load_application_package(base_dir, job.id)
+    fill_plan = load_application_fill_plan(base_dir, job.id)
+    browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
+    blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
+
+    if blockers:
+        st.warning("Apply assistance is blocked until these review steps are complete:")
+        for blocker in blockers:
+            st.write(f"- {blocker}")
+
+    active_session = get_active_browser_use_session(browser_use_log_dir)
+    if active_session is None:
+        st.caption("Browser Use session status: idle.")
+    else:
+        st.info(
+            "Browser Use session running: "
+            f"PID {active_session.pid} for {active_session.url}"
+        )
+        st.caption(
+            f"Started: {active_session.started_at}. "
+            f"Log: {active_session.log_path}"
+        )
+        if st.button("Stop Browser Use Session", key=f"stop_browser_use_session_{job.id}"):
+            stopped = stop_browser_use_session(browser_use_log_dir)
+            if stopped:
+                st.success("Stopped the active Browser Use session.")
+                st.rerun()
+            st.warning("No active Browser Use session was found.")
+
+    if st.button("Kill All Browser Use Processes", key=f"kill_all_browser_use_{job.id}"):
+        stopped_count = stop_all_browser_use_processes(browser_use_log_dir)
+        st.success(f"Killed {stopped_count} Browser Use process group(s).")
+        st.rerun()
+
+    st.caption(
+        "This action opens the reviewed apply URL and asks Browser Use to execute "
+        "the reviewed application fill plan."
+    )
+    if st.button("Apply To Job", disabled=bool(blockers)):
+        if blockers:
+            st.error("Complete the required review steps before opening the apply flow.")
+            return
+        if fill_plan is None:
+            st.error("Generate and review the application fill plan before applying.")
+            return
+        try:
+            with st.spinner("Starting Browser Use apply agent..."):
+                result = open_apply_url_with_browser_use_fill_plan(
+                    str(job.apply_url),
+                    fill_plan=fill_plan,
+                    log_dir=browser_use_log_dir,
+                )
+        except BrowserUseLaunchError as exc:
+            st.error(str(exc))
+            return
+
+        st.success(f"Started Browser Use apply agent for {result.url}.")
+        st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
+
+
+def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
+    """Render fill-plan generation, review, and edit controls."""
+
+    st.divider()
+    st.subheader("Application Fill Plan")
+    candidate_profile = load_candidate_profile(base_dir)
+    requirements = load_application_requirements(base_dir, job.id)
+    page_snapshot = load_application_page_snapshot(base_dir, job.id)
+    package = load_application_package(base_dir, job.id)
+    fill_plan = load_application_fill_plan(base_dir, job.id)
+
+    generation_blockers = get_fill_plan_generation_blockers(requirements, package)
+    if generation_blockers:
+        st.warning("Fill plan generation is blocked until these steps are complete:")
+        for blocker in generation_blockers:
+            st.write(f"- {blocker}")
+
+    if st.button("Generate / Refresh Fill Plan", disabled=bool(generation_blockers)):
+        if requirements is None or package is None:
+            st.error("Complete fill plan prerequisites before generating.")
+            return
+        try:
+            with st.spinner("Mapping application fields to candidate evidence..."):
+                fill_plan = generate_application_fill_plan(
+                    candidate_profile,
+                    requirements,
+                    package,
+                    page_snapshot=page_snapshot,
+                    semantic_mapper=map_application_fields_with_llm,
+                )
+                saved_path = save_application_fill_plan(base_dir, fill_plan)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
+        st.success(f"Application fill plan saved to {saved_path}.")
+        st.rerun()
+
+    if fill_plan is None:
+        st.info("No application fill plan has been generated yet.")
+        return
+
+    render_application_fill_plan(fill_plan)
+    fill_plan = render_application_fill_plan_edit_actions(base_dir, fill_plan)
+    review_blockers = get_application_fill_plan_review_blockers(fill_plan)
+    if fill_plan.review_status != "reviewed":
+        if review_blockers:
+            st.warning("Resolve all fill-plan review blockers before marking the plan reviewed.")
+        if st.button("Mark Fill Plan Reviewed", disabled=bool(review_blockers)):
+            try:
+                reviewed_fill_plan = mark_application_fill_plan_reviewed(fill_plan)
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+            save_application_fill_plan(base_dir, reviewed_fill_plan)
+            st.success("Application fill plan was marked as reviewed.")
+            st.rerun()
+
+
+def get_fill_plan_generation_blockers(
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+) -> list[str]:
+    """Return blockers that prevent generating an application fill plan."""
+
+    blockers: list[str] = []
+    if requirements is None:
+        blockers.append("Discover application requirements.")
+    elif requirements.status != "discovered" or not requirements.job_preserving:
+        blockers.append("Resolve reviewed application requirements.")
+    elif requirements.review_status != "reviewed":
+        blockers.append("Review the discovered application requirements.")
+
+    if package is None:
+        blockers.append("Generate the application package.")
+    elif package.status == "rejected":
+        blockers.append("Regenerate or manually edit the rejected application package.")
+
+    return blockers
+
+
+def render_application_fill_plan(fill_plan: ApplicationFillPlan) -> None:
+    """Render the reviewed fill contract that will be passed to Browser Use."""
+
+    status_columns = st.columns(5)
+    status_columns[0].metric("Review", fill_plan.review_status)
+    status_columns[1].metric("Fields", len(fill_plan.field_values))
+    status_columns[2].metric("Uploads", len(fill_plan.upload_files))
+    status_columns[3].metric("Needs Answer", len(fill_plan.needs_answer_fields))
+    status_columns[4].metric("Blocked", len(fill_plan.blocked_fields))
+
+    if fill_plan.field_values:
+        st.markdown("**Fields To Fill**")
+        for field in fill_plan.field_values:
+            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
+            st.write(
+                f"- {field.label}: {field.value} "
+                f"({'required' if field.required else 'optional or unclear'}, "
+                f"source: {field.source or 'unknown'}, evidence: {evidence_quality})"
+            )
+            if field.literal_evidence:
+                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
+
+    if fill_plan.upload_files:
+        st.markdown("**Files To Upload**")
+        for upload in fill_plan.upload_files:
+            evidence_quality = fill_plan_evidence_quality_label(upload.evidence_status)
+            st.write(
+                f"- {upload.label}: {upload.file_path} "
+                f"({upload.document_type}, source: {upload.source or 'unknown'}, "
+                f"evidence: {evidence_quality})"
+            )
+            if upload.literal_evidence:
+                st.caption(f"Evidence: {' | '.join(upload.literal_evidence)}")
+
+    if fill_plan.needs_answer_fields:
+        st.markdown("**Fields Needing Answers**")
+        for field in fill_plan.needs_answer_fields:
+            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
+            st.write(
+                f"- {field.label}: {field.reason} "
+                f"({'required' if field.required else 'optional or unclear'}, "
+                f"evidence: {evidence_quality})"
+            )
+            if field.literal_evidence:
+                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
+
+    if fill_plan.blocked_fields:
+        st.markdown("**Blocked Fields**")
+        for field in fill_plan.blocked_fields:
+            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
+            st.write(
+                f"- {field.label}: {field.reason} "
+                f"({'required' if field.required else 'optional or unclear'}, "
+                f"evidence: {evidence_quality})"
+            )
+            if field.literal_evidence:
+                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
+
+
+def fill_plan_evidence_quality_label(evidence_status: str) -> str:
+    """Return the review-panel label for a fill-plan evidence status."""
+
+    if evidence_status == "literal_verified":
+        return "Literal evidence found"
+    if evidence_status == "partial_match":
+        return "Partial evidence found"
+    return "Interpreted only"
+
+
+def render_application_fill_plan_edit_actions(
+    base_dir: Path,
+    fill_plan: ApplicationFillPlan,
+) -> ApplicationFillPlan:
+    """Render fill-plan edit controls and return the current fill plan."""
+
+    if (
+        not fill_plan.field_values
+        and not fill_plan.upload_files
+        and not fill_plan.needs_answer_fields
+        and not fill_plan.blocked_fields
+    ):
+        return fill_plan
+
+    with st.expander("Review application field values", expanded=False):
+        with st.form(f"application_fill_plan_edit_form_{fill_plan.job_id}"):
+            st.caption(
+                "Required fields are listed first. Add or edit the exact value "
+                "Browser Use is allowed to use for each field."
+            )
+            edited_values: dict[str, str] = {}
+            needs_answer_values_by_key: dict[str, str] = {}
+            blocked_values_by_key: dict[str, str] = {}
+
+            required_existing_fields = [
+                ("field", index, field)
+                for index, field in enumerate(fill_plan.field_values)
+                if field.required
+            ]
+            required_needs_answer_fields = [
+                ("needs", index, field)
+                for index, field in enumerate(fill_plan.needs_answer_fields)
+                if field.required
+            ]
+            required_blocked_fields = [
+                ("blocked", index, field)
+                for index, field in enumerate(fill_plan.blocked_fields)
+                if field.required
+            ]
+            optional_existing_fields = [
+                ("field", index, field)
+                for index, field in enumerate(fill_plan.field_values)
+                if not field.required
+            ]
+            optional_needs_answer_fields = [
+                ("needs", index, field)
+                for index, field in enumerate(fill_plan.needs_answer_fields)
+                if not field.required
+            ]
+            optional_blocked_fields = [
+                ("blocked", index, field)
+                for index, field in enumerate(fill_plan.blocked_fields)
+                if not field.required
+            ]
+
+            required_rows = [
+                *required_existing_fields,
+                *required_needs_answer_fields,
+                *required_blocked_fields,
+            ]
+            optional_rows = [
+                *optional_existing_fields,
+                *optional_needs_answer_fields,
+                *optional_blocked_fields,
+            ]
+
+            if required_rows:
+                st.markdown("**Required Fields**")
+            for kind, index, field in required_rows:
+                edit_key = _fill_plan_row_edit_key(kind, field, index)
+                value_key = f"application_fill_plan_{fill_plan.job_id}_{edit_key}"
+                edited_value = _render_fill_plan_value_input(
+                    field,
+                    key=value_key,
+                    value=_fill_plan_row_default_value(kind, field),
+                )
+                _record_fill_plan_row_value(
+                    kind,
+                    edit_key,
+                    edited_value,
+                    edited_values,
+                    needs_answer_values_by_key,
+                    blocked_values_by_key,
+                )
+                _render_fill_plan_edit_reason(field)
+
+            if optional_rows:
+                st.markdown("**Optional Or Unclear Fields**")
+            for kind, index, field in optional_rows:
+                edit_key = _fill_plan_row_edit_key(kind, field, index)
+                value_key = f"application_fill_plan_{fill_plan.job_id}_{edit_key}"
+                edited_value = _render_fill_plan_value_input(
+                    field,
+                    key=value_key,
+                    value=_fill_plan_row_default_value(kind, field),
+                )
+                _record_fill_plan_row_value(
+                    kind,
+                    edit_key,
+                    edited_value,
+                    edited_values,
+                    needs_answer_values_by_key,
+                    blocked_values_by_key,
+                )
+                _render_fill_plan_edit_reason(field)
+
+            upload_paths_by_key: dict[str, str] = {}
+            if fill_plan.upload_files:
+                st.markdown("**Uploads Sent To Browser Use**")
+            for index, upload in enumerate(fill_plan.upload_files):
+                edit_key = fill_plan_upload_edit_key(upload, index)
+                path_key = f"application_fill_plan_upload_path_{fill_plan.job_id}_{edit_key}"
+                upload_paths_by_key[edit_key] = st.text_input(
+                    f"{upload.label} file path",
+                    value=upload.file_path,
+                    key=path_key,
+                )
+
+            save_edits = st.form_submit_button("Save Fill Plan Edits")
+
+    if not save_edits:
+        return fill_plan
+
+    edited_fill_plan = apply_fill_plan_edits(
+        fill_plan,
+        edited_values,
+        upload_paths_by_key=upload_paths_by_key,
+        needs_answer_values_by_key=needs_answer_values_by_key,
+        blocked_values_by_key=blocked_values_by_key,
+    )
+    save_application_fill_plan(base_dir, edited_fill_plan)
+    st.success("Fill plan edits saved. Review status reset to draft.")
+    st.rerun()
+    return edited_fill_plan
+
+
+def _fill_plan_row_edit_key(
+    kind: str,
+    field: (
+        ApplicationFillFieldValue
+        | ApplicationFillNeedsAnswerField
+        | ApplicationFillBlockedField
+    ),
+    index: int,
+) -> str:
+    if kind == "field":
+        return fill_plan_field_edit_key(field, index)
+    if kind == "needs":
+        return fill_plan_needs_answer_edit_key(field, index)
+    return fill_plan_blocked_field_edit_key(field, index)
+
+
+def _fill_plan_row_default_value(
+    kind: str,
+    field: (
+        ApplicationFillFieldValue
+        | ApplicationFillNeedsAnswerField
+        | ApplicationFillBlockedField
+    ),
+) -> str:
+    if kind == "field":
+        return field.value
+    if kind == "blocked":
+        return _default_blocked_field_review_value(field)
+    return ""
+
+
+def _default_blocked_field_review_value(field: ApplicationFillBlockedField) -> str:
+    input_type = field.input_type.casefold()
+    if input_type == "checkbox":
+        return "true" if field.required else "false"
+    return ""
+
+
+def _render_fill_plan_value_input(
+    field: (
+        ApplicationFillFieldValue
+        | ApplicationFillNeedsAnswerField
+        | ApplicationFillBlockedField
+    ),
+    *,
+    key: str,
+    value: str,
+) -> str:
+    input_type = field.input_type.casefold()
+    options = list(field.options)
+
+    if input_type == "checkbox":
+        checked = value.strip().casefold() in {"true", "yes", "ja", "1", "checked"}
+        return "true" if st.checkbox(field.label, value=checked, key=key) else "false"
+
+    if input_type in {"checkbox_group", "multiselect", "multi_select"} and options:
+        selected = st.multiselect(
+            field.label,
+            options=options,
+            default=_selected_fill_plan_options(value, options),
+            key=key,
+        )
+        return "; ".join(selected)
+
+    if input_type in {"select", "radio"} and options:
+        selectable_options = _selectable_fill_plan_options(value, options)
+        selected = st.selectbox(
+            field.label,
+            options=selectable_options,
+            index=selectable_options.index(value) if value in selectable_options else 0,
+            key=key,
+        )
+        return selected
+
+    return st.text_input(field.label, value=value, key=key)
+
+
+def _selected_fill_plan_options(value: str, options: list[str]) -> list[str]:
+    reviewed_value = value.strip()
+    if not reviewed_value:
+        return []
+    if ";" in reviewed_value:
+        selected = [part.strip() for part in reviewed_value.split(";") if part.strip()]
+        return [option for option in options if option in selected]
+    if reviewed_value in options:
+        return [reviewed_value]
+    return []
+
+
+def _selectable_fill_plan_options(value: str, options: list[str]) -> list[str]:
+    reviewed_value = value.strip()
+    selectable_options = ["", *options]
+    if reviewed_value and reviewed_value not in selectable_options:
+        selectable_options.append(reviewed_value)
+    return selectable_options
+
+
+def _record_fill_plan_row_value(
+    kind: str,
+    edit_key: str,
+    value: str,
+    edited_values: dict[str, str],
+    needs_answer_values_by_key: dict[str, str],
+    blocked_values_by_key: dict[str, str],
+) -> None:
+    if kind == "field":
+        edited_values[edit_key] = value
+        return
+    if kind == "needs":
+        needs_answer_values_by_key[edit_key] = value
+        return
+    blocked_values_by_key[edit_key] = value
+
+
+def _render_fill_plan_edit_reason(
+    field: (
+        ApplicationFillFieldValue
+        | ApplicationFillNeedsAnswerField
+        | ApplicationFillBlockedField
+    ),
+) -> None:
+    reason = getattr(field, "reason", "").strip()
+    if reason:
+        st.caption(reason)
+
+
 def render_application_package_recovery_actions(
     base_dir: Path,
     job: JobListing,
@@ -351,6 +856,42 @@ def render_application_requirements(requirements: ApplicationRequirements) -> No
         with st.expander("Source Evidence", expanded=False):
             for evidence in requirements.source_evidence:
                 st.write(f"- {evidence}")
+
+
+def get_apply_assistance_blockers(
+    job: JobListing,
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+    fill_plan: ApplicationFillPlan | None,
+) -> list[str]:
+    """Return blockers that prevent opening the apply page from the Jobs workspace."""
+
+    blockers: list[str] = []
+    if job.apply_url is None:
+        blockers.append("Resolve and save a valid apply URL.")
+
+    if requirements is None:
+        blockers.append("Discover application requirements for this apply URL.")
+    elif requirements.status != "discovered" or not requirements.job_preserving:
+        blockers.append("Resolve reviewed application requirements before applying.")
+    elif requirements.review_status != "reviewed":
+        blockers.append("Review the discovered application requirements.")
+
+    if package is None:
+        blockers.append("Generate the application package before applying.")
+    elif package.status == "rejected":
+        blockers.append("Regenerate or manually edit the rejected application package.")
+
+    if fill_plan is None:
+        blockers.append("Generate the application fill plan before applying.")
+    else:
+        fill_plan_review_blockers = get_application_fill_plan_review_blockers(fill_plan)
+        if fill_plan_review_blockers:
+            blockers.extend(fill_plan_review_blockers)
+        elif fill_plan.review_status != "reviewed":
+            blockers.append("Review the application fill plan before applying.")
+
+    return blockers
 
 
 def render_requirements_review_actions(

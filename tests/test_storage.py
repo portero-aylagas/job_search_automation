@@ -44,9 +44,17 @@ def test_save_model_creates_parent_directories_and_loads_model(tmp_path: Path) -
             "cv_extracted": {
                 "identity": {
                     "full_name": "Alex Mercer",
+                    "first_name": "Alex",
+                    "last_name": "Mercer",
                     "email": "alex@example.com",
-                    "phone": "",
+                    "phone": "+49170123456",
                     "location": "Remote",
+                    "street_address": "Example Street",
+                    "street_number": "12",
+                    "postal_code": "10115",
+                    "city": "Berlin",
+                    "country": "Germany",
+                    "nationality": "Spanish",
                     "linkedin_url": "",
                     "github_url": "",
                     "portfolio_url": "",

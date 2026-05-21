@@ -49,7 +49,7 @@ def render_job_url_extraction_form() -> tuple[bool, str]:
 
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
-        st.caption("This action uses AI and may perform web search to resolve the apply URL.")
+        st.caption("Extract uses AI to resolve application data.")
         extract_submitted = st.form_submit_button("Extract Application Data")
     return extract_submitted, source_url
 
@@ -276,6 +276,7 @@ def render_job_intake_page(base_dir: Path) -> None:
         st.success(success_message)
 
     extract_submitted, source_url = render_job_url_extraction_form()
+
     if extract_submitted:
         if handle_job_url_extraction(source_url):
             st.rerun()

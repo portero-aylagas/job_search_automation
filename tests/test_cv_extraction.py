@@ -120,6 +120,8 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
 
     assert extracted.identity == CandidateCVIdentity(
         full_name="Taylor Rivera",
+        first_name="Taylor",
+        last_name="Rivera",
         email="taylor@example.com",
     )
     assert extracted.work_experience == ["Automation Engineer at Example Co"]

@@ -113,6 +113,7 @@ job_search_automation/
 │   ├── llm_job_extraction.py
 │   ├── apply_url_resolution.py
 │   ├── application_requirements.py
+│   ├── application_fill_plan.py
 │   ├── application_package.py
 │   └── ...
 ├── data/
@@ -129,6 +130,7 @@ job_search_automation/
 │   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
+│   │           ├── application_fill_plan.json
 │   │           └── application_package.json
 │   └── jobs/
 │       └── <job_id>/
@@ -136,6 +138,7 @@ job_search_automation/
 │           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json
+│           ├── application_fill_plan.json
 │           └── application_package.json
 ├── outputs/
 │   └── <job_id>/
@@ -201,7 +204,9 @@ and stored separately as `source_job_id`.
 `normalized_job.json` describes the job offer. Apply-page requirements are
 discovered later from `apply_url`. The app first stores read-only page evidence
 in `application_page_snapshot.json`, then stores interpreted requirements in
-`application_requirements.json`.
+`application_requirements.json`. Requirements stay read-only as the discovered
+page contract. The editable Browser Use execution contract is stored separately
+as `application_fill_plan.json`.
 
 `data/runtime/jobs.json` is the shared job index used by both the Tracker page
 and the Jobs page. The tracked `data/jobs.json` and `data/tracker.json` files
@@ -263,6 +268,26 @@ Generated material:
 The package JSON is the source of truth. Markdown exports are generated from the
 full package when needed. When `application_requirements.json` exists, package
 generation uses it to decide which artifacts and answers are needed.
+
+### Application Fill Plan
+
+`application_fill_plan.json` is generated per job after reviewed requirements
+and an application package exist. It maps safe candidate data and reviewed
+package `form_answer` artifacts onto discovered page fields, adds reviewed
+upload files such as the saved CV, and blocks fields that require user choice or
+carry privacy, consent, disability, referral, internal-employee, legal, or
+ambiguous risk.
+
+The fill-plan generator first applies deterministic mappings for stable identity
+and contact fields. Remaining non-sensitive fields are sent to an AI semantic
+mapper with structured candidate evidence and reviewed package form answers.
+Sensitive or user-decision fields are blocked before semantic mapping.
+
+The Jobs UI lets the user generate or refresh the draft fill plan, edit planned
+values, inspect blocked fields, and mark the plan reviewed. Browser Use receives
+only this reviewed fill plan: field values, allowed upload paths, blocked
+fields, and submit guard labels. Raw candidate profile JSON is not passed to the
+browser agent.
 
 Apply URLs that are the same as the source job page, or that are not valid
 http(s) application destinations, are rejected at validation time and cannot be
@@ -423,6 +448,9 @@ OPENAI_MODEL=gpt-5.4
 
 The application should still support non-AI sample/demo flows without requiring
 an API key during early phases.
+
+Browser Use local browser launch also requires a Playwright Chromium runtime as
+described in `Installation -> Browser Use Setup`.
 
 The shared AI configuration boundary lives in `src/llm_client.py`. That module
 reads `OPENAI_API_KEY`, applies the default `OPENAI_MODEL`, and owns the live

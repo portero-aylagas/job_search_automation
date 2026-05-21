@@ -120,3 +120,115 @@ The core pipeline remains:
 ```text
 candidate profile + job position -> validated application package
 ```
+
+## Browser Automation Capability Summary
+
+The researched options can all support browser-based job application
+assistance, but they differ in control level, reliability, and implementation
+effort.
+
+### Browser Use
+
+Browser Use is an agent-oriented browser automation framework. It is the
+closest option to an OpenClaw-like experience: the application can give the
+agent a high-level task such as opening an apply URL, filling the form,
+uploading documents, and stopping before final submission.
+
+**Strengths**
+
+- Fastest option for prototyping.
+- Python-friendly.
+- Can reason through multi-step pages.
+- Can provide task-level feedback such as `ready_for_user_submit` or
+  `blocked_login_required`.
+
+**Weaknesses**
+
+- Less deterministic than direct Playwright control.
+- Needs strong guardrails to prevent unwanted clicks.
+- Harder to audit precisely unless wrapped with structured status reporting.
+
+### Playwright + Browserbase
+
+Playwright provides deterministic browser control. Browserbase provides
+remote/cloud browser infrastructure. Together, they are the strongest
+production-oriented option if the app should run browser sessions without
+relying on the user's local browser.
+
+**Strengths**
+
+- High control over clicks, typing, uploads, waits, screenshots, and traces.
+- Suitable for structured fill plans.
+- Easier to enforce a hard submit guard.
+- Browserbase can host remote browser sessions.
+
+**Weaknesses**
+
+- Requires building the field inspection, field mapping, fill execution, and
+  audit logic.
+- Browserbase adds an external service dependency and cost.
+- Not an agent by itself; reasoning must be implemented separately.
+
+### OpenAI Computer Use
+
+Computer Use is a visual UI-control option where the model operates from
+screenshots and returns actions such as click, type, scroll, or wait. It is
+useful when DOM-based automation fails.
+
+**Strengths**
+
+- Can handle visually complex or poorly structured pages.
+- Useful fallback for custom UI components.
+- Can reason from screenshots rather than HTML structure.
+
+**Weaknesses**
+
+- Still needs a browser harness.
+- Slower, less deterministic, and harder to test.
+- Higher risk of misclicks.
+- Should not be the primary engine for normal forms.
+
+### OpenClaw-Style Browser Layer
+
+Instead of using OpenClaw as a runtime dependency, the useful pattern can be
+reproduced inside the project: browser snapshots, stable element references,
+bounded actions, repeated wait/snapshot loops, audit logs, and a deterministic
+submit guard.
+
+**Strengths**
+
+- Best long-term architecture for this project.
+- Python-only if implemented with Playwright.
+- Matches the existing human-in-the-loop workflow.
+- Allows structured run results and auditability.
+- Can later support Browserbase or Computer Use as backends/fallbacks.
+
+**Weaknesses**
+
+- More engineering work.
+- Requires implementing browser session handling, snapshots, refs, uploads,
+  waits, and guards.
+
+## Recommended Direction
+
+Use a layered approach:
+
+1. **Browser Use** for fast benchmarking on real application pages.
+2. **Own Playwright-based OpenClaw-style browser layer** as the production
+   core.
+3. **Browserbase** as a remote browser backend once local Playwright works.
+4. **OpenAI Computer Use** only as a fallback for pages where DOM/ref
+   automation fails.
+
+Every browser run should return a structured result:
+
+```json
+{
+  "status": "ready_for_user_submit",
+  "message": "Application page prepared. Review it and click Submit manually.",
+  "filled_fields": ["First name", "Email", "Phone", "CV"],
+  "blocked_fields": [],
+  "uploaded_files": ["CV"],
+  "screenshot_path": "data/runtime/jobs/job-123/final_review.png"
+}
+```
