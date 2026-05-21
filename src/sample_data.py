@@ -8,7 +8,6 @@ from src.paths import (
     candidate_profile_path,
     experience_units_paths,
     jobs_index_paths,
-    normalized_job_paths,
 )
 from src.schemas import (
     CandidateProfile,
@@ -63,7 +62,7 @@ def get_sample_candidate_profile() -> CandidateProfile:
 
 
 def get_sample_experience_units() -> list[ExperienceUnit]:
-    """Return example experience units used to demonstrate matching inputs."""
+    """Return example experience units used by tests and explicit demos."""
 
     return [
         ExperienceUnit(
@@ -143,43 +142,9 @@ def get_sample_job_listing() -> JobListing:
 
 
 def get_sample_tracker_records() -> list[TrackerRecord]:
-    """Return example tracker records for the initial Tracker and Jobs pages."""
+    """Return the empty first-run tracker template."""
 
-    return [
-        TrackerRecord(
-            job_id="job-001",
-            title="Python Automation Specialist",
-            company="Example Systems",
-            source_url="https://example.com/jobs/python-automation-specialist",
-            location="Berlin",
-            retrieval_mode="url",
-            match_score=82.0,
-            status="interesting",
-            notes="Strong overlap with automation and reporting experience.",
-        ),
-        TrackerRecord(
-            job_id="job-002",
-            title="Data Analyst",
-            company="Harbor Metrics",
-            source_url="https://example.com/jobs/data-analyst",
-            location="Remote",
-            retrieval_mode="url",
-            match_score=74.0,
-            status="analyzed",
-            notes="Good fit on analytics, weaker on experimentation tooling.",
-        ),
-        TrackerRecord(
-            job_id="job-003",
-            title="Operations Coordinator",
-            company="City Freight",
-            source_url="https://example.com/jobs/operations-coordinator",
-            location="Madrid",
-            retrieval_mode="url",
-            match_score=None,
-            status="new",
-            notes="Saved for later review.",
-        ),
-    ]
+    return []
 
 
 def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
@@ -199,20 +164,13 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
         template_jobs_index_path,
         template_tracker_path,
     ) = jobs_index_paths(root)
-    runtime_normalized_job_path, template_normalized_job_path = normalized_job_paths(
-        root,
-        "job-001",
-    )
-
     files_to_seed = {
         candidate_profile_path(root): get_sample_candidate_profile(),
-        template_experience_units_path: get_sample_experience_units(),
+        template_experience_units_path: [],
         template_jobs_index_path: get_sample_tracker_records(),
         template_tracker_path: get_sample_tracker_records(),
         runtime_jobs_index_path: get_sample_tracker_records(),
         runtime_tracker_path: get_sample_tracker_records(),
-        runtime_normalized_job_path: get_sample_job_listing(),
-        template_normalized_job_path: get_sample_job_listing(),
     }
 
     for path, payload in files_to_seed.items():

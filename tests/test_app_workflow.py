@@ -16,7 +16,7 @@ def test_load_app_data_uses_supplied_base_dir(tmp_path: Path) -> None:
     profile, tracker_records = app_workflow.load_app_data(tmp_path)
 
     assert profile.candidate_profile.profile_status == "draft"
-    assert tracker_records
+    assert tracker_records == []
     assert (tmp_path / "data" / "candidate_profile.json").is_file()
     assert (tmp_path / "data" / "runtime" / "jobs.json").is_file()
 
