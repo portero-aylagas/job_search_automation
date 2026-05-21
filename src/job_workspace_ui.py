@@ -29,7 +29,9 @@ from src.application_requirements import (
 )
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
+    get_active_browser_use_session,
     open_apply_url_with_browser_use_candidate_agent,
+    stop_browser_use_session,
 )
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
@@ -236,12 +238,32 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
     requirements = load_application_requirements(base_dir, job.id)
     candidate_profile = load_candidate_profile(base_dir)
     package = load_application_package(base_dir, job.id)
+    browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
     blockers = get_apply_assistance_blockers(job, requirements, package)
 
     if blockers:
         st.warning("Apply assistance is blocked until these review steps are complete:")
         for blocker in blockers:
             st.write(f"- {blocker}")
+
+    active_session = get_active_browser_use_session(browser_use_log_dir)
+    if active_session is None:
+        st.caption("Browser Use session status: idle.")
+    else:
+        st.info(
+            "Browser Use session running: "
+            f"PID {active_session.pid} for {active_session.url}"
+        )
+        st.caption(
+            f"Started: {active_session.started_at}. "
+            f"Log: {active_session.log_path}"
+        )
+        if st.button("Stop Browser Use Session", key=f"stop_browser_use_session_{job.id}"):
+            stopped = stop_browser_use_session(browser_use_log_dir)
+            if stopped:
+                st.success("Stopped the active Browser Use session.")
+                st.rerun()
+            st.warning("No active Browser Use session was found.")
 
     st.caption(
         "This action opens the reviewed apply URL and asks Browser Use to fill the form "
@@ -257,7 +279,7 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
                     str(job.apply_url),
                     candidate_profile=candidate_profile,
                     application_package=package,
-                    log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
+                    log_dir=browser_use_log_dir,
                 )
         except BrowserUseLaunchError as exc:
             st.error(str(exc))

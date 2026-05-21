@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -27,8 +29,72 @@ class BrowserUseOpenResult:
     log_path: Path
 
 
+@dataclass(frozen=True)
+class BrowserUseSession:
+    """Persisted metadata for one active Browser Use background session."""
+
+    url: str
+    pid: int
+    log_path: Path
+    started_at: str
+
+
 class BrowserUseLaunchError(RuntimeError):
     """Raised when Browser Use cannot open a visible browser session."""
+
+
+def get_active_browser_use_session(log_dir: Path | str) -> BrowserUseSession | None:
+    """Return the active Browser Use session if its process is still running."""
+
+    session_path = _active_session_path(log_dir)
+    if not session_path.exists():
+        return None
+
+    try:
+        payload = json.loads(session_path.read_text(encoding="utf-8"))
+        session = BrowserUseSession(
+            url=str(payload["url"]),
+            pid=int(payload["pid"]),
+            log_path=Path(str(payload["log_path"])),
+            started_at=str(payload["started_at"]),
+        )
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        session_path.unlink(missing_ok=True)
+        return None
+
+    if _is_process_running(session.pid):
+        return session
+
+    session_path.unlink(missing_ok=True)
+    return None
+
+
+def stop_browser_use_session(log_dir: Path | str) -> bool:
+    """Stop the active Browser Use session for the given runtime directory."""
+
+    session = get_active_browser_use_session(log_dir)
+    if session is None:
+        return False
+
+    try:
+        os.killpg(session.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if not _is_process_running(session.pid):
+            break
+        time.sleep(0.1)
+
+    if _is_process_running(session.pid):
+        try:
+            os.killpg(session.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    _active_session_path(log_dir).unlink(missing_ok=True)
+    return True
 
 
 def open_url_with_browser_use(
@@ -215,6 +281,12 @@ def _launch_browser_use_runner(
 ) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
+    existing_session = get_active_browser_use_session(target_log_dir)
+    if existing_session is not None:
+        raise BrowserUseLaunchError(
+            "A Browser Use session is already running. Stop the active session before "
+            "starting a new one."
+        )
     log_path = target_log_dir / _build_log_filename(agent_task=agent_task is not None)
     ready_path = log_path.with_suffix(".ready")
     browser_use_env = _browser_use_environment(target_log_dir)
@@ -241,7 +313,21 @@ def _launch_browser_use_runner(
             env=browser_use_env,
         )
 
-    _wait_for_browser_ready(process, log_path, ready_path, startup_wait_seconds)
+    try:
+        _wait_for_browser_ready(process, log_path, ready_path, startup_wait_seconds)
+    except Exception:
+        _active_session_path(target_log_dir).unlink(missing_ok=True)
+        raise
+
+    _write_active_session(
+        target_log_dir,
+        BrowserUseSession(
+            url=normalized_url,
+            pid=process.pid,
+            log_path=log_path,
+            started_at=datetime.now(timezone.utc).isoformat(),
+        ),
+    )
 
     return BrowserUseOpenResult(url=normalized_url, pid=process.pid, log_path=log_path)
 
@@ -269,6 +355,37 @@ def _browser_use_environment(runtime_dir: Path) -> dict[str, str]:
     env["XDG_CACHE_HOME"] = str(runtime_dir / "cache")
     env["PLAYWRIGHT_BROWSERS_PATH"] = str(runtime_dir / "playwright-browsers")
     return env
+
+
+def _active_session_path(log_dir: Path | str) -> Path:
+    return Path(log_dir) / "active_session.json"
+
+
+def _write_active_session(log_dir: Path | str, session: BrowserUseSession) -> None:
+    session_path = _active_session_path(log_dir)
+    session_path.write_text(
+        json.dumps(
+            {
+                "url": session.url,
+                "pid": session.pid,
+                "log_path": str(session.log_path),
+                "started_at": session.started_at,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _is_process_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _wait_for_browser_ready(

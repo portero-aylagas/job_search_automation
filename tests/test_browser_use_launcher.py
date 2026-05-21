@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -8,8 +9,10 @@ import pytest
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
     build_candidate_application_fill_task,
+    get_active_browser_use_session,
     open_apply_url_with_browser_use_candidate_agent,
     open_url_with_browser_use,
+    stop_browser_use_session,
 )
 from src.schemas import ApplicationPackage, CandidateProfile
 
@@ -62,6 +65,7 @@ def test_open_url_with_browser_use_starts_visible_runner(
         return FakeRunningProcess()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
     result = open_url_with_browser_use(
         "https://example.com/jobs/automation-engineer",
@@ -88,6 +92,10 @@ def test_open_url_with_browser_use_starts_visible_runner(
     assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "playwright-browsers")
     assert result.pid == 12345
     assert result.log_path.parent == tmp_path
+    session = get_active_browser_use_session(tmp_path)
+    assert session is not None
+    assert session.pid == 12345
+    assert session.url == "https://example.com/jobs/automation-engineer"
 
 
 def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
@@ -110,6 +118,7 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
         return FakeRunningProcess()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
     result = open_apply_url_with_browser_use_candidate_agent(
         "https://example.com/apply/automation-engineer",
@@ -149,6 +158,60 @@ def test_build_candidate_application_fill_task_contains_candidate_data_and_submi
     assert "Absenden" in task
     assert "Anhang hochladen" in task
     assert "random, clearly fake test data" not in task
+
+
+def test_open_url_with_browser_use_rejects_second_active_session(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeRunningProcess())
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    open_url_with_browser_use(
+        "https://example.com/jobs/automation-engineer",
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    with pytest.raises(BrowserUseLaunchError, match="already running"):
+        open_url_with_browser_use(
+            "https://example.com/jobs/second-role",
+            log_dir=tmp_path,
+            startup_wait_seconds=0,
+        )
+
+
+def test_stop_browser_use_session_terminates_process_group(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeRunningProcess())
+    open_url_with_browser_use(
+        "https://example.com/jobs/automation-engineer",
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    signals_sent: list[tuple[int, int]] = []
+    running_state = {"alive": True}
+
+    def fake_killpg(pid: int, sig: int) -> None:
+        signals_sent.append((pid, sig))
+        if sig != 0:
+            running_state["alive"] = False
+
+    def fake_kill(pid: int, sig: int) -> None:
+        if sig == 0 and running_state["alive"]:
+            return
+        if sig == 0:
+            raise ProcessLookupError
+
+    monkeypatch.setattr(os, "killpg", fake_killpg)
+    monkeypatch.setattr(os, "kill", fake_kill)
+
+    assert stop_browser_use_session(tmp_path) is True
+    assert signals_sent
+    assert get_active_browser_use_session(tmp_path) is None
 
 
 def make_profile() -> CandidateProfile:

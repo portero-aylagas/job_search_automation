@@ -17,7 +17,12 @@ from src.app_workflow import (
     validate_reviewed_apply_url,
     workflow_trace_payload,
 )
-from src.browser_use_launcher import BrowserUseLaunchError, open_url_with_browser_use
+from src.browser_use_launcher import (
+    BrowserUseLaunchError,
+    get_active_browser_use_session,
+    open_url_with_browser_use,
+    stop_browser_use_session,
+)
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.paths import RUNTIME_DATA_DIR
@@ -61,6 +66,31 @@ def render_job_url_extraction_form() -> tuple[bool, bool, str]:
         with right:
             open_submitted = st.form_submit_button("Open URL With Browser Use")
     return extract_submitted, open_submitted, source_url
+
+
+def render_browser_use_session_status(base_dir: Path) -> None:
+    """Render active Browser Use session status and stop control."""
+
+    log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
+    active_session = get_active_browser_use_session(log_dir)
+    if active_session is None:
+        st.caption("Browser Use session status: idle.")
+        return
+
+    st.info(
+        "Browser Use session running: "
+        f"PID {active_session.pid} for {active_session.url}"
+    )
+    st.caption(
+        f"Started: {active_session.started_at}. "
+        f"Log: {active_session.log_path}"
+    )
+    if st.button("Stop Browser Use Session", key="stop_browser_use_session_intake"):
+        stopped = stop_browser_use_session(log_dir)
+        if stopped:
+            st.success("Stopped the active Browser Use session.")
+            st.rerun()
+        st.warning("No active Browser Use session was found.")
 
 
 def handle_job_url_browser_use_open(base_dir: Path, source_url: str) -> bool:
@@ -302,6 +332,7 @@ def render_job_intake_page(base_dir: Path) -> None:
     if success_message:
         st.success(success_message)
 
+    render_browser_use_session_status(base_dir)
     extract_submitted, open_submitted, source_url = render_job_url_extraction_form()
     if open_submitted:
         handle_job_url_browser_use_open(base_dir, source_url)
