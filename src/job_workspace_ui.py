@@ -27,6 +27,8 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
+from src.browser_use_launcher import BrowserUseLaunchError, open_url_with_browser_use
+from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationPackage,
     ApplicationRequirements,
@@ -86,6 +88,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
     render_job_intake_summary(job_listing)
     render_application_requirements_panel(base_dir, job_listing)
     render_application_package_panel(base_dir, job_listing)
+    render_apply_assistance_panel(base_dir, job_listing)
 
 
 def job_option_label(record: TrackerRecord) -> str:
@@ -222,6 +225,39 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
     render_application_package(package)
 
 
+def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
+    """Render the first apply-assistance action for a reviewed job workspace."""
+
+    st.divider()
+    st.subheader("Apply Assistance")
+    requirements = load_application_requirements(base_dir, job.id)
+    package = load_application_package(base_dir, job.id)
+    blockers = get_apply_assistance_blockers(job, requirements, package)
+
+    if blockers:
+        st.warning("Apply assistance is blocked until these review steps are complete:")
+        for blocker in blockers:
+            st.write(f"- {blocker}")
+
+    st.caption("This action opens the reviewed apply URL with Browser Use navigation.")
+    if st.button("Apply To Job", disabled=bool(blockers)):
+        if blockers:
+            st.error("Complete the required review steps before opening the apply flow.")
+            return
+        try:
+            with st.spinner("Opening Browser Use on the apply URL..."):
+                result = open_url_with_browser_use(
+                    str(job.apply_url),
+                    log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
+                )
+        except BrowserUseLaunchError as exc:
+            st.error(str(exc))
+            return
+
+        st.success(f"Opened Browser Use visible session for {result.url}.")
+        st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
+
+
 def render_application_package_recovery_actions(
     base_dir: Path,
     job: JobListing,
@@ -351,6 +387,32 @@ def render_application_requirements(requirements: ApplicationRequirements) -> No
         with st.expander("Source Evidence", expanded=False):
             for evidence in requirements.source_evidence:
                 st.write(f"- {evidence}")
+
+
+def get_apply_assistance_blockers(
+    job: JobListing,
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+) -> list[str]:
+    """Return blockers that prevent opening the apply page from the Jobs workspace."""
+
+    blockers: list[str] = []
+    if job.apply_url is None:
+        blockers.append("Resolve and save a valid apply URL.")
+
+    if requirements is None:
+        blockers.append("Discover application requirements for this apply URL.")
+    elif requirements.status != "discovered" or not requirements.job_preserving:
+        blockers.append("Resolve reviewed application requirements before applying.")
+    elif requirements.review_status != "reviewed":
+        blockers.append("Review the discovered application requirements.")
+
+    if package is None:
+        blockers.append("Generate the application package before applying.")
+    elif package.status == "rejected":
+        blockers.append("Regenerate or manually edit the rejected application package.")
+
+    return blockers
 
 
 def render_requirements_review_actions(
