@@ -344,11 +344,15 @@ streamlit run app.py
 
 ---
 
-## Tests
+## Verification
 
 ```bash
-pytest
+make verify
 ```
+
+`make verify` runs Ruff linting, including public docstring checks for
+application code, Python compile checks, and the pytest suite. The command is
+local and does not require live API keys.
 
 ---
 

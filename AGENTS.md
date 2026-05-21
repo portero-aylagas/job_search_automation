@@ -30,6 +30,13 @@ Prefer simple working code over abstract architecture.
 
 Use JSON file storage first unless explicitly asked otherwise.
 
+Default to beginner/intermediate-friendly code. Use clear names, simple control
+flow, explicit side effects, understandable module boundaries, and comments
+where they reduce cognitive load.
+
+Public modules, classes, functions, and relevant public methods should have
+concise Google-style docstrings unless they are clearly private or internal.
+
 ## Development Workflow
 
 Use `main` as the stable submission branch.

@@ -1,3 +1,5 @@
+"""Pydantic schemas for candidate, job, requirements, package, and tracker data."""
+
 from __future__ import annotations
 
 import re
@@ -97,6 +99,8 @@ _LEGACY_SENIORITY_VALUES = {
 
 
 class AIWorkflowTrace(BaseModel):
+    """Metadata captured for an AI-assisted workflow call."""
+
     workflow_name: str
     operation: str
     model: str
@@ -116,6 +120,8 @@ class AIWorkflowTrace(BaseModel):
 
 
 class CandidateCVIdentity(BaseModel):
+    """Identity and contact fields extracted from a candidate CV."""
+
     full_name: str = ""
     email: str = ""
     phone: str = ""
@@ -126,6 +132,8 @@ class CandidateCVIdentity(BaseModel):
 
 
 class CandidateCVExtracted(BaseModel):
+    """Structured candidate evidence extracted from the primary CV."""
+
     identity: CandidateCVIdentity = Field(default_factory=CandidateCVIdentity)
     work_experience: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
@@ -138,6 +146,8 @@ class CandidateCVExtracted(BaseModel):
 
 
 class CandidateSupplementalExtracted(BaseModel):
+    """Structured evidence extracted from optional supporting documents."""
+
     work_experience: list[str] = Field(default_factory=list)
     education: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
@@ -150,6 +160,8 @@ class CandidateSupplementalExtracted(BaseModel):
 
 
 class CandidatePreferences(BaseModel):
+    """Manual job-search preferences not reliably inferred from a CV."""
+
     target_roles: list[str] = Field(default_factory=list)
     target_locations: list[str] = Field(default_factory=list)
     remote_preference: list[RemotePreference] = Field(default_factory=list)
@@ -225,11 +237,15 @@ class CandidatePreferences(BaseModel):
 
 
 class CandidateSourceCV(BaseModel):
+    """Stored CV upload metadata for the candidate profile."""
+
     file_path: str = ""
     parsed: bool = False
 
 
 class CandidateOptionalDocument(BaseModel):
+    """Stored optional supporting-document metadata."""
+
     file_path: str = ""
     file_name: str = ""
     document_type: str = "other"
@@ -237,6 +253,8 @@ class CandidateOptionalDocument(BaseModel):
 
 
 class CandidateSourceDocuments(BaseModel):
+    """Uploaded source documents attached to a candidate profile."""
+
     cv: CandidateSourceCV = Field(default_factory=CandidateSourceCV)
     optional_documents: list[CandidateOptionalDocument] = Field(default_factory=list)
 
@@ -263,6 +281,8 @@ class CandidateSourceDocuments(BaseModel):
 
 
 class CandidateProfileData(BaseModel):
+    """Top-level candidate profile payload persisted to JSON."""
+
     profile_status: Literal["draft"] = "draft"
     source_documents: CandidateSourceDocuments = Field(default_factory=CandidateSourceDocuments)
     cv_extracted: CandidateCVExtracted = Field(default_factory=CandidateCVExtracted)
@@ -270,6 +290,8 @@ class CandidateProfileData(BaseModel):
 
 
 class CandidateProfile(BaseModel):
+    """Wrapper model for the persisted candidate profile document."""
+
     candidate_profile: CandidateProfileData = Field(default_factory=CandidateProfileData)
 
 
@@ -316,6 +338,8 @@ def _dedupe(values: list[str]) -> list[str]:
 
 
 class ExperienceUnit(BaseModel):
+    """Reusable candidate evidence block for matching and package generation."""
+
     id: str
     title: str
     organization: str
@@ -344,6 +368,8 @@ def _validate_storage_identifier(value: object, field_name: str) -> str:
 
 
 class JobDynamicField(BaseModel):
+    """Flexible normalized job detail preserved outside fixed schema fields."""
+
     dynamic: bool = True
     name: str = Field(default="", validate_default=True)
     value: Any
@@ -373,6 +399,8 @@ class JobDynamicField(BaseModel):
 
 
 class JobListing(BaseModel):
+    """Normalized job offer reviewed by the user and stored per job workspace."""
+
     id: str
     title: str
     company: str
@@ -447,6 +475,8 @@ ApplicationArtifactStatus = Literal[
 
 
 class ApplicationRequirementFinding(BaseModel):
+    """Evidence-backed requirement discovered from an application page."""
+
     label: str
     required: bool = False
     evidence: str = ""
@@ -455,6 +485,8 @@ class ApplicationRequirementFinding(BaseModel):
 
 
 class ApplicationScreeningQuestion(BaseModel):
+    """Screening question discovered from an application page."""
+
     question: str
     required: bool = False
     input_type: str = ""
@@ -463,6 +495,8 @@ class ApplicationScreeningQuestion(BaseModel):
 
 
 class ApplicationFormField(BaseModel):
+    """Application form field that may require candidate-provided input."""
+
     name: str = ""
     label: str
     required: bool = False
@@ -473,6 +507,8 @@ class ApplicationFormField(BaseModel):
 
 
 class ApplicationPageControl(BaseModel):
+    """Raw page control captured during application-page inspection."""
+
     kind: str = ""
     name: str = ""
     label: str = ""
@@ -484,6 +520,8 @@ class ApplicationPageControl(BaseModel):
 
 
 class ApplicationPageFormSummary(BaseModel):
+    """Parsed form summary from an inspected application page."""
+
     action: str = ""
     method: str = "get"
     labels: list[str] = Field(default_factory=list)
@@ -492,6 +530,8 @@ class ApplicationPageFormSummary(BaseModel):
 
 
 class ApplicationPageSnapshot(BaseModel):
+    """Read-only evidence snapshot collected from an application page."""
+
     requested_url: str
     final_url: str = ""
     fetch_status: int | None = None
@@ -509,6 +549,8 @@ class ApplicationPageSnapshot(BaseModel):
 
 
 class ApplicationRequirements(BaseModel):
+    """Interpreted application requirements for one job application page."""
+
     job_id: str
     apply_url: HttpUrl
     source_url: HttpUrl
@@ -538,6 +580,8 @@ class ApplicationRequirements(BaseModel):
 
 
 class ApplicationArtifact(BaseModel):
+    """Generated or manually edited artifact within an application package."""
+
     id: str
     type: str
     label: str
@@ -550,6 +594,8 @@ class ApplicationArtifact(BaseModel):
 
 
 class ApplicationPackage(BaseModel):
+    """Generated application package with artifacts and review metadata."""
+
     job_id: str
     status: ApplicationArtifactStatus = "draft"
     workflow_trace: AIWorkflowTrace | None = None
@@ -565,6 +611,8 @@ class ApplicationPackage(BaseModel):
 
 
 class TrackerRecord(BaseModel):
+    """Application tracker row for a saved job."""
+
     job_id: str
     title: str
     company: str

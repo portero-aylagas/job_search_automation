@@ -1,3 +1,5 @@
+"""Sample data factories and first-run bootstrap helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +20,8 @@ from src.storage import ensure_data_dirs, save_model
 
 
 def get_sample_candidate_profile() -> CandidateProfile:
+    """Return an empty reviewed-profile template for first-run setup."""
+
     return CandidateProfile(
         candidate_profile={
             "profile_status": "draft",
@@ -59,6 +63,8 @@ def get_sample_candidate_profile() -> CandidateProfile:
 
 
 def get_sample_experience_units() -> list[ExperienceUnit]:
+    """Return example experience units used to demonstrate matching inputs."""
+
     return [
         ExperienceUnit(
             id="exp-001",
@@ -108,6 +114,8 @@ def get_sample_experience_units() -> list[ExperienceUnit]:
 
 
 def get_sample_job_listing() -> JobListing:
+    """Return the example normalized job listing used by demo workspaces."""
+
     return JobListing(
         id="job-001",
         title="Python Automation Specialist",
@@ -135,6 +143,8 @@ def get_sample_job_listing() -> JobListing:
 
 
 def get_sample_tracker_records() -> list[TrackerRecord]:
+    """Return example tracker records for the initial Tracker and Jobs pages."""
+
     return [
         TrackerRecord(
             job_id="job-001",
@@ -173,6 +183,13 @@ def get_sample_tracker_records() -> list[TrackerRecord]:
 
 
 def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
+    """Create missing sample JSON files without overwriting local user state.
+
+    Args:
+        base_dir: Repository or test root where `data/` and `outputs/` should
+            be prepared.
+    """
+
     root = Path(base_dir)
     ensure_data_dirs(root)
     _, template_experience_units_path = experience_units_paths(root)

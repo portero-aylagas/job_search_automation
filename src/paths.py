@@ -1,3 +1,5 @@
+"""Path builders for local JSON state, templates, uploads, and exports."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,18 +26,26 @@ OPTIONAL_DOCUMENT_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "optiona
 
 
 def candidate_profile_path(base_dir: Path | str) -> Path:
+    """Return the reviewed candidate profile path under `data/`."""
+
     return Path(base_dir) / DATA_DIR / CANDIDATE_PROFILE_FILENAME
 
 
 def runtime_candidate_profile_path(base_dir: Path | str) -> Path:
+    """Return the mutable runtime candidate profile path."""
+
     return Path(base_dir) / RUNTIME_DATA_DIR / CANDIDATE_PROFILE_FILENAME
 
 
 def legacy_profile_path(base_dir: Path | str) -> Path:
+    """Return the legacy profile template path used for migration fallback."""
+
     return Path(base_dir) / DATA_DIR / LEGACY_PROFILE_FILENAME
 
 
 def experience_units_paths(base_dir: Path | str) -> tuple[Path, Path]:
+    """Return runtime and template experience-unit paths, in lookup order."""
+
     root = Path(base_dir)
     return (
         root / RUNTIME_DATA_DIR / EXPERIENCE_UNITS_FILENAME,
@@ -44,6 +54,8 @@ def experience_units_paths(base_dir: Path | str) -> tuple[Path, Path]:
 
 
 def jobs_index_paths(base_dir: Path | str) -> tuple[Path, Path, Path, Path]:
+    """Return runtime and template job/tracker index paths, in lookup order."""
+
     root = Path(base_dir)
     return (
         root / RUNTIME_DATA_DIR / JOBS_INDEX_FILENAME,
@@ -54,14 +66,20 @@ def jobs_index_paths(base_dir: Path | str) -> tuple[Path, Path, Path, Path]:
 
 
 def runtime_job_dir(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable per-job runtime directory."""
+
     return Path(base_dir) / RUNTIME_JOBS_DIR / job_id
 
 
 def template_job_dir(base_dir: Path | str, job_id: str) -> Path:
+    """Return the checked-in per-job template directory."""
+
     return Path(base_dir) / TEMPLATE_JOBS_DIR / job_id
 
 
 def normalized_job_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template normalized-job paths, in lookup order."""
+
     return (
         runtime_job_dir(base_dir, job_id) / NORMALIZED_JOB_FILENAME,
         template_job_dir(base_dir, job_id) / NORMALIZED_JOB_FILENAME,
@@ -69,10 +87,14 @@ def normalized_job_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]
 
 
 def runtime_normalized_job_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable normalized-job path for a saved job workspace."""
+
     return runtime_job_dir(base_dir, job_id) / NORMALIZED_JOB_FILENAME
 
 
 def application_requirements_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template application-requirements paths."""
+
     return (
         runtime_job_dir(base_dir, job_id) / APPLICATION_REQUIREMENTS_FILENAME,
         template_job_dir(base_dir, job_id) / APPLICATION_REQUIREMENTS_FILENAME,
@@ -80,14 +102,20 @@ def application_requirements_paths(base_dir: Path | str, job_id: str) -> tuple[P
 
 
 def runtime_application_requirements_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable application-requirements path for a job."""
+
     return runtime_job_dir(base_dir, job_id) / APPLICATION_REQUIREMENTS_FILENAME
 
 
 def runtime_application_page_snapshot_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable read-only application-page snapshot path."""
+
     return runtime_job_dir(base_dir, job_id) / APPLICATION_PAGE_SNAPSHOT_FILENAME
 
 
 def application_package_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template application-package paths."""
+
     return (
         runtime_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME,
         template_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME,
@@ -95,24 +123,36 @@ def application_package_paths(base_dir: Path | str, job_id: str) -> tuple[Path, 
 
 
 def runtime_application_package_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable application-package JSON path for a job."""
+
     return runtime_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME
 
 
 def application_package_markdown_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the generated Markdown export path for a job package."""
+
     return Path(base_dir) / OUTPUTS_DIR / job_id / APPLICATION_PACKAGE_MARKDOWN_FILENAME
 
 
 def runtime_jobs_index_path(base_dir: Path | str) -> Path:
+    """Return the mutable runtime jobs index path."""
+
     return Path(base_dir) / RUNTIME_DATA_DIR / JOBS_INDEX_FILENAME
 
 
 def runtime_tracker_path(base_dir: Path | str) -> Path:
+    """Return the mutable runtime tracker path."""
+
     return Path(base_dir) / RUNTIME_DATA_DIR / TRACKER_FILENAME
 
 
 def cv_upload_path(base_dir: Path | str, filename: str) -> Path:
+    """Return the runtime upload path for a candidate CV file."""
+
     return Path(base_dir) / CV_UPLOAD_DIR / filename
 
 
 def optional_document_upload_path(base_dir: Path | str, filename: str) -> Path:
+    """Return the runtime upload path for a supporting candidate document."""
+
     return Path(base_dir) / OPTIONAL_DOCUMENT_UPLOAD_DIR / filename

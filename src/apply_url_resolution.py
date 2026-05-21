@@ -1,3 +1,5 @@
+"""Apply URL resolution workflow with deterministic verification and LLM ranking."""
+
 from __future__ import annotations
 
 import json
@@ -91,6 +93,8 @@ JOB_PARAM_PATTERN = re.compile(
 
 
 class ApplyUrlCandidate(BaseModel):
+    """Potential application URL discovered from source-page evidence."""
+
     url: str
     source: Literal[
         "href",
@@ -111,6 +115,8 @@ class ApplyUrlCandidate(BaseModel):
 
 
 class FetchResult(TypedDict, total=False):
+    """Bounded HTTP fetch result used by apply URL resolution."""
+
     requested_url: str
     final_url: str
     html: str
@@ -120,11 +126,15 @@ class FetchResult(TypedDict, total=False):
 
 
 class CandidateExtractionResult(TypedDict):
+    """Static candidate extraction result and immediate rejections."""
+
     candidates: list[ApplyUrlCandidate]
     rejected_candidates: list[RejectedApplyCandidate]
 
 
 class ApplyUrlResolutionState(TypedDict, total=False):
+    """State passed between apply URL resolution graph nodes."""
+
     source_url: str
     title: str
     company: str
@@ -157,6 +167,8 @@ def resolve_apply_url_agentically(
     fetcher: Callable[[str], FetchResult] | None = None,
     ranker: Callable[[ApplyUrlResolutionState], ApplyUrlResolution] | None = None,
 ) -> ApplyUrlResolution:
+    """Resolve a job-preserving application URL for a source job page."""
+
     state = run_apply_url_resolution_graph(
         source_url,
         title=title,
@@ -181,6 +193,8 @@ def run_apply_url_resolution_graph(
     fetcher: Callable[[str], FetchResult] | None = None,
     ranker: Callable[[ApplyUrlResolutionState], ApplyUrlResolution] | None = None,
 ) -> ApplyUrlResolutionState:
+    """Run the apply URL resolution graph with injectable fetch and rank steps."""
+
     normalized_url = validate_source_url(source_url)
     state: ApplyUrlResolutionState = {
         "source_url": normalized_url,
@@ -201,6 +215,8 @@ def run_apply_url_resolution_graph(
 
 
 def build_apply_url_resolution_graph():
+    """Build the LangGraph apply URL resolution graph or sequential fallback."""
+
     try:
         from langgraph.graph import END, StateGraph
     except ImportError:
@@ -326,6 +342,8 @@ def extract_apply_url_candidates(
     *,
     final_source_url: str = "",
 ) -> CandidateExtractionResult:
+    """Extract apply-like URL candidates from static HTML evidence."""
+
     soup = BeautifulSoup(html or "", "html.parser")
     candidates: list[ApplyUrlCandidate] = []
     rejected: list[RejectedApplyCandidate] = []
@@ -410,6 +428,8 @@ def verify_apply_url_candidates(
     source_job_id: str = "",
     fetcher: Callable[[str], FetchResult] | None = None,
 ) -> tuple[list[ApplyUrlCandidate], list[RejectedApplyCandidate]]:
+    """Verify candidates by fetching destinations and checking job identity."""
+
     verified_candidates: list[ApplyUrlCandidate] = []
     rejected: list[RejectedApplyCandidate] = []
     fetch = fetcher or (lambda url: fetch_html(url, max_chars=MAX_CANDIDATE_PAGE_CHARS))
@@ -504,6 +524,8 @@ def verify_apply_url_candidates(
 
 
 def fetch_html(url: str, *, max_chars: int) -> FetchResult:
+    """Fetch bounded HTML for URL extraction or candidate verification."""
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -550,6 +572,8 @@ def fetch_html(url: str, *, max_chars: int) -> FetchResult:
 
 
 def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyUrlResolution:
+    """Rank verified apply URL evidence with the configured LLM profile."""
+
     if not state.get("candidates"):
         return no_candidate_resolution(state)
 
@@ -603,6 +627,8 @@ def rank_apply_url_candidates_with_llm(state: ApplyUrlResolutionState) -> ApplyU
 
 
 def choose_apply_url_deterministically(state: ApplyUrlResolutionState) -> ApplyUrlResolution:
+    """Choose the best verified candidate without calling an LLM."""
+
     verified = state.get("verified_candidates", [])
     rejected = state.get("rejected_candidates", [])
     if verified:
@@ -648,6 +674,8 @@ def choose_apply_url_deterministically(state: ApplyUrlResolutionState) -> ApplyU
 
 
 def no_candidate_resolution(state: ApplyUrlResolutionState) -> ApplyUrlResolution:
+    """Build a not-found resolution from current workflow state."""
+
     return ApplyUrlResolution(
         status="not_found",
         apply_url="",
@@ -662,6 +690,8 @@ def normalize_apply_url_resolution(
     state: ApplyUrlResolutionState,
     resolution: ApplyUrlResolution,
 ) -> ApplyUrlResolution:
+    """Ensure a resolved URL was verified by deterministic workflow evidence."""
+
     if resolution.status != "resolved":
         return resolution
 
@@ -699,6 +729,8 @@ def normalize_apply_url_resolution(
 
 
 def normalize_candidate_url(raw_url: str, source_url: str) -> str:
+    """Normalize relative or fragmented candidate URLs against the source URL."""
+
     url = raw_url.strip()
     if not url:
         return ""
@@ -714,6 +746,8 @@ def rejection_reason_for_url(
     final_source_url: str = "",
     evidence: str = "",
 ) -> str:
+    """Return the immediate rejection reason for a candidate URL, if any."""
+
     normalized = normalize_candidate_url(raw_url, source_url)
     parsed = urlsplit(normalized)
     lowered_url = normalized.lower()
@@ -753,6 +787,8 @@ def find_job_preserving_signals(
     final_url: str = "",
     visible_text: str = "",
 ) -> list[str]:
+    """Find evidence that a candidate destination preserves the selected job."""
+
     signals: list[str] = []
     haystack = f"{candidate_url}\n{final_url}\n{visible_text}".lower()
     for label, value in (
@@ -778,6 +814,8 @@ def find_job_preserving_signals(
 
 
 def html_to_visible_text(html: str) -> str:
+    """Extract visible page text from HTML for deterministic evidence checks."""
+
     soup = BeautifulSoup(html or "", "html.parser")
     for element in soup(["script", "style", "noscript"]):
         element.extract()
@@ -785,6 +823,8 @@ def html_to_visible_text(html: str) -> str:
 
 
 def same_url_identity(first: str, second: str) -> bool:
+    """Return whether two URLs share scheme, host, and normalized path."""
+
     first_parsed = urlsplit(first.strip())
     second_parsed = urlsplit(second.strip())
     first_path = first_parsed.path.rstrip("/") or "/"
@@ -801,6 +841,8 @@ def same_url_identity(first: str, second: str) -> bool:
 
 
 def is_generic_or_blocked_destination(final_url: str, visible_text: str, evidence: str) -> bool:
+    """Return whether a destination looks generic or unrelated to applying."""
+
     combined = f"{final_url} {visible_text[:3000]} {evidence}".lower()
     generic_signals = (
         "talent community",
