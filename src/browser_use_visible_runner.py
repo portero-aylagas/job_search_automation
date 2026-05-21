@@ -75,6 +75,7 @@ async def open_visible_browser(
     )
     try:
         await browser.start()
+        await _close_existing_pages(browser)
         await browser.new_page(url)
     except Exception:
         with contextlib.suppress(Exception):
@@ -152,6 +153,23 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
             loop.add_signal_handler(selected_signal, stop_event.set)
         except NotImplementedError:
             continue
+
+
+async def _close_existing_pages(browser: object) -> int:
+    """Close tabs Browser Use or Chromium opened before the target URL."""
+
+    closed_count = 0
+    get_pages = getattr(browser, "get_pages", None)
+    close_page = getattr(browser, "close_page", None)
+    if get_pages is None or close_page is None:
+        return 0
+
+    pages = await get_pages()
+    for page in pages:
+        with contextlib.suppress(Exception):
+            await close_page(page)
+            closed_count += 1
+    return closed_count
 
 
 def _write_stable_profile_preferences(user_data_dir: Path) -> None:

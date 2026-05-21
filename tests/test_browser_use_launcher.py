@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 from pathlib import Path
@@ -15,7 +16,7 @@ from src.browser_use_launcher import (
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
-from src.browser_use_visible_runner import _write_stable_profile_preferences
+from src.browser_use_visible_runner import _close_existing_pages, _write_stable_profile_preferences
 from src.schemas import CandidateProfile
 
 
@@ -30,6 +31,10 @@ class FakeRunningProcess:
 
     def wait(self, timeout: int) -> None:
         return None
+
+
+def no_stale_processes(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(args=[], returncode=0, stdout="")
 
 
 def test_open_url_with_browser_use_rejects_blank_url(tmp_path: Path) -> None:
@@ -67,6 +72,7 @@ def test_open_url_with_browser_use_starts_visible_runner(
         return FakeRunningProcess()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
     result = open_url_with_browser_use(
@@ -122,6 +128,7 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
         return FakeRunningProcess()
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
     result = open_apply_url_with_browser_use_candidate_agent(
@@ -169,12 +176,20 @@ def test_build_test_application_fill_task_contains_only_cv_upload_and_submit_gua
     assert "random, clearly fake test data" not in task
 
 
-def test_open_url_with_browser_use_rejects_second_active_session(
+def test_open_url_with_browser_use_starts_fresh_when_session_exists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeRunningProcess())
+    launches: list[object] = []
+
+    def fake_popen(*args: object, **kwargs: object) -> FakeRunningProcess:
+        launches.append(args)
+        return FakeRunningProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
 
     open_url_with_browser_use(
         "https://example.com/jobs/automation-engineer",
@@ -182,12 +197,14 @@ def test_open_url_with_browser_use_rejects_second_active_session(
         startup_wait_seconds=0,
     )
 
-    with pytest.raises(BrowserUseLaunchError, match="already running"):
-        open_url_with_browser_use(
-            "https://example.com/jobs/second-role",
-            log_dir=tmp_path,
-            startup_wait_seconds=0,
-        )
+    result = open_url_with_browser_use(
+        "https://example.com/jobs/second-role",
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    assert len(launches) == 2
+    assert result.url == "https://example.com/jobs/second-role"
 
 
 def test_stop_browser_use_session_terminates_process_group(
@@ -195,6 +212,7 @@ def test_stop_browser_use_session_terminates_process_group(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: FakeRunningProcess())
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
     open_url_with_browser_use(
         "https://example.com/jobs/automation-engineer",
         log_dir=tmp_path,
@@ -271,6 +289,25 @@ def test_stable_profile_preferences_disable_translate(tmp_path: Path) -> None:
     assert '"enabled": false' in preferences
     assert '"notifications": 2' in preferences
     assert '"app_locale": "en-US"' in local_state
+
+
+def test_close_existing_pages_closes_tabs_before_navigation() -> None:
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.closed_pages: list[str] = []
+
+        async def get_pages(self) -> list[str]:
+            return ["about:blank", "old-job"]
+
+        async def close_page(self, page: str) -> None:
+            self.closed_pages.append(page)
+
+    browser = FakeBrowser()
+
+    closed_count = asyncio.run(_close_existing_pages(browser))
+
+    assert closed_count == 2
+    assert browser.closed_pages == ["about:blank", "old-job"]
 
 
 def make_profile() -> CandidateProfile:

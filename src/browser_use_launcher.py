@@ -227,6 +227,7 @@ def _launch_browser_use_runner(
 ) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
+    stop_all_browser_use_processes(target_log_dir)
     existing_session = get_active_browser_use_session(target_log_dir)
     if existing_session is not None:
         raise BrowserUseLaunchError(
