@@ -11,3 +11,6 @@ select = ["E", "F", "I", "B", "D100", "D101", "D102", "D103", "D107"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -17,8 +17,10 @@ from src.app_workflow import (
     validate_reviewed_apply_url,
     workflow_trace_payload,
 )
+from src.browser_use_launcher import BrowserUseLaunchError, open_url_with_browser_use
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
+from src.paths import RUNTIME_DATA_DIR
 from src.schemas import JobListing
 from src.ui_components import render_ai_usage_summary, render_workflow_trace
 
@@ -44,14 +46,39 @@ class JobReviewFormState:
     clear_submitted: bool
 
 
-def render_job_url_extraction_form() -> tuple[bool, str]:
+def render_job_url_extraction_form() -> tuple[bool, bool, str]:
     """Render the initial job URL extraction form."""
 
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
-        st.caption("This action uses AI and may perform web search to resolve the apply URL.")
-        extract_submitted = st.form_submit_button("Extract Application Data")
-    return extract_submitted, source_url
+        st.caption(
+            "Extract uses AI to resolve application data. Open launches a visible Browser Use "
+            "session with headless=False."
+        )
+        left, right = st.columns(2)
+        with left:
+            extract_submitted = st.form_submit_button("Extract Application Data")
+        with right:
+            open_submitted = st.form_submit_button("Open URL With Browser Use")
+    return extract_submitted, open_submitted, source_url
+
+
+def handle_job_url_browser_use_open(base_dir: Path, source_url: str) -> bool:
+    """Open the submitted job URL in Browser Use visible mode."""
+
+    try:
+        with st.spinner("Opening visible Browser Use session..."):
+            result = open_url_with_browser_use(
+                source_url,
+                log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
+            )
+    except BrowserUseLaunchError as exc:
+        st.error(str(exc))
+        return False
+
+    st.success(f"Opened Browser Use visible session for {result.url}.")
+    st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
+    return True
 
 
 def handle_job_url_extraction(source_url: str) -> bool:
@@ -275,7 +302,11 @@ def render_job_intake_page(base_dir: Path) -> None:
     if success_message:
         st.success(success_message)
 
-    extract_submitted, source_url = render_job_url_extraction_form()
+    extract_submitted, open_submitted, source_url = render_job_url_extraction_form()
+    if open_submitted:
+        handle_job_url_browser_use_open(base_dir, source_url)
+        return
+
     if extract_submitted:
         if handle_job_url_extraction(source_url):
             st.rerun()

@@ -424,6 +424,9 @@ OPENAI_MODEL=gpt-5.4
 The application should still support non-AI sample/demo flows without requiring
 an API key during early phases.
 
+Browser Use local browser launch also requires a Playwright Chromium runtime as
+described in `Installation -> Browser Use Setup`.
+
 The shared AI configuration boundary lives in `src/llm_client.py`. That module
 reads `OPENAI_API_KEY`, applies the default `OPENAI_MODEL`, and owns the live
 provider calls used by CV extraction, job extraction, requirements discovery,

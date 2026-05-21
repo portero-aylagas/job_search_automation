@@ -8,3 +8,5 @@ langgraph
 requests
 beautifulsoup4
 PyYAML
+browser-use
+uv
