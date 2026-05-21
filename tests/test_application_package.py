@@ -14,8 +14,6 @@ from src.application_package import (
     build_application_artifact_manifest,
     build_missing_information_defaults,
     generate_application_package,
-    generate_application_package_from_template,
-    generate_application_package_with_fallback,
     generate_application_package_with_llm,
     load_application_package,
     reject_application_package,
@@ -189,8 +187,9 @@ def test_generate_application_package_with_llm_uses_creative_package_profile(
     assert package.workflow_trace.workflow_name == "application_package"
 
 
-def test_generate_application_package_falls_back_to_template_when_llm_unavailable(
+def test_generate_application_package_reports_llm_error_without_fallback(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     job = make_job()
 
@@ -202,86 +201,15 @@ def test_generate_application_package_falls_back_to_template_when_llm_unavailabl
         unavailable_llm,
     )
 
-    package = generate_application_package(
-        get_sample_candidate_profile(),
-        get_sample_experience_units(),
-        job,
-        make_requirements(job),
-    )
-
-    artifact_types = [artifact.type for artifact in package.artifacts]
-
-    assert package.job_id == job.id
-    assert package.status == "needs_review"
-    assert "cover_letter" in artifact_types
-    assert "document_upload_checklist" in artifact_types
-    assert "form_answer" in artifact_types
-    assert package.selected_experience_units == ["exp-001", "exp-003"]
-    assert any("Template fallback generated" in note for note in package.generation_notes)
-    assert package.artifacts[0].metadata["traceability"]["source_experience_units"]
-
-
-def test_generate_application_package_with_fallback_uses_llm_when_available(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    job = make_job()
-    calls = []
-
-    def available_llm(candidate_profile, experience_units, received_job, requirements):
-        calls.append((candidate_profile, experience_units, received_job, requirements))
-        return ApplicationPackage(
-            job_id=received_job.id,
-            artifacts=[
-                ApplicationArtifact(
-                    id="summary",
-                    type="application_summary",
-                    label="Application Summary",
-                    required=True,
-                    content="Live draft.",
-                )
-            ],
+    with pytest.raises(RuntimeError, match="Set OPENAI_API_KEY"):
+        generate_application_package(
+            get_sample_candidate_profile(),
+            get_sample_experience_units(),
+            job,
+            make_requirements(job),
         )
 
-    monkeypatch.setattr(
-        "src.application_package.generate_application_package_with_llm",
-        available_llm,
-    )
-
-    package = generate_application_package_with_fallback(
-        get_sample_candidate_profile(),
-        get_sample_experience_units(),
-        job,
-        None,
-    )
-
-    assert len(calls) == 1
-    assert package.artifacts[0].content == "Live draft."
-
-
-def test_template_application_package_uses_manifest_and_missing_defaults() -> None:
-    job = make_job()
-
-    package = generate_application_package_from_template(
-        get_sample_candidate_profile(),
-        get_sample_experience_units(),
-        job,
-        make_requirements(job),
-    )
-
-    document_checklist = next(
-        artifact for artifact in package.artifacts if artifact.type == "document_upload_checklist"
-    )
-    missing_checklist = next(
-        artifact
-        for artifact in package.artifacts
-        if artifact.type == "missing_information_checklist"
-    )
-
-    assert document_checklist.status == "needs_review"
-    assert "CV and references" in document_checklist.content
-    assert "5 MB per file" in document_checklist.content
-    assert "Candidate full name is missing." in missing_checklist.content
-    assert any("Privacy consent" in item for item in package.missing_information)
+    assert load_application_package(tmp_path, job.id) is None
 
 
 def test_manifest_without_requirements_uses_core_artifacts() -> None:
