@@ -27,7 +27,10 @@ from src.application_requirements import (
     save_application_page_snapshot,
     save_application_requirements,
 )
-from src.browser_use_launcher import BrowserUseLaunchError, open_url_with_browser_use
+from src.browser_use_launcher import (
+    BrowserUseLaunchError,
+    open_apply_url_with_browser_use_test_agent,
+)
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationPackage,
@@ -239,14 +242,14 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
         for blocker in blockers:
             st.write(f"- {blocker}")
 
-    st.caption("This action opens the reviewed apply URL with Browser Use navigation.")
+    st.caption("This action opens the reviewed apply URL and asks Browser Use to fill test data.")
     if st.button("Apply To Job", disabled=bool(blockers)):
         if blockers:
             st.error("Complete the required review steps before opening the apply flow.")
             return
         try:
-            with st.spinner("Opening Browser Use on the apply URL..."):
-                result = open_url_with_browser_use(
+            with st.spinner("Starting Browser Use apply test agent..."):
+                result = open_apply_url_with_browser_use_test_agent(
                     str(job.apply_url),
                     log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
                 )
@@ -254,7 +257,7 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
             st.error(str(exc))
             return
 
-        st.success(f"Opened Browser Use visible session for {result.url}.")
+        st.success(f"Started Browser Use apply test agent for {result.url}.")
         st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
 
 

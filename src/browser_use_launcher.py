@@ -18,7 +18,7 @@ SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
 
 @dataclass(frozen=True)
 class BrowserUseOpenResult:
-    """Result returned after starting a visible Browser Use session."""
+    """Result returned after starting a visible Browser Use session or task."""
 
     url: str
     pid: int
@@ -50,9 +50,71 @@ def open_url_with_browser_use(
     """
 
     normalized_url = _require_http_url(url)
+    return _launch_browser_use_runner(
+        normalized_url,
+        log_dir=log_dir,
+        startup_wait_seconds=startup_wait_seconds,
+        agent_task=None,
+    )
+
+
+def open_apply_url_with_browser_use_test_agent(
+    url: str,
+    *,
+    log_dir: Path | str,
+    startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
+) -> BrowserUseOpenResult:
+    """Open an apply URL and start a Browser Use agent that fills test data only."""
+
+    normalized_url = _require_http_url(url)
+    return _launch_browser_use_runner(
+        normalized_url,
+        log_dir=log_dir,
+        startup_wait_seconds=startup_wait_seconds,
+        agent_task=build_test_application_fill_task(normalized_url),
+    )
+
+
+def build_test_application_fill_task(url: str) -> str:
+    """Return the guarded Browser Use task for test-filling an application form."""
+
+    return f"""
+Open this job application page and complete the visible application form for a test run:
+{url}
+
+Use only random, clearly fake test data. Do not use real candidate data.
+Invent plausible values for all required text fields, radio buttons, checkboxes,
+dropdowns, and consent/required acknowledgements that are necessary to mark
+mandatory fields as complete.
+
+Hard safety rules:
+- Never click, press, or activate a button or link named "Weiter & Pruefen",
+  "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
+  or any equivalent button that would proceed to review, submit, or finalize the
+  application.
+- Do not upload files or attachments.
+- Do not click "Anhang hochladen" and do not interact with any file upload
+  control.
+- Stop when all visible mandatory fields are filled or marked, leaving the page
+  ready for manual inspection.
+
+If a required field cannot be safely completed without uploading an attachment
+or proceeding with the application, leave it untouched and report that it is
+blocked. Your final answer should summarize filled fields, skipped upload fields,
+and whether the page is ready for human review.
+""".strip()
+
+
+def _launch_browser_use_runner(
+    normalized_url: str,
+    *,
+    log_dir: Path | str,
+    startup_wait_seconds: float,
+    agent_task: str | None,
+) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = target_log_dir / _build_log_filename()
+    log_path = target_log_dir / _build_log_filename(agent_task=agent_task is not None)
     ready_path = log_path.with_suffix(".ready")
     browser_use_env = _browser_use_environment(target_log_dir)
     repo_root = Path(__file__).resolve().parents[1]
@@ -64,6 +126,8 @@ def open_url_with_browser_use(
         "--ready-file",
         str(ready_path),
     ]
+    if agent_task:
+        command.extend(["--agent-task", agent_task])
 
     with log_path.open("a", encoding="utf-8") as log_file:
         process = subprocess.Popen(
@@ -92,9 +156,10 @@ def _require_http_url(url: str) -> str:
     return normalized_url
 
 
-def _build_log_filename() -> str:
+def _build_log_filename(*, agent_task: bool = False) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"browser-use-job-intake-{timestamp}.log"
+    purpose = "apply-agent" if agent_task else "job-intake"
+    return f"browser-use-{purpose}-{timestamp}.log"
 
 
 def _browser_use_environment(runtime_dir: Path) -> dict[str, str]:

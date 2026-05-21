@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from src.browser_use_launcher import BrowserUseLaunchError, open_url_with_browser_use
+from src.browser_use_launcher import (
+    BrowserUseLaunchError,
+    build_test_application_fill_task,
+    open_apply_url_with_browser_use_test_agent,
+    open_url_with_browser_use,
+)
 
 
 class FakeRunningProcess:
@@ -82,3 +87,50 @@ def test_open_url_with_browser_use_starts_visible_runner(
     assert env["PLAYWRIGHT_BROWSERS_PATH"] == str(tmp_path / "playwright-browsers")
     assert result.pid == 12345
     assert result.log_path.parent == tmp_path
+
+
+def test_open_apply_url_with_browser_use_test_agent_passes_guarded_task(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_popen(
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: object,
+        stderr: int,
+        text: bool,
+        start_new_session: bool,
+        env: dict[str, str],
+    ) -> FakeRunningProcess:
+        captured["command"] = command
+        return FakeRunningProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    result = open_apply_url_with_browser_use_test_agent(
+        "https://example.com/apply/automation-engineer",
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert "--agent-task" in command
+    agent_task = command[command.index("--agent-task") + 1]
+    assert "Weiter & Prüfen" in agent_task
+    assert "Anhang hochladen" in agent_task
+    assert "Do not upload files or attachments." in agent_task
+    assert result.log_path.name.startswith("browser-use-apply-agent-")
+
+
+def test_build_test_application_fill_task_contains_submit_guard() -> None:
+    task = build_test_application_fill_task("https://example.com/apply")
+
+    assert "random, clearly fake test data" in task
+    assert "Never click" in task
+    assert "Weiter & Prüfen" in task
+    assert "Absenden" in task
+    assert "Anhang hochladen" in task
