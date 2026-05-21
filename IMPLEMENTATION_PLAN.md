@@ -367,6 +367,20 @@ form fields discovered later from `apply_url`.
 - package is saved
 - tracker status can move to `application_draft`
 
+### Current Browser Use Pilot
+
+- Browser Use is currently wired only into the Jobs `Apply Assistance` panel,
+  not Job Intake.
+- The current pilot scope is benchmarking guarded browser interaction on real
+  application pages, not autonomous submission.
+- Each run starts a fresh local Browser Use process with an isolated Chromium
+  profile and local reset controls.
+- The current test harness uploads the saved CV and fills exactly one probe
+  field (`Vorname * = TestName`) to verify reliable browser interaction before
+  broader form-filling work continues.
+- Final submission remains out of scope and blocked by explicit agent/task
+  guardrails.
+
 ### Follow-up Tickets
 
 - #34 implements apply-page requirements discovery as the current core Phase 4
