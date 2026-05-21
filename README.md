@@ -334,6 +334,62 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+### Browser Use Setup
+
+The Browser Use apply-assistance flow launches a **local browser session inside
+the current Python environment** from the Jobs page. In WSL, that means the
+browser runtime must be available from WSL, even if you already have Chrome
+installed on Windows.
+
+Activate your project Python environment before running Browser Use setup:
+
+```bash
+cd /home/javi/projects/ironhack_AI_integration/ironhack_projects/job_search_automation
+source .venv/bin/activate
+uvx --version
+```
+
+If `uvx` is available, install the Playwright Chromium runtime used by Browser
+Use:
+
+```bash
+uvx playwright install chromium
+```
+
+Fallback if `uvx` is not available in your shell but Playwright is installed in
+your Python environment:
+
+```bash
+python -m playwright install chromium
+```
+
+If Playwright asks for additional Linux system dependencies, run:
+
+```bash
+uvx playwright install --with-deps chromium
+```
+
+Notes:
+
+- Run these commands from the repository root with your project Python
+  environment activated.
+- The current Browser Use launcher opens a local WSL browser with
+  `headless=False`; it does not attach to a separate Chrome already running on
+  Windows.
+- On WSL, visible browser mode requires a working GUI path such as WSLg.
+- If Browser Use launch fails, check the setup above first. The runtime error
+  message also points back to this section.
+- The Job Intake page no longer launches Browser Use. Browser automation is
+  isolated to the Jobs `Apply Assistance` flow.
+- Each apply-assistance run starts a fresh Browser Use process, uses an
+  isolated Chromium profile, and exposes `Stop Browser Use Session` plus
+  `Kill All Browser Use Processes` controls in the Jobs page.
+- The current Browser Use pilot opens the reviewed apply URL and executes only
+  the reviewed `application_fill_plan.json`: approved field values, approved
+  uploads, blocked fields, and submit guard labels. It stops before any review
+  or submission action.
+- Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
+  runtime setup described here.
 ---
 
 ## Run
