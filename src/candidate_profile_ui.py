@@ -179,8 +179,8 @@ def render_candidate_profile_page(base_dir: Path) -> None:
     candidate_profile = CandidateProfile.model_validate(draft)
 
     render_cv_upload_section(base_dir, candidate_profile)
-    render_optional_documents_section(base_dir, candidate_profile)
     render_cv_extracted_review_section(candidate_profile)
+    render_optional_documents_section(base_dir, candidate_profile)
     render_candidate_preferences_section(candidate_profile)
     render_profile_save_section(base_dir, candidate_profile)
 
@@ -244,7 +244,7 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
     """Render optional document upload controls and merge parsed evidence."""
 
     with st.container(border=True):
-        st.subheader("2. Optional documents")
+        st.subheader("3. Optional documents")
         st.caption("Upload references, certificates, or other supporting documents.")
 
         existing_documents = candidate_profile.candidate_profile.source_documents.optional_documents
@@ -325,7 +325,7 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
     """Render editable CV-extracted fields and save changes into the draft."""
 
     with st.container(border=True):
-        st.subheader("3. Extracted data review")
+        st.subheader("2. Extracted data review")
         profile_data = candidate_profile.candidate_profile
         extracted = profile_data.cv_extracted
 
