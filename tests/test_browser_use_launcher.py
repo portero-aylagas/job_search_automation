@@ -142,7 +142,9 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert isinstance(command, list)
     assert "--agent-task" in command
     agent_task = command[command.index("--agent-task") + 1]
-    assert "CV upload-only test" in agent_task
+    assert "small apply-form test" in agent_task
+    assert 'field labelled "Vorname *"' in agent_task
+    assert 'enter exactly "TestName"' in agent_task
     assert "Do not enter random data" in agent_task
     assert "/tmp/candidate/cv.pdf" in agent_task
     assert "Do not translate the page" in agent_task
@@ -153,14 +155,16 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
 
-def test_build_test_application_fill_task_contains_only_cv_upload_and_submit_guard() -> None:
+def test_build_test_application_fill_task_contains_probe_field_cv_and_submit_guard() -> None:
     task = build_test_application_fill_task(
         "https://example.com/apply",
         make_profile(),
     )
 
-    assert "CV upload-only test" in task
-    assert "Do not fill text fields" in task
+    assert "small apply-form test" in task
+    assert 'field labelled "Vorname *"' in task
+    assert 'enter exactly "TestName"' in task
+    assert 'only non-file form field you may type into is "Vorname *"' in task
     assert "Do not enter random data" in task
     assert 'Upload this CV file' in task
     assert '"/tmp/candidate/cv.pdf"' in task
@@ -171,6 +175,7 @@ def test_build_test_application_fill_task_contains_only_cv_upload_and_submit_gua
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
     assert "Only interact with upload controls" in task
+    assert "Do not type into or modify any other non-file form field" in task
     assert "Do not upload cover letters" in task
     assert "reviewed candidate data" not in task
     assert "random, clearly fake test data" not in task

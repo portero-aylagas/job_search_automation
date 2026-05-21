@@ -150,7 +150,7 @@ def open_apply_url_with_browser_use_candidate_agent(
     log_dir: Path | str,
     startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
 ) -> BrowserUseOpenResult:
-    """Open an apply URL and start a Browser Use agent that only uploads the CV."""
+    """Open an apply URL and start a Browser Use agent for a small upload test."""
 
     normalized_url = _require_http_url(url)
     return _launch_browser_use_runner(
@@ -168,7 +168,7 @@ def build_test_application_fill_task(
     url: str,
     candidate_profile: CandidateProfile,
 ) -> str:
-    """Return the guarded Browser Use task for CV-only upload testing."""
+    """Return the guarded Browser Use task for CV upload and one probe field."""
 
     cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
     cv_instruction = (
@@ -178,12 +178,15 @@ def build_test_application_fill_task(
     )
 
     return f"""
-Open this job application page for a CV upload-only test:
+Open this job application page for a small apply-form test:
 {url}
 
-Do not fill text fields. Do not select radio buttons, checkboxes, dropdowns, or
-consent controls. Do not enter random data. This run is only for testing whether
-the CV upload works.
+Fill exactly one non-file field:
+- Find the field labelled "Vorname *" and enter exactly "TestName".
+
+Do not fill any other text field. Do not select radio buttons, checkboxes,
+dropdowns, or consent controls. Do not enter random data. This run is only for
+testing whether the agent can visibly fill one field and upload the CV.
 
 Before uploading:
 - Do not translate the page and do not switch the page language unless the form
@@ -201,20 +204,24 @@ CV upload instruction:
 {cv_instruction}
 
 Hard safety rules:
+- The only non-file form field you may type into is "Vorname *", and its value
+  must be exactly "TestName".
 - Only interact with upload controls that clearly request a CV, resume, or
   Lebenslauf.
 - Do not upload cover letters, portfolios, certificates, photos, or any other
   attachments.
-- Do not type into or modify any non-file form field.
+- Do not type into or modify any other non-file form field.
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
   "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
   or any equivalent button that would proceed to review, submit, or finalize the
   application.
-- Stop after the CV is uploaded or after you determine that no safe CV upload
-  control is available, leaving the page ready for manual inspection.
+- Stop after "Vorname *" is set to "TestName" and the CV is uploaded, or after
+  you determine that either target action is blocked. Leave the page ready for
+  manual inspection.
 
-Your final answer should summarize whether the CV was uploaded, which upload
-control was used, and whether anything blocked the upload.
+Your final answer should summarize whether "Vorname *" was filled, whether the
+CV was uploaded, which upload control was used, and whether anything blocked the
+test.
 """.strip()
 
 
