@@ -8,13 +8,13 @@ import pytest
 
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
-    build_candidate_application_fill_task,
+    build_test_application_fill_task,
     get_active_browser_use_session,
     open_apply_url_with_browser_use_candidate_agent,
     open_url_with_browser_use,
     stop_browser_use_session,
 )
-from src.schemas import ApplicationPackage, CandidateProfile
+from src.schemas import CandidateProfile
 
 
 class FakeRunningProcess:
@@ -123,7 +123,6 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     result = open_apply_url_with_browser_use_candidate_agent(
         "https://example.com/apply/automation-engineer",
         candidate_profile=make_profile(),
-        application_package=make_package(),
         log_dir=tmp_path,
         startup_wait_seconds=0,
     )
@@ -132,32 +131,26 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     assert isinstance(command, list)
     assert "--agent-task" in command
     agent_task = command[command.index("--agent-task") + 1]
-    assert "Taylor Rivera" in agent_task
-    assert "Automation Engineer" in agent_task
+    assert "random, clearly fake test data" in agent_task
+    assert "/tmp/candidate/cv.pdf" in agent_task
     assert "Weiter & Prüfen" in agent_task
-    assert "Anhang hochladen" in agent_task
-    assert "Do not upload files or attachments." in agent_task
+    assert "Only upload the CV file" in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
 
-def test_build_candidate_application_fill_task_contains_candidate_data_and_submit_guard() -> None:
-    task = build_candidate_application_fill_task(
+def test_build_test_application_fill_task_contains_cv_upload_and_submit_guard() -> None:
+    task = build_test_application_fill_task(
         "https://example.com/apply",
         make_profile(),
-        make_package(),
     )
 
-    assert "reviewed candidate data" in task
-    assert "Taylor Rivera" in task
-    assert "taylor@example.com" in task
-    assert "Python, Playwright" in task
-    assert "Screening Answer 1" in task
-    assert "I am interested in this role because" in task
+    assert "random, clearly fake test data" in task
+    assert 'upload this file: "/tmp/candidate/cv.pdf"' in task
     assert "Never click" in task
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
-    assert "Anhang hochladen" in task
-    assert "random, clearly fake test data" not in task
+    assert "Only upload the CV file" in task
+    assert "reviewed candidate data" not in task
 
 
 def test_open_url_with_browser_use_rejects_second_active_session(
@@ -218,6 +211,12 @@ def make_profile() -> CandidateProfile:
     return CandidateProfile.model_validate(
         {
             "candidate_profile": {
+                "source_documents": {
+                    "cv": {
+                        "file_path": "/tmp/candidate/cv.pdf",
+                        "parsed": True,
+                    }
+                },
                 "cv_extracted": {
                     "identity": {
                         "full_name": "Taylor Rivera",
@@ -243,25 +242,5 @@ def make_profile() -> CandidateProfile:
                     "work_authorization": "eu_authorized",
                 },
             }
-        }
-    )
-
-
-def make_package() -> ApplicationPackage:
-    return ApplicationPackage.model_validate(
-        {
-            "job_id": "example-co-automation-engineer",
-            "artifacts": [
-                {
-                    "id": "screening-question-1",
-                    "type": "form_answer",
-                    "label": "Screening Answer 1",
-                    "status": "draft",
-                    "content": (
-                        "I am interested in this role because it matches my "
-                        "automation experience."
-                    ),
-                }
-            ],
         }
     )

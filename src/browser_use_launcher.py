@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from src.schemas import ApplicationPackage, CandidateProfile
+from src.schemas import CandidateProfile
 
 STARTUP_WAIT_SECONDS = 30.0
 STARTUP_POLL_SECONDS = 0.25
@@ -130,146 +130,64 @@ def open_apply_url_with_browser_use_candidate_agent(
     url: str,
     *,
     candidate_profile: CandidateProfile,
-    application_package: ApplicationPackage,
     log_dir: Path | str,
     startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
 ) -> BrowserUseOpenResult:
-    """Open an apply URL and start a Browser Use agent with candidate data."""
+    """Open an apply URL and start a Browser Use test agent with CV upload context."""
 
     normalized_url = _require_http_url(url)
     return _launch_browser_use_runner(
         normalized_url,
         log_dir=log_dir,
         startup_wait_seconds=startup_wait_seconds,
-        agent_task=build_candidate_application_fill_task(
+        agent_task=build_test_application_fill_task(
             normalized_url,
             candidate_profile,
-            application_package,
         ),
     )
 
 
-def build_candidate_application_fill_task(
+def build_test_application_fill_task(
     url: str,
     candidate_profile: CandidateProfile,
-    application_package: ApplicationPackage,
 ) -> str:
-    """Return the guarded Browser Use task for filling with reviewed candidate data."""
+    """Return the guarded Browser Use task for test-filling with CV upload."""
 
-    candidate_summary = _format_candidate_summary(candidate_profile)
-    package_summary = _format_package_summary(application_package)
+    cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
+    cv_instruction = (
+        f'If the page asks for a CV upload, upload this file: "{cv_file_path}".'
+        if cv_file_path
+        else "No CV file path is available, so skip CV upload fields."
+    )
 
     return f"""
-Open this job application page and complete the visible application form using the
-reviewed candidate data below:
+Open this job application page and complete the visible application form for a test run:
 {url}
 
-Candidate profile:
-{candidate_summary}
+Use only random, clearly fake test data for text fields and other non-file
+inputs. Invent plausible values for required text fields, radio buttons,
+checkboxes, dropdowns, and consent or acknowledgement controls that are
+necessary to mark visible mandatory fields as complete.
 
-Application package:
-{package_summary}
-
-Use the reviewed candidate profile and application package as the source of truth.
-Fill visible required text fields, radio buttons, checkboxes, dropdowns, and
-consent or acknowledgement controls when the answer is supported by the candidate
-data above. Reuse the package wording for screening answers when it matches the
-field being filled.
+CV upload instruction:
+{cv_instruction}
 
 Hard safety rules:
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
   "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
   or any equivalent button that would proceed to review, submit, or finalize the
   application.
-- Do not upload files or attachments.
-- Do not click "Anhang hochladen" and do not interact with any file upload
-  control.
 - Stop when all visible mandatory fields are filled or marked, leaving the page
   ready for manual inspection.
 
-If a required field is missing from the candidate data, use a short neutral
-placeholder only when it is necessary to complete a harmless form field and does
-not invent a sensitive credential, legal declaration, or upload. If a required
-field cannot be safely completed without uploading an attachment, making a legal
-declaration, creating an account, or proceeding with the application, leave it
-untouched and report that it is blocked. Your final answer should summarize
-filled fields, skipped upload fields, blocked fields, and whether the page is
-ready for human review.
+Only upload the CV file when a resume or CV field is required. Do not upload any
+other attachment. Do not create or upload a cover letter, portfolio, certificate,
+or any other document. If a required field cannot be safely completed without
+uploading another document, making a legal declaration, creating an account, or
+proceeding with the application, leave it untouched and report that it is
+blocked. Your final answer should summarize filled fields, uploaded files,
+blocked fields, and whether the page is ready for human review.
 """.strip()
-
-
-def _format_candidate_summary(candidate_profile: CandidateProfile) -> str:
-    identity = candidate_profile.candidate_profile.cv_extracted.identity
-    preferences = candidate_profile.candidate_profile.candidate_preferences
-    extracted = candidate_profile.candidate_profile.cv_extracted
-
-    summary_lines = [
-        f"- Full name: {_fallback_text(identity.full_name)}",
-        f"- Email: {_fallback_text(identity.email)}",
-        f"- Phone: {_fallback_text(identity.phone)}",
-        f"- Location: {_fallback_text(identity.location)}",
-        f"- LinkedIn: {_fallback_text(identity.linkedin_url)}",
-        f"- GitHub: {_fallback_text(identity.github_url)}",
-        f"- Portfolio: {_fallback_text(identity.portfolio_url)}",
-        f"- Target roles: {_join_values(preferences.target_roles)}",
-        f"- Target locations: {_join_values(preferences.target_locations)}",
-        f"- Remote preference: {_join_values(preferences.remote_preference)}",
-        f"- Employment type: {_join_values(preferences.employment_type)}",
-        f"- Seniority level: {_join_values(preferences.seniority_level)}",
-        f"- Availability: {_fallback_text(preferences.availability)}",
-        (
-            "- Salary expectation (EUR): "
-            f"{_format_salary_range(preferences.salary_min_eur, preferences.salary_max_eur)}"
-        ),
-        f"- Work authorization: {_fallback_text(preferences.work_authorization)}",
-        f"- Skills: {_join_values(extracted.skills)}",
-        f"- Languages: {_join_values(extracted.languages)}",
-        f"- Work experience: {_join_values(extracted.work_experience)}",
-        f"- Education: {_join_values(extracted.education)}",
-        f"- Certifications: {_join_values(extracted.certifications)}",
-        f"- Projects: {_join_values(extracted.projects)}",
-    ]
-    return "\n".join(summary_lines)
-
-
-def _format_package_summary(application_package: ApplicationPackage) -> str:
-    if not application_package.artifacts:
-        return "- No generated artifacts are available."
-
-    artifact_blocks: list[str] = []
-    for artifact in application_package.artifacts:
-        content = " ".join(artifact.content.split())
-        if len(content) > 600:
-            content = f"{content[:597]}..."
-        artifact_blocks.append(
-            "\n".join(
-                [
-                    f"- {artifact.label} ({artifact.type}, status={artifact.status}):",
-                    content or "_No content generated._",
-                ]
-            )
-        )
-    return "\n".join(artifact_blocks)
-
-
-def _join_values(values: list[object]) -> str:
-    normalized = [str(value).strip() for value in values if str(value).strip()]
-    return ", ".join(normalized) if normalized else "Not provided"
-
-
-def _fallback_text(value: str) -> str:
-    normalized = value.strip()
-    return normalized or "Not provided"
-
-
-def _format_salary_range(min_salary: int | None, max_salary: int | None) -> str:
-    if min_salary is None and max_salary is None:
-        return "Not provided"
-    if min_salary is None:
-        return f"Up to {max_salary}"
-    if max_salary is None:
-        return f"From {min_salary}"
-    return f"{min_salary} to {max_salary}"
 
 
 def _launch_browser_use_runner(

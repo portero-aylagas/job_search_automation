@@ -267,7 +267,7 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
 
     st.caption(
         "This action opens the reviewed apply URL and asks Browser Use to fill the form "
-        "with reviewed candidate data."
+        "with fake test data and try the saved CV upload."
     )
     if st.button("Apply To Job", disabled=bool(blockers)):
         if blockers:
@@ -278,7 +278,6 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
                 result = open_apply_url_with_browser_use_candidate_agent(
                     str(job.apply_url),
                     candidate_profile=candidate_profile,
-                    application_package=package,
                     log_dir=browser_use_log_dir,
                 )
         except BrowserUseLaunchError as exc:
