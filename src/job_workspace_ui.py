@@ -29,7 +29,7 @@ from src.application_requirements import (
 )
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
-    open_apply_url_with_browser_use_test_agent,
+    open_apply_url_with_browser_use_candidate_agent,
 )
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
@@ -234,6 +234,7 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
     st.divider()
     st.subheader("Apply Assistance")
     requirements = load_application_requirements(base_dir, job.id)
+    candidate_profile = load_candidate_profile(base_dir)
     package = load_application_package(base_dir, job.id)
     blockers = get_apply_assistance_blockers(job, requirements, package)
 
@@ -242,22 +243,27 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
         for blocker in blockers:
             st.write(f"- {blocker}")
 
-    st.caption("This action opens the reviewed apply URL and asks Browser Use to fill test data.")
+    st.caption(
+        "This action opens the reviewed apply URL and asks Browser Use to fill the form "
+        "with reviewed candidate data."
+    )
     if st.button("Apply To Job", disabled=bool(blockers)):
         if blockers:
             st.error("Complete the required review steps before opening the apply flow.")
             return
         try:
-            with st.spinner("Starting Browser Use apply test agent..."):
-                result = open_apply_url_with_browser_use_test_agent(
+            with st.spinner("Starting Browser Use apply agent..."):
+                result = open_apply_url_with_browser_use_candidate_agent(
                     str(job.apply_url),
+                    candidate_profile=candidate_profile,
+                    application_package=package,
                     log_dir=Path(base_dir) / RUNTIME_DATA_DIR / "browser_use",
                 )
         except BrowserUseLaunchError as exc:
             st.error(str(exc))
             return
 
-        st.success(f"Started Browser Use apply test agent for {result.url}.")
+        st.success(f"Started Browser Use apply agent for {result.url}.")
         st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
 
 
