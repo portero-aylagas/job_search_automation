@@ -82,6 +82,8 @@ def test_open_url_with_browser_use_starts_visible_runner(
     ]
     assert command[4] == "--ready-file"
     assert command[5].endswith(".ready")
+    assert command[6] == "--user-data-dir"
+    assert "sessions/browser-use-job-intake-" in command[7]
     assert captured["start_new_session"] is True
     assert captured["text"] is True
     assert captured["stderr"] == subprocess.STDOUT
@@ -133,6 +135,9 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     agent_task = command[command.index("--agent-task") + 1]
     assert "random, clearly fake test data" in agent_task
     assert "/tmp/candidate/cv.pdf" in agent_task
+    assert "Do not translate the page" in agent_task
+    assert "translation prompts" in agent_task
+    assert "cookie, privacy, newsletter, chat" in agent_task
     assert "Weiter & Prüfen" in agent_task
     assert "Only upload the CV file" in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
@@ -146,6 +151,9 @@ def test_build_test_application_fill_task_contains_cv_upload_and_submit_guard() 
 
     assert "random, clearly fake test data" in task
     assert 'upload this file: "/tmp/candidate/cv.pdf"' in task
+    assert "Do not translate the page" in task
+    assert "dismiss them instead of accepting translation" in task
+    assert "least intrusive" in task
     assert "Never click" in task
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task

@@ -10,12 +10,18 @@ import signal
 from pathlib import Path
 
 SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
+STABLE_BROWSER_ARGS = [
+    "--disable-translate",
+    "--disable-features=Translate,TranslateUI",
+    "--lang=en-US",
+]
 
 
 async def open_visible_browser(
     url: str,
     ready_file: Path | None = None,
     agent_task: str | None = None,
+    user_data_dir: Path | None = None,
 ) -> None:
     """Open a URL with Browser Use, optionally run an agent task, then wait."""
 
@@ -32,6 +38,14 @@ async def open_visible_browser(
         headless=False,
         keep_alive=True,
         window_size={"width": 1280, "height": 900},
+        args=STABLE_BROWSER_ARGS,
+        enable_default_extensions=False,
+        user_data_dir=user_data_dir,
+        env={
+            "LANG": "en_US.UTF-8",
+            "LANGUAGE": "en_US:en",
+            "LC_ALL": "en_US.UTF-8",
+        },
     )
     try:
         await browser.start()
@@ -85,8 +99,21 @@ def main() -> None:
         default=None,
         help="Optional Browser Use agent task to run after opening the page.",
     )
+    parser.add_argument(
+        "--user-data-dir",
+        type=Path,
+        default=None,
+        help="Isolated Chromium profile directory for this Browser Use run.",
+    )
     args = parser.parse_args()
-    asyncio.run(open_visible_browser(args.url, args.ready_file, args.agent_task))
+    asyncio.run(
+        open_visible_browser(
+            args.url,
+            args.ready_file,
+            args.agent_task,
+            args.user_data_dir,
+        )
+    )
 
 
 def _install_signal_handlers(stop_event: asyncio.Event) -> None:

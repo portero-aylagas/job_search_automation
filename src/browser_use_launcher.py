@@ -169,6 +169,18 @@ inputs. Invent plausible values for required text fields, radio buttons,
 checkboxes, dropdowns, and consent or acknowledgement controls that are
 necessary to mark visible mandatory fields as complete.
 
+Before filling:
+- Do not translate the page and do not switch the page language unless the form
+  cannot be reached otherwise.
+- Ignore browser translation prompts and site translation prompts. If they block
+  the page, close or dismiss them instead of accepting translation.
+- If a cookie, privacy, newsletter, chat, location, notification, or modal
+  overlay blocks the application form, dismiss it with the least intrusive
+  option that lets you continue. Prefer reject, necessary-only, close, or later
+  over broad marketing consent when those choices are available.
+- Wait for the page to settle after any redirect or popup dismissal before
+  filling fields.
+
 CV upload instruction:
 {cv_instruction}
 
@@ -207,6 +219,7 @@ def _launch_browser_use_runner(
         )
     log_path = target_log_dir / _build_log_filename(agent_task=agent_task is not None)
     ready_path = log_path.with_suffix(".ready")
+    user_data_dir = target_log_dir / "sessions" / log_path.stem
     browser_use_env = _browser_use_environment(target_log_dir)
     repo_root = Path(__file__).resolve().parents[1]
     command = [
@@ -216,6 +229,8 @@ def _launch_browser_use_runner(
         normalized_url,
         "--ready-file",
         str(ready_path),
+        "--user-data-dir",
+        str(user_data_dir),
     ]
     if agent_task:
         command.extend(["--agent-task", agent_task])
