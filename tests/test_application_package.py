@@ -187,6 +187,31 @@ def test_generate_application_package_with_llm_uses_creative_package_profile(
     assert package.workflow_trace.workflow_name == "application_package"
 
 
+def test_generate_application_package_reports_llm_error_without_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    job = make_job()
+
+    def unavailable_llm(candidate_profile, experience_units, received_job, requirements):
+        raise RuntimeError("Set OPENAI_API_KEY before using AI-assisted workflows.")
+
+    monkeypatch.setattr(
+        "src.application_package.generate_application_package_with_llm",
+        unavailable_llm,
+    )
+
+    with pytest.raises(RuntimeError, match="Set OPENAI_API_KEY"):
+        generate_application_package(
+            get_sample_candidate_profile(),
+            get_sample_experience_units(),
+            job,
+            make_requirements(job),
+        )
+
+    assert load_application_package(tmp_path, job.id) is None
+
+
 def test_manifest_without_requirements_uses_core_artifacts() -> None:
     manifest = build_application_artifact_manifest(make_job(), None)
 
