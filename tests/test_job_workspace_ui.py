@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from src.job_intake import create_job_listing
-from src.job_workspace_ui import get_apply_assistance_blockers
+from src.job_workspace_ui import (
+    fill_plan_evidence_quality_label,
+    get_application_fill_plan_review_blockers,
+    get_apply_assistance_blockers,
+)
 from src.schemas import (
+    ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
@@ -46,8 +51,16 @@ def make_profile() -> CandidateProfile:
                 },
                 "cv_extracted": {
                     "identity": {
-                        "full_name": "Taylor Rivera",
+                        "first_name": "Taylor",
+                        "last_name": "Rivera",
                         "email": "taylor@example.com",
+                        "phone": "+49170123456",
+                        "street_address": "Example Street",
+                        "street_number": "12",
+                        "postal_code": "10115",
+                        "city": "Berlin",
+                        "country": "Germany",
+                        "nationality": "Spanish",
                     },
                 },
                 "candidate_preferences": {
@@ -143,6 +156,60 @@ def test_apply_assistance_blocks_missing_or_unreviewed_fill_plan() -> None:
     assert "Review the application fill plan before applying." in blockers
 
 
+def test_apply_assistance_blocks_unresolved_needs_answer_fields() -> None:
+    job = make_job()
+    requirements = make_requirements(job)
+    package = ApplicationPackage(
+        job_id=job.id,
+        status="draft",
+        artifacts=[],
+        missing_information=[],
+        selected_experience_units=[],
+        generation_notes=[],
+    )
+    fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        review_status="reviewed",
+        needs_answer_fields=[
+            ApplicationFillNeedsAnswerField(
+                label="Earliest available start date",
+                reason="No safe candidate or reviewed package value is available.",
+                required=True,
+                input_type="text",
+            )
+        ],
+    )
+
+    blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
+
+    assert "Save reviewed values for all fields needing answers." in blockers
+
+
+def test_fill_plan_review_blockers_require_resolved_needs_answer_fields() -> None:
+    job = make_job()
+    fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        review_status="draft",
+        needs_answer_fields=[
+            ApplicationFillNeedsAnswerField(
+                label="Earliest available start date",
+                reason="No safe candidate or reviewed package value is available.",
+                required=True,
+                input_type="text",
+            )
+        ],
+    )
+
+    assert get_application_fill_plan_review_blockers(fill_plan) == [
+        "Save reviewed values for all fields needing answers."
+    ]
+
+    resolved_plan = fill_plan.model_copy(update={"needs_answer_fields": []})
+    assert get_application_fill_plan_review_blockers(resolved_plan) == []
+
+
 def test_apply_assistance_blocks_rejected_package() -> None:
     job = make_job()
     requirements = make_requirements(job)
@@ -164,3 +231,9 @@ def test_apply_assistance_blocks_rejected_package() -> None:
     blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
 
     assert "Regenerate or manually edit the rejected application package." in blockers
+
+
+def test_fill_plan_evidence_quality_labels() -> None:
+    assert fill_plan_evidence_quality_label("literal_verified") == "Literal evidence found"
+    assert fill_plan_evidence_quality_label("partial_match") == "Partial evidence found"
+    assert fill_plan_evidence_quality_label("interpreted_only") == "Interpreted only"

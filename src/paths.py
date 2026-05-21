@@ -114,6 +114,15 @@ def runtime_application_page_snapshot_path(base_dir: Path | str, job_id: str) ->
     return runtime_job_dir(base_dir, job_id) / APPLICATION_PAGE_SNAPSHOT_FILENAME
 
 
+def application_page_snapshot_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template application-page snapshot paths."""
+
+    return (
+        runtime_job_dir(base_dir, job_id) / APPLICATION_PAGE_SNAPSHOT_FILENAME,
+        template_job_dir(base_dir, job_id) / APPLICATION_PAGE_SNAPSHOT_FILENAME,
+    )
+
+
 def application_package_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
     """Return runtime and template application-package paths."""
 

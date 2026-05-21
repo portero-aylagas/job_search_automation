@@ -120,6 +120,8 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
 
     assert extracted.identity == CandidateCVIdentity(
         full_name="Taylor Rivera",
+        first_name="Taylor",
+        last_name="Rivera",
         email="taylor@example.com",
     )
     assert extracted.work_experience == ["Automation Engineer at Example Co"]
@@ -242,6 +244,34 @@ def test_extract_cv_data_with_llm_normalizes_missing_fields(monkeypatch) -> None
     assert extracted.identity == CandidateCVIdentity()
     assert extracted.workflow_trace is not None
     assert extracted.workflow_trace.operation == "AI CV extraction"
+
+
+def test_normalize_cv_extracted_cleans_review_list_items() -> None:
+    response = LLMCandidateCVExtractedResponse(
+        work_experience=[
+            "Engineering Specialist - Sample Organization, Sample City (2020-2024)\n"
+            "- Built internal workflow systems.",
+            "Engineering Specialist - Sample Organization, Sample City "
+            "(2020-2024)\nBuilt internal workflow systems.",
+        ],
+        education=[
+            "Sample Institute, Sample City - M.Sc. Engineering, 2020-2022\n"
+            "Master thesis: Improving quality checks in multi-stage production workflows"
+        ],
+        skills=["* Python", "Python", "1. SQL"],
+    )
+
+    extracted = cv_extraction.normalize_cv_extracted(response)
+
+    assert extracted.work_experience == [
+        "Engineering Specialist - Sample Organization, Sample City (2020-2024)\n"
+        "Built internal workflow systems."
+    ]
+    assert extracted.education == [
+        "Sample Institute, Sample City - M.Sc. Engineering, 2020-2022",
+        "Master thesis: Improving quality checks in multi-stage production workflows",
+    ]
+    assert extracted.skills == ["Python", "SQL"]
 
 
 def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) -> None:

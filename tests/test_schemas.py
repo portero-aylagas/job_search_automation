@@ -5,6 +5,7 @@ from src.schemas import (
     ApplicationArtifact,
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
+    ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationFillUploadFile,
     ApplicationPackage,
@@ -24,9 +25,17 @@ def test_candidate_profile_round_trip() -> None:
             "cv_extracted": {
                 "identity": {
                     "full_name": "Taylor Rivera",
+                    "first_name": "Taylor",
+                    "last_name": "Rivera",
                     "email": "taylor@example.com",
                     "phone": "+49 123 456",
                     "location": "Remote",
+                    "street_address": "Example Street",
+                    "street_number": "12",
+                    "postal_code": "10115",
+                    "city": "Berlin",
+                    "country": "Germany",
+                    "nationality": "Spanish",
                     "linkedin_url": "https://linkedin.com/in/taylor",
                     "github_url": "https://github.com/taylor",
                     "portfolio_url": "",
@@ -55,6 +64,28 @@ def test_candidate_profile_round_trip() -> None:
     reloaded = CandidateProfile.model_validate(profile.model_dump(mode="json"))
 
     assert reloaded == profile
+
+
+def test_candidate_identity_splits_legacy_full_name_and_normalizes_contact() -> None:
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "cv_extracted": {
+                    "identity": {
+                        "full_name": " Taylor Rivera ",
+                        "email": " TAYLOR@EXAMPLE.COM ",
+                        "phone": " 00 49 170 123 456 ",
+                    },
+                },
+            },
+        }
+    )
+
+    identity = profile.candidate_profile.cv_extracted.identity
+    assert identity.first_name == "Taylor"
+    assert identity.last_name == "Rivera"
+    assert identity.email == "taylor@example.com"
+    assert identity.phone == "+49170123456"
 
 
 def test_candidate_profile_coerces_legacy_optional_document_paths() -> None:
@@ -313,6 +344,7 @@ def test_application_fill_plan_round_trip() -> None:
                 value="Taylor",
                 required=True,
                 input_type="text",
+                options=["Taylor"],
                 source="candidate_profile.cv_extracted.identity.full_name",
                 confidence="high",
             )
@@ -327,12 +359,25 @@ def test_application_fill_plan_round_trip() -> None:
                 confidence="high",
             )
         ],
+        needs_answer_fields=[
+            ApplicationFillNeedsAnswerField(
+                label="Earliest available start date",
+                name="start_date",
+                required=True,
+                input_type="text",
+                options=["Immediately", "After notice period"],
+                reason="No safe candidate or reviewed package value is available.",
+                source="application_requirements",
+                confidence="medium",
+            )
+        ],
         blocked_fields=[
             ApplicationFillBlockedField(
                 label="Privacy acknowledgement",
                 reason="Consent requires user review.",
                 required=True,
                 input_type="checkbox",
+                options=["true", "false"],
                 source="application_requirements",
                 confidence="high",
             )

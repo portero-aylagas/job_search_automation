@@ -224,10 +224,26 @@ def build_missing_information_defaults(
     profile_data = candidate_profile.candidate_profile
     identity = profile_data.cv_extracted.identity
 
-    if not identity.full_name.strip():
-        missing.append("Candidate full name is missing.")
+    if not identity.first_name.strip():
+        missing.append("Candidate first name is missing.")
+    if not identity.last_name.strip():
+        missing.append("Candidate surname is missing.")
     if not identity.email.strip():
         missing.append("Candidate email is missing.")
+    if not identity.phone.strip():
+        missing.append("Candidate phone is missing.")
+    if not identity.street_address.strip():
+        missing.append("Candidate street is missing.")
+    if not identity.street_number.strip():
+        missing.append("Candidate street number is missing.")
+    if not identity.city.strip():
+        missing.append("Candidate city is missing.")
+    if not identity.postal_code.strip():
+        missing.append("Candidate postal code is missing.")
+    if not identity.country.strip():
+        missing.append("Candidate country of residence is missing.")
+    if not identity.nationality.strip():
+        missing.append("Candidate nationality is missing.")
     if not profile_data.source_documents.cv.file_path.strip():
         missing.append("Candidate CV file is missing.")
     if not profile_data.candidate_preferences.target_locations:

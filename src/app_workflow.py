@@ -12,6 +12,7 @@ from src.candidate_profile import validate_candidate_profile
 from src.job_intake import validate_apply_url
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, extract_job_data_from_url
 from src.paths import (
+    application_page_snapshot_paths,
     application_requirements_paths,
     candidate_profile_path,
     experience_units_paths,
@@ -23,6 +24,7 @@ from src.paths import (
 from src.sample_data import bootstrap_sample_data
 from src.schemas import (
     AIWorkflowTrace,
+    ApplicationPageSnapshot,
     ApplicationRequirements,
     CandidateProfile,
     ExperienceUnit,
@@ -129,6 +131,20 @@ def load_application_requirements(
         return load_model(runtime_path, ApplicationRequirements, default=None)
     if template_path.exists():
         return load_model(template_path, ApplicationRequirements, default=None)
+    return None
+
+
+def load_application_page_snapshot(
+    base_dir: Path | str,
+    job_id: str,
+) -> ApplicationPageSnapshot | None:
+    """Load an application-page snapshot from runtime data or templates."""
+
+    runtime_path, template_path = application_page_snapshot_paths(base_dir, job_id)
+    if runtime_path.exists():
+        return load_model(runtime_path, ApplicationPageSnapshot, default=None)
+    if template_path.exists():
+        return load_model(template_path, ApplicationPageSnapshot, default=None)
     return None
 
 

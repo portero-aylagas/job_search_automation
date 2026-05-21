@@ -20,6 +20,7 @@ from src.browser_use_visible_runner import _close_existing_pages, _write_stable_
 from src.schemas import (
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
+    ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationFillUploadFile,
 )
@@ -154,7 +155,12 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert '"field_values"' in agent_task
     assert '"upload_files"' in agent_task
     assert '"blocked_fields"' in agent_task
+    assert '"accept_terms_and_privacy"' not in agent_task
+    assert '"interpreted_label": "Vorname"' in agent_task
+    assert '"literal_evidence": [' in agent_task
+    assert '"consent_privacy_gate_fields"' not in agent_task
     assert '"value": "Taylor"' in agent_task
+    assert '"value": "true"' in agent_task
     assert '"label": "Lebenslauf"' in agent_task
     assert "/tmp/candidate/cv.pdf" in agent_task
     assert "Do not translate the page" in agent_task
@@ -165,6 +171,13 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "Never click upload controls" in agent_task
     assert "Never type or paste the CV file path" in agent_task
     assert "Never touch fields listed in blocked_fields" in agent_task
+    assert "accept_terms_and_privacy is true" not in agent_task
+    assert "consent_privacy_gate_fields" not in agent_task
+    assert "semantic hints" in agent_task
+    assert "guaranteed live page" in agent_task
+    assert "evidence_status is \"interpreted_only\"" in agent_task
+    assert "intentionally reviewed blank value" in agent_task
+    assert "value \"false\" means leave it unchecked" in agent_task
     assert "candidate_profile" not in agent_task
     assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
@@ -177,8 +190,14 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert '"field_values"' in task
     assert '"upload_files"' in task
     assert '"blocked_fields"' in task
+    assert '"accept_terms_and_privacy"' not in task
+    assert '"interpreted_label": "Vorname"' in task
+    assert '"literal_evidence": [' in task
+    assert '"consent_privacy_gate_fields"' not in task
     assert '"label": "Vorname"' in task
     assert '"value": "Taylor"' in task
+    assert '"label": "Privacy acknowledgement"' in task
+    assert '"value": "true"' in task
     assert "Upload only files listed in upload_files" in task
     assert '"/tmp/candidate/cv.pdf"' in task
     assert "Do not translate the page" in task
@@ -188,12 +207,96 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "Weiter & Prüfen" in task
     assert "Absenden" in task
     assert "Never touch fields listed in blocked_fields" in task
+    assert "accept_terms_and_privacy is true" not in task
+    assert "semantic hints" in task
+    assert "guaranteed live page" in task
+    assert "Do not force actions against text or controls" in task
     assert "Never click upload controls" in task
     assert "Never type or paste the CV file path" in task
     assert "Do not fill, select, type into, click, or modify any field" in task
+    assert "intentionally reviewed blank value" in task
+    assert "split reviewed values on semicolons" in task
     assert "If upload_file reports an error" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
+
+
+def test_build_fill_plan_application_task_omits_unresolved_needs_answer_fields() -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.needs_answer_fields.append(
+        ApplicationFillNeedsAnswerField(
+            label="Earliest available start date",
+            reason="No safe candidate or reviewed package value is available.",
+            required=True,
+            input_type="text",
+        )
+    )
+
+    task = build_fill_plan_application_task(fill_plan)
+
+    assert '"needs_answer_fields"' not in task
+    assert "Earliest available start date" not in task
+
+
+def test_open_apply_url_blocks_unresolved_needs_answer_fields(tmp_path: Path) -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.needs_answer_fields.append(
+        ApplicationFillNeedsAnswerField(
+            label="Earliest available start date",
+            reason="No safe candidate or reviewed package value is available.",
+            required=True,
+            input_type="text",
+        )
+    )
+
+    with pytest.raises(BrowserUseLaunchError, match="Save reviewed values"):
+        open_apply_url_with_browser_use_fill_plan(
+            "https://example.com/apply/automation-engineer",
+            fill_plan=fill_plan,
+            log_dir=tmp_path,
+        )
+
+
+def test_build_fill_plan_application_task_includes_promoted_manual_review_values() -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.field_values.append(
+        ApplicationFillFieldValue(
+            label="Earliest available start date",
+            value="Immediately",
+            required=True,
+            input_type="text",
+            source="manual_review",
+            confidence="high",
+        )
+    )
+
+    task = build_fill_plan_application_task(fill_plan)
+
+    assert '"label": "Earliest available start date"' in task
+    assert '"value": "Immediately"' in task
+    assert '"source": "manual_review"' in task
+
+
+def test_open_apply_url_blocks_unreviewed_blocked_fields(tmp_path: Path) -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.blocked_fields.append(
+        ApplicationFillBlockedField(
+            label="Unreviewed privacy gate",
+            reason="Consent requires user review.",
+            required=True,
+            input_type="checkbox",
+            source="application_requirements",
+            confidence="medium",
+            evidence_status="interpreted_only",
+        )
+    )
+
+    with pytest.raises(BrowserUseLaunchError, match="previously blocked"):
+        open_apply_url_with_browser_use_fill_plan(
+            "https://example.com/apply/automation-engineer",
+            fill_plan=fill_plan,
+            log_dir=tmp_path,
+        )
 
 
 def test_open_url_with_browser_use_starts_fresh_when_session_exists(
@@ -343,6 +446,21 @@ def make_fill_plan() -> ApplicationFillPlan:
                 input_type="text",
                 source="manual_review",
                 confidence="high",
+                literal_evidence=["Vorname"],
+                evidence_source="control_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Privacy acknowledgement",
+                value="true",
+                required=True,
+                input_type="checkbox",
+                options=["true", "false"],
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Privacy acknowledgement"],
+                evidence_source="form_label",
+                evidence_status="literal_verified",
             )
         ],
         upload_files=[
@@ -353,17 +471,11 @@ def make_fill_plan() -> ApplicationFillPlan:
                 required=True,
                 source="manual_review",
                 confidence="high",
+                literal_evidence=["Lebenslauf"],
+                evidence_source="evidence_match",
+                evidence_status="literal_verified",
             )
         ],
-        blocked_fields=[
-            ApplicationFillBlockedField(
-                label="Privacy acknowledgement",
-                reason="Consent requires user review.",
-                required=True,
-                input_type="checkbox",
-                source="application_requirements",
-                confidence="high",
-            )
-        ],
+        blocked_fields=[],
         submit_guard_labels=["Weiter & Prüfen", "Submit"],
     )

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
 from src.schemas import (
     CandidateCVExtracted,
     CandidateProfile,
     CandidateSupplementalExtracted,
 )
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_DIGIT_PATTERN = re.compile(r"\d")
 
 
 def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
@@ -21,10 +26,31 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
 
     if not profile.source_documents.cv.file_path.strip():
         errors.append("Upload CV")
-    if not profile.cv_extracted.identity.full_name.strip():
-        errors.append("Full name")
-    if not profile.cv_extracted.identity.email.strip():
+    identity = profile.cv_extracted.identity
+    if not identity.first_name.strip():
+        errors.append("First name")
+    if not identity.last_name.strip():
+        errors.append("Surname")
+    if not identity.email.strip():
         errors.append("Email")
+    elif not is_valid_email(identity.email):
+        errors.append("Email must be valid")
+    if not identity.phone.strip():
+        errors.append("Phone")
+    elif len(PHONE_DIGIT_PATTERN.findall(identity.phone)) < 7:
+        errors.append("Phone must be valid")
+    if not identity.street_address.strip():
+        errors.append("Street")
+    if not identity.street_number.strip():
+        errors.append("Street number")
+    if not identity.city.strip():
+        errors.append("City")
+    if not identity.postal_code.strip():
+        errors.append("Postal code")
+    if not identity.country.strip():
+        errors.append("Country of residence")
+    if not identity.nationality.strip():
+        errors.append("Nationality")
     if not profile.candidate_preferences.target_roles:
         errors.append("Target roles")
     if not profile.candidate_preferences.target_locations:
@@ -54,6 +80,12 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
         errors.append("Work authorization")
 
     return errors
+
+
+def is_valid_email(value: str) -> bool:
+    """Return whether an email value is non-empty and syntactically plausible."""
+
+    return EMAIL_PATTERN.fullmatch(value.strip()) is not None
 
 
 def merge_supplemental_extracted_data(

@@ -13,7 +13,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from src.schemas import ApplicationFillPlan
+from src.application_fill_plan import get_application_fill_plan_review_blockers
+from src.schemas import (
+    ApplicationFillBlockedField,
+    ApplicationFillFieldValue,
+    ApplicationFillPlan,
+    ApplicationFillUploadFile,
+)
 
 STARTUP_WAIT_SECONDS = 30.0
 STARTUP_POLL_SECONDS = 0.25
@@ -155,6 +161,9 @@ def open_apply_url_with_browser_use_fill_plan(
     normalized_url = _require_http_url(url)
     if fill_plan.review_status != "reviewed":
         raise BrowserUseLaunchError("Review the application fill plan before applying.")
+    review_blockers = get_application_fill_plan_review_blockers(fill_plan)
+    if review_blockers:
+        raise BrowserUseLaunchError(" ".join(review_blockers))
     return _launch_browser_use_runner(
         normalized_url,
         log_dir=log_dir,
@@ -164,21 +173,19 @@ def open_apply_url_with_browser_use_fill_plan(
     )
 
 
-def build_fill_plan_application_task(
-    fill_plan: ApplicationFillPlan,
-) -> str:
+def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
     """Return the guarded Browser Use task for a reviewed application fill plan."""
 
     execution_payload = {
         "review_status": fill_plan.review_status,
         "field_values": [
-            field.model_dump(mode="json") for field in fill_plan.field_values
+            _fill_plan_payload_item(field) for field in fill_plan.field_values
         ],
         "upload_files": [
-            upload.model_dump(mode="json") for upload in fill_plan.upload_files
+            _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
         ],
         "blocked_fields": [
-            field.model_dump(mode="json") for field in fill_plan.blocked_fields
+            _fill_plan_payload_item(field) for field in fill_plan.blocked_fields
         ],
         "submit_guard_labels": fill_plan.submit_guard_labels,
     }
@@ -192,6 +199,14 @@ Reviewed application fill plan:
 {payload}
 
 Before filling or uploading:
+- Prefer matching controls by literal_evidence when literal_evidence is
+  present. literal_evidence contains exact or near-exact text captured from the
+  saved application_page_snapshot.json.
+- Treat interpreted_label and label as semantic hints, not guaranteed live page
+  text. When evidence_status is "interpreted_only" or literal_evidence is empty,
+  do not assume that label text is present on the live page.
+- Do not force actions against text or controls that are not present on the live
+  page.
 - Do not translate the page and do not switch the page language unless the form
   cannot be reached otherwise.
 - Ignore browser translation prompts and site translation prompts. If they block
@@ -205,12 +220,23 @@ Before filling or uploading:
 
 Hard safety rules:
 - Fill only fields listed in field_values.
+- If a listed field has an empty value and required is false, treat it as an
+  intentionally reviewed blank value. Leave that matching control blank or
+  unchecked, and report it as intentionally blank.
+- For checkbox fields, value "true" means check/confirm the matching control
+  and value "false" means leave it unchecked or uncheck it if needed.
+- For checkbox_group or multiselect fields, split reviewed values on semicolons
+  when semicolons are present; otherwise treat the whole value as one exact
+  option label.
 - Upload only files listed in upload_files, using Browser Use's upload_file
   action directly on matching upload controls.
 - Never click upload controls to open the operating-system file picker.
 - Never type or paste the CV file path, or any other file path, into any page
   field or file picker.
 - Never touch fields listed in blocked_fields.
+- Leave sensitive fields such as disability, referral, internal employee status,
+  optional group sharing, and optional consent/marketing choices untouched
+  unless they are explicitly listed in field_values.
 - Do not fill, select, type into, click, or modify any field that is not listed
   in field_values or upload_files.
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
@@ -295,6 +321,14 @@ def _launch_browser_use_runner(
 
 def _fill_plan_available_file_paths(fill_plan: ApplicationFillPlan) -> list[Path]:
     return [Path(upload.file_path) for upload in fill_plan.upload_files if upload.file_path]
+
+
+def _fill_plan_payload_item(
+    item: ApplicationFillFieldValue | ApplicationFillUploadFile | ApplicationFillBlockedField,
+) -> dict[str, object]:
+    payload = item.model_dump(mode="json")
+    payload["interpreted_label"] = item.label
+    return payload
 
 
 def _require_http_url(url: str) -> str:

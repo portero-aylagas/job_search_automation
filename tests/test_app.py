@@ -18,8 +18,16 @@ def test_validate_candidate_profile_reports_missing_required_fields() -> None:
     errors = app.validate_candidate_profile(CandidateProfile())
 
     assert "Upload CV" in errors
-    assert "Full name" in errors
+    assert "First name" in errors
+    assert "Surname" in errors
     assert "Email" in errors
+    assert "Phone" in errors
+    assert "Street" in errors
+    assert "Street number" in errors
+    assert "City" in errors
+    assert "Postal code" in errors
+    assert "Country of residence" in errors
+    assert "Nationality" in errors
     assert "Target roles" in errors
     assert "Remote preference" in errors
     assert "Career level" in errors
@@ -35,7 +43,18 @@ def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
             "candidate_profile": {
                 "source_documents": {"cv": {"file_path": "/tmp/cv.pdf", "parsed": True}},
                 "cv_extracted": {
-                    "identity": {"full_name": "Taylor Rivera", "email": "taylor@example.com"},
+                    "identity": {
+                        "first_name": "Taylor",
+                        "last_name": "Rivera",
+                        "email": "taylor@example.com",
+                        "phone": "+49170123456",
+                        "street_address": "Example Street",
+                        "street_number": "12",
+                        "postal_code": "10115",
+                        "city": "Berlin",
+                        "country": "Germany",
+                        "nationality": "Spanish",
+                    },
                 },
                 "candidate_preferences": {
                     "target_roles": ["Automation Engineer"],
@@ -109,8 +128,16 @@ def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfi
                 },
                 "cv_extracted": {
                     "identity": {
-                        "full_name": "Taylor Rivera",
+                        "first_name": "Taylor",
+                        "last_name": "Rivera",
                         "email": "taylor@example.com",
+                        "phone": "+49170123456",
+                        "street_address": "Example Street",
+                        "street_number": "12",
+                        "postal_code": "10115",
+                        "city": "Berlin",
+                        "country": "Germany",
+                        "nationality": "Spanish",
                     },
                 },
                 "candidate_preferences": {

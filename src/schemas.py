@@ -123,17 +123,80 @@ class CandidateCVIdentity(BaseModel):
     """Identity and contact fields extracted from a candidate CV."""
 
     full_name: str = ""
+    first_name: str = ""
+    last_name: str = ""
     salutation: str = ""
     email: str = ""
     phone: str = ""
     location: str = ""
     street_address: str = ""
+    street_number: str = ""
     postal_code: str = ""
     city: str = ""
     country: str = ""
+    nationality: str = ""
     linkedin_url: str = ""
     github_url: str = ""
     portfolio_url: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_identity_layout(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        first_name = _normalize_text_value(data.get("first_name"))
+        last_name = _normalize_text_value(data.get("last_name"))
+        full_name = _normalize_text_value(data.get("full_name"))
+
+        if full_name and (not first_name or not last_name):
+            split_first, split_last = _split_full_name_value(full_name)
+            data["first_name"] = first_name or split_first
+            data["last_name"] = last_name or split_last
+        if not full_name and (first_name or last_name):
+            data["full_name"] = " ".join(item for item in (first_name, last_name) if item)
+
+        return data
+
+    @field_validator(
+        "full_name",
+        "first_name",
+        "last_name",
+        "salutation",
+        "location",
+        "street_address",
+        "street_number",
+        "postal_code",
+        "city",
+        "country",
+        "nationality",
+        "linkedin_url",
+        "github_url",
+        "portfolio_url",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_text_field(cls, value: object) -> str:
+        return _normalize_text_value(value)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, value: object) -> str:
+        return _normalize_email_value(value)
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def _normalize_phone(cls, value: object) -> str:
+        return _normalize_phone_value(value)
+
+    @model_validator(mode="after")
+    def _sync_full_name(self) -> CandidateCVIdentity:
+        if not self.full_name and (self.first_name or self.last_name):
+            self.full_name = " ".join(
+                item for item in (self.first_name, self.last_name) if item
+            )
+        return self
 
 
 class CandidateCVExtracted(BaseModel):
@@ -332,6 +395,40 @@ def _normalize_single_choice(value: object, aliases: dict[str, str]) -> str:
     if not item:
         return ""
     return aliases.get(item, item)
+
+
+def _normalize_text_value(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _normalize_email_value(value: object) -> str:
+    return _normalize_text_value(value).lower()
+
+
+def _normalize_phone_value(value: object) -> str:
+    raw_value = _normalize_text_value(value)
+    if not raw_value:
+        return ""
+
+    normalized = re.sub(r"[^\d+]", "", raw_value)
+    if normalized.startswith("00"):
+        normalized = f"+{normalized[2:]}"
+    if normalized.count("+") > 1:
+        normalized = normalized.replace("+", "")
+    if "+" in normalized and not normalized.startswith("+"):
+        normalized = normalized.replace("+", "")
+    return normalized
+
+
+def _split_full_name_value(full_name: str) -> tuple[str, str]:
+    parts = [part for part in full_name.strip().split() if part]
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -616,6 +713,19 @@ class ApplicationPackage(BaseModel):
 
 
 ApplicationFillPlanReviewStatus = Literal["draft", "reviewed"]
+ApplicationFillEvidenceSource = Literal[
+    "control_label",
+    "form_label",
+    "evidence_match",
+    "visible_text_excerpt",
+    "raw_html_excerpt",
+    "interpreted_only",
+]
+ApplicationFillEvidenceStatus = Literal[
+    "literal_verified",
+    "partial_match",
+    "interpreted_only",
+]
 
 
 class ApplicationFillFieldValue(BaseModel):
@@ -626,8 +736,12 @@ class ApplicationFillFieldValue(BaseModel):
     name: str = ""
     required: bool = False
     input_type: str = ""
+    options: list[str] = Field(default_factory=list)
     source: str = ""
     confidence: ConfidenceLevel = "medium"
+    literal_evidence: list[str] = Field(default_factory=list)
+    evidence_source: ApplicationFillEvidenceSource = "interpreted_only"
+    evidence_status: ApplicationFillEvidenceStatus = "interpreted_only"
 
 
 class ApplicationFillUploadFile(BaseModel):
@@ -639,6 +753,9 @@ class ApplicationFillUploadFile(BaseModel):
     required: bool = False
     source: str = ""
     confidence: ConfidenceLevel = "medium"
+    literal_evidence: list[str] = Field(default_factory=list)
+    evidence_source: ApplicationFillEvidenceSource = "interpreted_only"
+    evidence_status: ApplicationFillEvidenceStatus = "interpreted_only"
 
 
 class ApplicationFillBlockedField(BaseModel):
@@ -649,8 +766,28 @@ class ApplicationFillBlockedField(BaseModel):
     name: str = ""
     required: bool = False
     input_type: str = ""
+    options: list[str] = Field(default_factory=list)
     source: str = ""
     confidence: ConfidenceLevel = "medium"
+    literal_evidence: list[str] = Field(default_factory=list)
+    evidence_source: ApplicationFillEvidenceSource = "interpreted_only"
+    evidence_status: ApplicationFillEvidenceStatus = "interpreted_only"
+
+
+class ApplicationFillNeedsAnswerField(BaseModel):
+    """Known safe application field that needs a reviewer-supplied answer."""
+
+    label: str
+    name: str = ""
+    required: bool = False
+    input_type: str = ""
+    options: list[str] = Field(default_factory=list)
+    reason: str
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+    literal_evidence: list[str] = Field(default_factory=list)
+    evidence_source: ApplicationFillEvidenceSource = "interpreted_only"
+    evidence_status: ApplicationFillEvidenceStatus = "interpreted_only"
 
 
 class ApplicationFillPlan(BaseModel):
@@ -661,6 +798,9 @@ class ApplicationFillPlan(BaseModel):
     review_status: ApplicationFillPlanReviewStatus = "draft"
     field_values: list[ApplicationFillFieldValue] = Field(default_factory=list)
     upload_files: list[ApplicationFillUploadFile] = Field(default_factory=list)
+    needs_answer_fields: list[ApplicationFillNeedsAnswerField] = Field(
+        default_factory=list
+    )
     blocked_fields: list[ApplicationFillBlockedField] = Field(default_factory=list)
     submit_guard_labels: list[str] = Field(default_factory=list)
 
