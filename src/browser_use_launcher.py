@@ -161,6 +161,7 @@ def open_apply_url_with_browser_use_candidate_agent(
             normalized_url,
             candidate_profile,
         ),
+        available_file_paths=_candidate_available_file_paths(candidate_profile),
     )
 
 
@@ -231,6 +232,7 @@ def _launch_browser_use_runner(
     log_dir: Path | str,
     startup_wait_seconds: float,
     agent_task: str | None,
+    available_file_paths: list[Path] | None = None,
 ) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
@@ -258,6 +260,8 @@ def _launch_browser_use_runner(
     ]
     if agent_task:
         command.extend(["--agent-task", agent_task])
+    for file_path in available_file_paths or []:
+        command.extend(["--available-file-path", str(file_path)])
 
     with log_path.open("a", encoding="utf-8") as log_file:
         process = subprocess.Popen(
@@ -287,6 +291,13 @@ def _launch_browser_use_runner(
     )
 
     return BrowserUseOpenResult(url=normalized_url, pid=process.pid, log_path=log_path)
+
+
+def _candidate_available_file_paths(candidate_profile: CandidateProfile) -> list[Path]:
+    cv_file_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
+    if not cv_file_path:
+        return []
+    return [Path(cv_file_path)]
 
 
 def _require_http_url(url: str) -> str:

@@ -141,6 +141,8 @@ def test_open_apply_url_with_browser_use_candidate_agent_passes_guarded_task(
     command = captured["command"]
     assert isinstance(command, list)
     assert "--agent-task" in command
+    assert "--available-file-path" in command
+    assert command[command.index("--available-file-path") + 1] == "/tmp/candidate/cv.pdf"
     agent_task = command[command.index("--agent-task") + 1]
     assert "small apply-form test" in agent_task
     assert 'field labelled "Vorname *"' in agent_task

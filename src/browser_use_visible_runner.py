@@ -45,6 +45,7 @@ async def open_visible_browser(
     ready_file: Path | None = None,
     agent_task: str | None = None,
     user_data_dir: Path | None = None,
+    available_file_paths: list[Path] | None = None,
 ) -> None:
     """Open a URL with Browser Use, optionally run an agent task, then wait."""
 
@@ -100,6 +101,11 @@ async def open_visible_browser(
             max_actions_per_step=1,
             use_vision="auto",
             source="job_search_automation",
+            available_file_paths=[
+                str(path)
+                for path in available_file_paths or []
+                if path.exists()
+            ],
         )
         await agent.run(max_steps=40)
         print("Browser Use agent task finished. Browser remains open.", flush=True)
@@ -132,6 +138,13 @@ def main() -> None:
         default=None,
         help="Isolated Chromium profile directory for this Browser Use run.",
     )
+    parser.add_argument(
+        "--available-file-path",
+        action="append",
+        type=Path,
+        default=[],
+        help="File path the Browser Use agent is allowed to upload.",
+    )
     args = parser.parse_args()
     asyncio.run(
         open_visible_browser(
@@ -139,6 +152,7 @@ def main() -> None:
             args.ready_file,
             args.agent_task,
             args.user_data_dir,
+            args.available_file_path,
         )
     )
 
