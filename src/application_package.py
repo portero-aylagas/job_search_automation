@@ -232,6 +232,8 @@ def build_missing_information_defaults(
         missing.append("Candidate email is missing.")
     if not identity.phone.strip():
         missing.append("Candidate phone is missing.")
+    if identity.gender is None:
+        missing.append("Candidate gender is missing.")
     if not identity.street_address.strip():
         missing.append("Candidate street is missing.")
     if not identity.street_number.strip():

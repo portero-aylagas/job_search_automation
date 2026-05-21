@@ -164,6 +164,29 @@ def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
         st.caption(f"Recorded at {trace.recorded_at}")
 
 
+def render_optional_ai_details(
+    section_label: str,
+    traces: list[tuple[str, AIWorkflowTrace | None]],
+    *,
+    summary_label: str | None = None,
+    summary_traces: list[AIWorkflowTrace | None] | None = None,
+) -> None:
+    """Render optional AI-processing details with lower visual emphasis."""
+
+    visible_traces = [(label, trace) for label, trace in traces if trace is not None]
+    active_summary_traces = [trace for trace in (summary_traces or []) if trace is not None]
+    if not visible_traces and not active_summary_traces:
+        return
+
+    _, details_column = st.columns([2, 1])
+    with details_column:
+        with st.expander(f"Optional AI processing details for {section_label}", expanded=False):
+            if summary_label and active_summary_traces:
+                render_ai_usage_summary(summary_label, active_summary_traces)
+            for trace_label, trace in visible_traces:
+                render_workflow_trace(trace_label, trace)
+
+
 def render_list(label: str, values: list[str]) -> None:
     """Render a labeled bullet list when values are available."""
 

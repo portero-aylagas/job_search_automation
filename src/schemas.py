@@ -97,6 +97,37 @@ _LEGACY_SENIORITY_VALUES = {
     "trainee",
 }
 
+Gender = Literal["Male", "Female", "Diverse"]
+
+_GENDER_ALIASES: dict[str, Gender] = {
+    "male": "Male",
+    "masculine": "Male",
+    "masculin": "Male",
+    "männlich": "Male",
+    "maennlich": "Male",
+    "herr": "Male",
+    "mr": "Male",
+    "mr.": "Male",
+    "female": "Female",
+    "feminine": "Female",
+    "femenin": "Female",
+    "feminin": "Female",
+    "weiblich": "Female",
+    "frau": "Female",
+    "ms": "Female",
+    "ms.": "Female",
+    "mrs": "Female",
+    "mrs.": "Female",
+    "divers": "Diverse",
+    "diverse": "Diverse",
+    "non-binary": "Diverse",
+    "nonbinary": "Diverse",
+    "non binary": "Diverse",
+    "nb": "Diverse",
+    "mx": "Diverse",
+    "mx.": "Diverse",
+}
+
 
 class AIWorkflowTrace(BaseModel):
     """Metadata captured for an AI-assisted workflow call."""
@@ -125,7 +156,7 @@ class CandidateCVIdentity(BaseModel):
     full_name: str = ""
     first_name: str = ""
     last_name: str = ""
-    salutation: str = ""
+    gender: Gender | None = None
     email: str = ""
     phone: str = ""
     location: str = ""
@@ -156,6 +187,10 @@ class CandidateCVIdentity(BaseModel):
             data["last_name"] = last_name or split_last
         if not full_name and (first_name or last_name):
             data["full_name"] = " ".join(item for item in (first_name, last_name) if item)
+        if not data.get("gender"):
+            migrated_gender = _normalize_gender_value(data.get("salutation"))
+            if migrated_gender:
+                data["gender"] = migrated_gender
 
         return data
 
@@ -163,7 +198,6 @@ class CandidateCVIdentity(BaseModel):
         "full_name",
         "first_name",
         "last_name",
-        "salutation",
         "location",
         "street_address",
         "street_number",
@@ -179,6 +213,11 @@ class CandidateCVIdentity(BaseModel):
     @classmethod
     def _normalize_text_field(cls, value: object) -> str:
         return _normalize_text_value(value)
+
+    @field_validator("gender", mode="before")
+    @classmethod
+    def _normalize_gender(cls, value: object) -> Gender | None:
+        return _normalize_gender_value(value)
 
     @field_validator("email", mode="before")
     @classmethod
@@ -401,6 +440,13 @@ def _normalize_text_value(value: object) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _normalize_gender_value(value: object) -> Gender | None:
+    normalized = _normalize_text_value(value).lower()
+    if not normalized:
+        return None
+    return _GENDER_ALIASES.get(normalized)
 
 
 def _normalize_email_value(value: object) -> str:

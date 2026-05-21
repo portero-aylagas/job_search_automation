@@ -149,8 +149,15 @@ job-search preferences that are not reliably extractable from the CV.
   - projects
 - optional supporting document upload and supplemental extraction into
   references, certifications, and other evidence
-- editable CV-extracted review section with simple text fields and multiline
-  list editors
+- editable CV-extracted review section with required reviewed identity fields:
+  first name, surname, gender, email, phone, address, postal code, city,
+  country, and nationality
+- canonical reviewed gender values:
+  `Male`, `Female`, and `Diverse`
+- salutation is not stored as a primary identity field; legacy salutation input
+  is migrated into reviewed gender
+- optional supporting documents are parsed through the same review workflow and
+  merged into the reviewable candidate profile state
 - manual candidate preferences:
   - target roles
   - target locations
@@ -176,6 +183,7 @@ data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
 - user must upload a CV before saving a complete profile
 - CV extraction is triggered through the agent layer, not by UI regex parsing
 - extracted CV data is visible and editable before saving
+- reviewed identity data must include gender before the profile can be saved
 - user can fill only missing job-search preferences manually
 - employment type is a checkbox list with at least one selected value
 - career level is a checkbox list with hover help for each option
@@ -372,7 +380,10 @@ read-only requirements contract.
   reviewed package content, and safe candidate profile data
 - fill-plan generation uses deterministic identity/contact mapping first, then
   an AI semantic mapper for remaining non-sensitive fields
-- Browser Use apply assistance is blocked until the fill plan is reviewed
+- reviewed gender can map salutation fields such as `Frau`, `Herr`, `Divers`,
+  `Mr`, `Ms`, or `Mx` when the target application page offers those options
+- Browser Use apply assistance is blocked until every discovered application
+  field is reviewed into an explicit value or intentional blank
 - tracker status can move to `application_draft`
 
 ### Current Browser Use Pilot
@@ -383,10 +394,12 @@ read-only requirements contract.
   application pages, not autonomous submission.
 - Each run starts a fresh local Browser Use process with an isolated Chromium
   profile and local reset controls.
-- Browser Use receives only the reviewed application fill plan: approved field
-  values, approved uploads, blocked fields, and submit guard labels. It does
-  not receive raw candidate profile JSON and remains guarded against proceeding
-  to review or submission.
+- Browser Use receives only the reviewed application fill plan: explicit field
+  values, reviewed upload paths, and submit guard labels. Any unresolved
+  consent, referral, disability, or other blocked field keeps the fill plan in
+  draft and prevents the Browser Use run from starting.
+- The browser agent does not receive raw candidate profile JSON and remains
+  guarded against proceeding to review or submission.
 - Final submission remains out of scope and blocked by explicit agent/task
   guardrails.
 

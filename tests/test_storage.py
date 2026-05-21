@@ -46,6 +46,7 @@ def test_save_model_creates_parent_directories_and_loads_model(tmp_path: Path) -
                     "full_name": "Alex Mercer",
                     "first_name": "Alex",
                     "last_name": "Mercer",
+                    "gender": "Male",
                     "email": "alex@example.com",
                     "phone": "+49170123456",
                     "location": "Remote",

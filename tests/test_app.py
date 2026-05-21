@@ -22,6 +22,7 @@ def test_validate_candidate_profile_reports_missing_required_fields() -> None:
     assert "Surname" in errors
     assert "Email" in errors
     assert "Phone" in errors
+    assert "Gender" in errors
     assert "Street" in errors
     assert "Street number" in errors
     assert "City" in errors
@@ -46,6 +47,7 @@ def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
                     "identity": {
                         "first_name": "Taylor",
                         "last_name": "Rivera",
+                        "gender": "Female",
                         "email": "taylor@example.com",
                         "phone": "+49170123456",
                         "street_address": "Example Street",
@@ -130,6 +132,7 @@ def make_complete_candidate_profile(*, cv_parsed: bool = True) -> CandidateProfi
                     "identity": {
                         "first_name": "Taylor",
                         "last_name": "Rivera",
+                        "gender": "Female",
                         "email": "taylor@example.com",
                         "phone": "+49170123456",
                         "street_address": "Example Street",

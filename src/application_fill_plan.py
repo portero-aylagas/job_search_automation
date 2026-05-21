@@ -585,8 +585,10 @@ def _candidate_value_for_field(
     label = _field_key(field.label or field.name)
     location = identity.location.strip()
 
-    if any(term in label for term in ("anrede", "salutation", "title")):
-        return identity.salutation.strip()
+    if any(term in label for term in ("anrede", "salutation")):
+        return _salutation_from_gender(identity.gender, field.options, label)
+    if "gender" in label:
+        return identity.gender or ""
     if any(term in label for term in ("vorname", "first name", "given name")):
         return first_name
     if any(term in label for term in ("nachname", "last name", "surname", "family name")):
@@ -628,8 +630,8 @@ def _candidate_value_for_field(
 
 def _candidate_source_for_field(field: ApplicationFormField) -> str:
     label = _field_key(field.label or field.name)
-    if any(term in label for term in ("anrede", "salutation", "title")):
-        return "candidate_profile.cv_extracted.identity.salutation"
+    if any(term in label for term in ("anrede", "salutation")) or "gender" in label:
+        return "candidate_profile.cv_extracted.identity.gender"
     if any(term in label for term in ("vorname", "first name", "given name")):
         return "candidate_profile.cv_extracted.identity.first_name"
     if any(term in label for term in ("nachname", "last name", "surname", "family name")):
@@ -661,6 +663,32 @@ def _candidate_source_for_field(field: ApplicationFormField) -> str:
     if "portfolio" in label or "website" in label:
         return "candidate_profile.cv_extracted.identity.portfolio_url"
     return "candidate_profile.cv_extracted.identity.location"
+
+
+def _salutation_from_gender(gender: str | None, options: list[str], label: str) -> str:
+    """Return the best supported salutation for a reviewed gender value."""
+
+    if gender == "Female":
+        return _matching_option(options, ("frau", "ms", "ms.", "mrs", "mrs.")) or (
+            "Frau" if "anrede" in label else "Ms"
+        )
+    if gender == "Male":
+        return _matching_option(options, ("herr", "mr", "mr.")) or (
+            "Herr" if "anrede" in label else "Mr"
+        )
+    if gender == "Diverse":
+        return _matching_option(options, ("divers", "diverse", "mx", "mx.")) or (
+            "Divers" if "anrede" in label else "Mx"
+        )
+    return ""
+
+
+def _matching_option(options: list[str], accepted_values: tuple[str, ...]) -> str:
+    accepted = {value.lower() for value in accepted_values}
+    for option in options:
+        if option.strip().lower() in accepted:
+            return option
+    return ""
 
 
 def _build_upload_files(

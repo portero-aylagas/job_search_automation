@@ -47,7 +47,7 @@ def make_profile() -> CandidateProfile:
                         "full_name": "Taylor Rivera",
                         "first_name": "Taylor",
                         "last_name": "Rivera",
-                        "salutation": "Divers",
+                        "gender": "Female",
                         "email": "taylor@example.com",
                         "phone": "+49 170 123456",
                         "location": "Berlin, Germany",
@@ -211,7 +211,7 @@ def test_candidate_identity_maps_to_profile_fields() -> None:
 
     values_by_label = {field.label: field.value for field in fill_plan.field_values}
 
-    assert values_by_label["Anrede"] == "Divers"
+    assert values_by_label["Anrede"] == "Frau"
     assert values_by_label["Vorname"] == "Taylor"
     assert values_by_label["Nachname"] == "Rivera"
     assert values_by_label["E-Mail-Adresse"] == "taylor@example.com"
@@ -248,6 +248,84 @@ def test_fill_plan_preserves_discovered_field_options() -> None:
     values_by_label = {field.label: field for field in fill_plan.field_values}
 
     assert values_by_label["Anrede"].options == ["Frau", "Herr", "Divers"]
+
+
+def test_gender_maps_to_english_salutation_options() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.profile_fields[0] = ApplicationFormField(
+        label="Salutation",
+        required=True,
+        input_type="select",
+        options=["Mr", "Ms"],
+    )
+
+    fill_plan = generate_application_fill_plan(
+        make_profile(),
+        requirements,
+        make_package(),
+    )
+
+    values_by_label = {field.label: field.value for field in fill_plan.field_values}
+
+    assert values_by_label["Salutation"] == "Ms"
+
+
+def test_diverse_gender_maps_to_german_anrede_option() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.cv_extracted.identity.gender = "Diverse"
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.profile_fields[0].options = ["Frau", "Herr", "Divers"]
+
+    fill_plan = generate_application_fill_plan(
+        profile,
+        requirements,
+        make_package(),
+    )
+
+    values_by_label = {field.label: field.value for field in fill_plan.field_values}
+
+    assert values_by_label["Anrede"] == "Divers"
+
+
+def test_diverse_gender_maps_to_english_salutation_option() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.cv_extracted.identity.gender = "Diverse"
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.profile_fields[0] = ApplicationFormField(
+        label="Salutation",
+        required=True,
+        input_type="select",
+        options=["Mr", "Ms", "Mx"],
+    )
+
+    fill_plan = generate_application_fill_plan(
+        profile,
+        requirements,
+        make_package(),
+    )
+
+    values_by_label = {field.label: field.value for field in fill_plan.field_values}
+
+    assert values_by_label["Salutation"] == "Mx"
+
+
+def test_generic_title_field_is_not_filled_from_gender() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.profile_fields[0] = ApplicationFormField(
+        label="Title",
+        required=False,
+        input_type="text",
+    )
+
+    fill_plan = generate_application_fill_plan(
+        make_profile(),
+        requirements,
+        make_package(),
+    )
+
+    values_by_label = {field.label: field.value for field in fill_plan.field_values}
+
+    assert "Title" not in values_by_label
 
 
 def test_control_label_maps_to_fill_plan_field_evidence() -> None:
@@ -593,7 +671,7 @@ def test_apply_fill_plan_edits_updates_fields_and_upload_path() -> None:
         values_by_label["Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"]
         == "München"
     )
-    assert values_by_label["Anrede"] == "Divers"
+    assert values_by_label["Anrede"] == "Frau"
     first_name = next(field for field in edited.field_values if field.label == "Vorname")
     assert first_name.source == "manual_review"
     assert edited.upload_files[0].file_path == "/tmp/updated.pdf"

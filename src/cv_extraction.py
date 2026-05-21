@@ -42,6 +42,7 @@ class LLMCandidateCVIdentityResponse(BaseModel):
     full_name: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    gender: str | None = None
     salutation: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -379,7 +380,7 @@ def normalize_cv_extracted(response: LLMCandidateCVExtractedResponse) -> Candida
             full_name=_normalize_text(identity.full_name),
             first_name=_normalize_text(identity.first_name),
             last_name=_normalize_text(identity.last_name),
-            salutation=_normalize_text(identity.salutation),
+            gender=_normalize_text(identity.gender) or _normalize_text(identity.salutation),
             email=_normalize_text(identity.email),
             phone=_normalize_text(identity.phone),
             location=_normalize_text(identity.location),

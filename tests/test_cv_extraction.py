@@ -274,6 +274,26 @@ def test_normalize_cv_extracted_cleans_review_list_items() -> None:
     assert extracted.skills == ["Python", "SQL"]
 
 
+def test_normalize_cv_extracted_uses_gender_or_legacy_salutation() -> None:
+    response = LLMCandidateCVExtractedResponse(
+        identity=LLMCandidateCVIdentityResponse(salutation="Herr"),
+    )
+
+    extracted = cv_extraction.normalize_cv_extracted(response)
+
+    assert extracted.identity.gender == "Male"
+
+
+def test_normalize_cv_extracted_accepts_diverse_gender() -> None:
+    response = LLMCandidateCVExtractedResponse(
+        identity=LLMCandidateCVIdentityResponse(gender="Divers"),
+    )
+
+    extracted = cv_extraction.normalize_cv_extracted(response)
+
+    assert extracted.identity.gender == "Diverse"
+
+
 def test_inspect_cv_document_agent_uploads_cv_file(monkeypatch, tmp_path: Path) -> None:
     create_calls = []
     cv_path = tmp_path / "Taylor CV.pdf"

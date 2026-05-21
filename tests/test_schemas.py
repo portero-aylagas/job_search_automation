@@ -27,6 +27,7 @@ def test_candidate_profile_round_trip() -> None:
                     "full_name": "Taylor Rivera",
                     "first_name": "Taylor",
                     "last_name": "Rivera",
+                    "gender": "Female",
                     "email": "taylor@example.com",
                     "phone": "+49 123 456",
                     "location": "Remote",
@@ -86,6 +87,56 @@ def test_candidate_identity_splits_legacy_full_name_and_normalizes_contact() -> 
     assert identity.last_name == "Rivera"
     assert identity.email == "taylor@example.com"
     assert identity.phone == "+49170123456"
+
+
+def test_candidate_identity_migrates_legacy_salutation_to_gender() -> None:
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "cv_extracted": {
+                    "identity": {
+                        "first_name": "Taylor",
+                        "last_name": "Rivera",
+                        "salutation": "Frau",
+                    },
+                },
+            },
+        }
+    )
+
+    identity = profile.candidate_profile.cv_extracted.identity
+    assert identity.gender == "Female"
+    assert "salutation" not in identity.model_dump(mode="json")
+
+
+@pytest.mark.parametrize(
+    ("raw_gender", "expected_gender"),
+    [
+        ("Divers", "Diverse"),
+        ("Diverse", "Diverse"),
+        ("non-binary", "Diverse"),
+        ("Mx", "Diverse"),
+    ],
+)
+def test_candidate_identity_normalizes_diverse_gender_aliases(
+    raw_gender: str,
+    expected_gender: str,
+) -> None:
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "cv_extracted": {
+                    "identity": {
+                        "first_name": "Taylor",
+                        "last_name": "Rivera",
+                        "gender": raw_gender,
+                    },
+                },
+            },
+        }
+    )
+
+    assert profile.candidate_profile.cv_extracted.identity.gender == expected_gender
 
 
 def test_candidate_profile_coerces_legacy_optional_document_paths() -> None:

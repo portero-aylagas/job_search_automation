@@ -169,7 +169,10 @@ models before anything is stored or shown in the UI.
 
 Stores structured candidate information:
 
-- summary
+- reviewed identity and contact fields from the CV
+- required gender value: `Male`, `Female`, or `Diverse`
+- normalized address fields including street number, city, postal code, country,
+  and nationality when available
 - target roles
 - locations
 - skills
@@ -283,11 +286,16 @@ and contact fields. Remaining non-sensitive fields are sent to an AI semantic
 mapper with structured candidate evidence and reviewed package form answers.
 Sensitive or user-decision fields are blocked before semantic mapping.
 
-The Jobs UI lets the user generate or refresh the draft fill plan, edit planned
-values, inspect blocked fields, and mark the plan reviewed. Browser Use receives
-only this reviewed fill plan: field values, allowed upload paths, blocked
-fields, and submit guard labels. Raw candidate profile JSON is not passed to the
-browser agent.
+The Jobs UI lets the user generate or refresh the draft fill plan and then
+review every discovered application item in one editable form. Required page
+fields must have reviewed values before the plan can be marked reviewed.
+Optional fields may be intentionally reviewed as blank values. Sensitive,
+consent, referral, disability, and similar fields do not bypass review: the
+user must convert them into explicit reviewed values or the plan stays blocked.
+
+Browser Use receives only the reviewed execution contract: explicit field
+values, reviewed upload paths, and submit guard labels. Raw candidate profile
+JSON is not passed to the browser agent.
 
 Apply URLs that are the same as the source job page, or that are not valid
 http(s) application destinations, are rejected at validation time and cannot be
@@ -410,9 +418,10 @@ Notes:
   isolated Chromium profile, and exposes `Stop Browser Use Session` plus
   `Kill All Browser Use Processes` controls in the Jobs page.
 - The current Browser Use pilot opens the reviewed apply URL and executes only
-  the reviewed `application_fill_plan.json`: approved field values, approved
-  uploads, blocked fields, and submit guard labels. It stops before any review
-  or submission action.
+  the reviewed `application_fill_plan.json`: explicit reviewed field values,
+  reviewed upload paths, and submit guard labels. Unresolved fill-plan items
+  block the flow before Browser Use starts. It stops before any review or
+  submission action.
 - Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
   runtime setup described here.
 ---
