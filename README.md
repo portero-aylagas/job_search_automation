@@ -278,6 +278,11 @@ upload files such as the saved CV, and blocks fields that require user choice or
 carry privacy, consent, disability, referral, internal-employee, legal, or
 ambiguous risk.
 
+The fill-plan generator first applies deterministic mappings for stable identity
+and contact fields. Remaining non-sensitive fields are sent to an AI semantic
+mapper with structured candidate evidence and reviewed package form answers.
+Sensitive or user-decision fields are blocked before semantic mapping.
+
 The Jobs UI lets the user generate or refresh the draft fill plan, edit planned
 values, inspect blocked fields, and mark the plan reviewed. Browser Use receives
 only this reviewed fill plan: field values, allowed upload paths, blocked

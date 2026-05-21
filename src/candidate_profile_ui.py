@@ -290,10 +290,18 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
                     required_label("Full name"),
                     value=extracted.identity.full_name,
                 )
+                salutation = st.text_input("Salutation", value=extracted.identity.salutation)
                 email = st.text_input(required_label("Email"), value=extracted.identity.email)
                 phone = st.text_input("Phone", value=extracted.identity.phone)
                 location = st.text_input("Location", value=extracted.identity.location)
             with identity_right:
+                street_address = st.text_input(
+                    "Street address",
+                    value=extracted.identity.street_address,
+                )
+                postal_code = st.text_input("Postal code", value=extracted.identity.postal_code)
+                city = st.text_input("City", value=extracted.identity.city)
+                country = st.text_input("Country", value=extracted.identity.country)
                 linkedin_url = st.text_input(
                     "LinkedIn URL", value=extracted.identity.linkedin_url
                 )
@@ -334,9 +342,18 @@ def render_cv_extracted_review_section(candidate_profile: CandidateProfile) -> N
 
         updated_profile = candidate_profile.model_copy(deep=True)
         updated_profile.candidate_profile.cv_extracted.identity.full_name = full_name.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.salutation = salutation.strip()
         updated_profile.candidate_profile.cv_extracted.identity.email = email.strip()
         updated_profile.candidate_profile.cv_extracted.identity.phone = phone.strip()
         updated_profile.candidate_profile.cv_extracted.identity.location = location.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.street_address = (
+            street_address.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.postal_code = (
+            postal_code.strip()
+        )
+        updated_profile.candidate_profile.cv_extracted.identity.city = city.strip()
+        updated_profile.candidate_profile.cv_extracted.identity.country = country.strip()
         updated_profile.candidate_profile.cv_extracted.identity.linkedin_url = linkedin_url.strip()
         updated_profile.candidate_profile.cv_extracted.identity.github_url = github_url.strip()
         updated_profile.candidate_profile.cv_extracted.identity.portfolio_url = (

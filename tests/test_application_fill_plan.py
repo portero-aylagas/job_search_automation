@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from src.application_fill_plan import (
+    ApplicationFieldMappingSuggestion,
+    FillPlanTargetField,
     generate_application_fill_plan,
     load_application_fill_plan,
     mark_application_fill_plan_reviewed,
@@ -32,9 +34,14 @@ def make_profile() -> CandidateProfile:
                 "cv_extracted": {
                     "identity": {
                         "full_name": "Taylor Rivera",
+                        "salutation": "Divers",
                         "email": "taylor@example.com",
                         "phone": "+49 170 123456",
                         "location": "Berlin, Germany",
+                        "street_address": "Example Street 12",
+                        "postal_code": "10115",
+                        "city": "Berlin",
+                        "country": "Deutschland",
                         "linkedin_url": "https://linkedin.com/in/taylor-rivera",
                         "github_url": "https://github.com/taylor-rivera",
                         "portfolio_url": "https://taylor.example.com",
@@ -63,6 +70,7 @@ def make_requirements() -> ApplicationRequirements:
             )
         ],
         profile_fields=[
+            ApplicationFormField(label="Anrede", required=True, input_type="radio"),
             ApplicationFormField(label="Vorname", required=True, input_type="text"),
             ApplicationFormField(label="Nachname", required=True, input_type="text"),
             ApplicationFormField(label="E-Mail-Adresse", required=True, input_type="text"),
@@ -73,6 +81,11 @@ def make_requirements() -> ApplicationRequirements:
                 input_type="select",
             ),
             ApplicationFormField(label="Postleitzahl", required=True, input_type="text"),
+            ApplicationFormField(
+                label="Straße/Nr./Hausanschrift",
+                required=False,
+                input_type="text",
+            ),
         ],
         screening_questions=[
             ApplicationScreeningQuestion(
@@ -144,11 +157,14 @@ def test_candidate_identity_maps_to_profile_fields() -> None:
 
     values_by_label = {field.label: field.value for field in fill_plan.field_values}
 
+    assert values_by_label["Anrede"] == "Divers"
     assert values_by_label["Vorname"] == "Taylor"
     assert values_by_label["Nachname"] == "Rivera"
     assert values_by_label["E-Mail-Adresse"] == "taylor@example.com"
     assert values_by_label["Telefon"] == "+49 170 123456"
     assert values_by_label["Land Ihres Wohnsitzes"] == "Deutschland"
+    assert values_by_label["Postleitzahl"] == "10115"
+    assert values_by_label["Straße/Nr./Hausanschrift"] == "Example Street 12"
 
 
 def test_cv_becomes_allowed_upload() -> None:
@@ -174,7 +190,6 @@ def test_missing_values_and_sensitive_fields_are_blocked() -> None:
 
     blocked_by_label = {field.label: field.reason for field in fill_plan.blocked_fields}
 
-    assert "Postleitzahl" in blocked_by_label
     assert "Haben Sie eine anerkannte Schwerbehinderung?" in blocked_by_label
     assert "Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH" in blocked_by_label
     assert "Privacy acknowledgement required to continue" in blocked_by_label
@@ -193,3 +208,44 @@ def test_package_form_answer_artifacts_map_to_matching_questions() -> None:
         values_by_label["Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"]
         == "Dresden, München"
     )
+
+
+def test_semantic_mapper_can_fill_remaining_safe_fields() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.profile_fields.append(
+        ApplicationFormField(
+            label="Earliest available start date",
+            required=False,
+            input_type="text",
+        )
+    )
+
+    def fake_mapper(
+        _profile: CandidateProfile,
+        _requirements: ApplicationRequirements,
+        _package: ApplicationPackage,
+        target_fields: list[FillPlanTargetField],
+    ) -> list[ApplicationFieldMappingSuggestion]:
+        assert [field.label for field in target_fields] == ["Earliest available start date"]
+        return [
+            ApplicationFieldMappingSuggestion(
+                label="Earliest available start date",
+                value="Immediately",
+                source="candidate_profile.candidate_preferences.availability",
+                confidence="high",
+            )
+        ]
+
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.candidate_preferences.availability = "Immediately"
+
+    fill_plan = generate_application_fill_plan(
+        profile,
+        requirements,
+        make_package(),
+        semantic_mapper=fake_mapper,
+    )
+
+    values_by_label = {field.label: field.value for field in fill_plan.field_values}
+
+    assert values_by_label["Earliest available start date"] == "Immediately"

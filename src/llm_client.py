@@ -76,6 +76,12 @@ APPLICATION_PACKAGE_PROFILE = LLMCallProfile(
     max_output_tokens=9000,
     timeout_seconds=90,
 )
+APPLICATION_FIELD_MAPPING_PROFILE = LLMCallProfile(
+    name="application_field_mapping",
+    temperature=0.0,
+    max_output_tokens=5000,
+    timeout_seconds=60,
+)
 FILE_UPLOAD_TIMEOUT_SECONDS = 60
 FILE_UPLOAD_MAX_RETRIES = 1
 FILE_UPLOAD_BACKOFF_SECONDS = (1.0,)

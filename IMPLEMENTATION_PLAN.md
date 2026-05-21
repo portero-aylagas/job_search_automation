@@ -370,6 +370,8 @@ read-only requirements contract.
 - package is saved
 - app generates an editable application fill plan from reviewed requirements,
   reviewed package content, and safe candidate profile data
+- fill-plan generation uses deterministic identity/contact mapping first, then
+  an AI semantic mapper for remaining non-sensitive fields
 - Browser Use apply assistance is blocked until the fill plan is reviewed
 - tracker status can move to `application_draft`
 

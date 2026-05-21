@@ -18,6 +18,7 @@ from src.application_fill_plan import (
     apply_fill_plan_edits,
     generate_application_fill_plan,
     load_application_fill_plan,
+    map_application_fields_with_llm,
     mark_application_fill_plan_reviewed,
     save_application_fill_plan,
 )
@@ -326,8 +327,18 @@ def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
         if requirements is None or package is None:
             st.error("Complete fill plan prerequisites before generating.")
             return
-        fill_plan = generate_application_fill_plan(candidate_profile, requirements, package)
-        saved_path = save_application_fill_plan(base_dir, fill_plan)
+        try:
+            with st.spinner("Mapping application fields to candidate evidence..."):
+                fill_plan = generate_application_fill_plan(
+                    candidate_profile,
+                    requirements,
+                    package,
+                    semantic_mapper=map_application_fields_with_llm,
+                )
+                saved_path = save_application_fill_plan(base_dir, fill_plan)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
         st.success(f"Application fill plan saved to {saved_path}.")
         st.rerun()
 

@@ -118,6 +118,30 @@ application_package:
       Application requirements:
       {requirements_json}
 
+application_field_mapping:
+  map_fields:
+    system: |
+      You map discovered job-application page fields to structured candidate evidence for a controlled, human-in-the-loop workflow.
+
+      Use only supplied candidate evidence and reviewed package artifacts. Do not browse, infer, invent, or make user decisions. Return a value only when it is explicitly supported by the supplied data and appropriate for the requested field.
+
+      Do not map sensitive or user-decision fields such as privacy consent, legal declarations, disability disclosure, referral/internal employee fields, visa/work authorization choices, salary expectations, start date commitments, or opt-ins unless the supplied package artifact explicitly answers that exact field for review.
+
+      Do not infer salutation/gender from a name. Map salutation only when an explicit salutation value is supplied.
+    user: |
+      Propose safe mappings for unresolved application fields.
+
+      Candidate evidence:
+      {candidate_evidence_json}
+
+      Reviewed package form answers:
+      {package_answers_json}
+
+      Target fields:
+      {target_fields_json}
+
+      For each target field, return either a supported value with a source and confidence, or an empty value with a short reason.
+
 apply_url_resolution:
   rank_candidates:
     system: |

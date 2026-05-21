@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
+from pydantic import BaseModel
+
+from src import llm_client
 from src.application_package_quality import is_sensitive_or_user_decision_field
 from src.paths import application_fill_plan_paths, runtime_application_fill_plan_path
+from src.prompt_templates import get_prompt
 from src.schemas import (
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
@@ -17,6 +24,7 @@ from src.schemas import (
     ApplicationRequirements,
     ApplicationScreeningQuestion,
     CandidateProfile,
+    ConfidenceLevel,
 )
 from src.storage import load_model, save_model
 
@@ -31,15 +39,54 @@ DEFAULT_SUBMIT_GUARD_LABELS = [
 ]
 
 
+@dataclass(frozen=True)
+class FillPlanTargetField:
+    """Application field that still needs a safe value mapping."""
+
+    label: str
+    name: str = ""
+    required: bool = False
+    input_type: str = ""
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+    kind: str = "field"
+    default_reason: str = "No safe candidate or reviewed package value is available."
+
+
+class ApplicationFieldMappingSuggestion(BaseModel):
+    """Suggested value for one unresolved application field."""
+
+    label: str
+    value: str = ""
+    source: str = ""
+    confidence: ConfidenceLevel = "medium"
+    reason: str = ""
+
+
+class LLMApplicationFieldMappingResponse(BaseModel):
+    """Structured response for semantic application field mapping."""
+
+    suggestions: list[ApplicationFieldMappingSuggestion] = []
+
+
+ApplicationFieldMapper = Callable[
+    [CandidateProfile, ApplicationRequirements, ApplicationPackage, list[FillPlanTargetField]],
+    list[ApplicationFieldMappingSuggestion],
+]
+
+
 def generate_application_fill_plan(
     candidate_profile: CandidateProfile,
     requirements: ApplicationRequirements,
     package: ApplicationPackage,
+    *,
+    semantic_mapper: ApplicationFieldMapper | None = None,
 ) -> ApplicationFillPlan:
     """Create a conservative draft fill plan from reviewed application data."""
 
     field_values: list[ApplicationFillFieldValue] = []
     blocked_fields: list[ApplicationFillBlockedField] = []
+    unresolved_fields: list[FillPlanTargetField] = []
     used_labels: set[str] = set()
 
     for field in [*requirements.profile_fields, *requirements.custom_form_fields]:
@@ -81,7 +128,7 @@ def generate_application_fill_plan(
             continue
 
         reason = "No safe candidate or reviewed package value is available."
-        blocked_fields.append(_blocked_from_form_field(field, reason))
+        unresolved_fields.append(_target_from_form_field(field, default_reason=reason))
 
     for question in requirements.screening_questions:
         key = _field_key(question.question)
@@ -104,12 +151,22 @@ def generate_application_fill_plan(
                 )
             )
         else:
-            blocked_fields.append(
-                _blocked_from_screening_question(
+            unresolved_fields.append(
+                _target_from_screening_question(
                     question,
-                    "No reviewed package answer is available.",
+                    default_reason="No reviewed package answer is available.",
                 )
             )
+
+    _apply_semantic_mapping(
+        candidate_profile,
+        requirements,
+        package,
+        semantic_mapper,
+        unresolved_fields,
+        field_values,
+        blocked_fields,
+    )
 
     for requirement in [
         *requirements.consent_requirements,
@@ -179,6 +236,90 @@ def load_application_fill_plan(base_dir: Path | str, job_id: str) -> Application
     return None
 
 
+def map_application_fields_with_llm(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+    target_fields: list[FillPlanTargetField],
+) -> list[ApplicationFieldMappingSuggestion]:
+    """Use structured AI to map unresolved safe fields to candidate evidence."""
+
+    if not target_fields:
+        return []
+
+    response = llm_client.parse_structured_response(
+        input=[
+            {
+                "role": "system",
+                "content": get_prompt("application_field_mapping", "map_fields", "system"),
+            },
+            {
+                "role": "user",
+                "content": get_prompt(
+                    "application_field_mapping",
+                    "map_fields",
+                    "user",
+                    candidate_evidence_json=_to_json(_candidate_evidence(candidate_profile)),
+                    package_answers_json=_to_json(_package_form_answers(package)),
+                    target_fields_json=_to_json(
+                        [field.__dict__ for field in target_fields]
+                    ),
+                ),
+            },
+        ],
+        text_format=LLMApplicationFieldMappingResponse,
+        operation="AI application field mapping",
+        profile=llm_client.APPLICATION_FIELD_MAPPING_PROFILE,
+    )
+    return response.suggestions
+
+
+def _apply_semantic_mapping(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+    semantic_mapper: ApplicationFieldMapper | None,
+    unresolved_fields: list[FillPlanTargetField],
+    field_values: list[ApplicationFillFieldValue],
+    blocked_fields: list[ApplicationFillBlockedField],
+) -> None:
+    if not unresolved_fields:
+        return
+
+    suggestions_by_label: dict[str, ApplicationFieldMappingSuggestion] = {}
+    if semantic_mapper is not None:
+        suggestions_by_label = {
+            _field_key(suggestion.label): suggestion
+            for suggestion in semantic_mapper(
+                candidate_profile,
+                requirements,
+                package,
+                unresolved_fields,
+            )
+        }
+
+    for target in unresolved_fields:
+        suggestion = suggestions_by_label.get(_field_key(target.label))
+        if suggestion is not None and suggestion.value.strip():
+            field_values.append(
+                ApplicationFillFieldValue(
+                    label=target.label,
+                    name=target.name,
+                    value=suggestion.value.strip(),
+                    required=target.required,
+                    input_type=target.input_type,
+                    source=suggestion.source or "application_field_mapping",
+                    confidence=suggestion.confidence,
+                )
+            )
+            continue
+
+        reason = target.default_reason
+        if suggestion is not None and suggestion.reason.strip():
+            reason = suggestion.reason.strip()
+        blocked_fields.append(_blocked_from_target_field(target, reason))
+
+
 def _candidate_value_for_field(
     candidate_profile: CandidateProfile,
     field: ApplicationFormField,
@@ -188,6 +329,8 @@ def _candidate_value_for_field(
     label = _field_key(field.label or field.name)
     location = identity.location.strip()
 
+    if any(term in label for term in ("anrede", "salutation", "title")):
+        return identity.salutation.strip()
     if any(term in label for term in ("vorname", "first name", "given name")):
         return first_name
     if any(term in label for term in ("nachname", "last name", "surname", "family name")):
@@ -197,11 +340,13 @@ def _candidate_value_for_field(
     if any(term in label for term in ("telefon", "phone", "mobile", "handy")):
         return identity.phone.strip()
     if label in {"ort", "city", "wohnort"}:
-        return _city_from_location(location)
+        return identity.city.strip() or _city_from_location(location)
     if "postleitzahl" in label or "postal" in label or "zip" in label:
-        return ""
+        return identity.postal_code.strip()
+    if any(term in label for term in ("straße", "strasse", "street", "address", "hausanschrift")):
+        return identity.street_address.strip()
     if "land" in label and "wohn" in label:
-        return _country_from_location(location)
+        return identity.country.strip() or _country_from_location(location)
     if "linkedin" in label:
         return identity.linkedin_url.strip()
     if "github" in label:
@@ -213,12 +358,22 @@ def _candidate_value_for_field(
 
 def _candidate_source_for_field(field: ApplicationFormField) -> str:
     label = _field_key(field.label or field.name)
+    if any(term in label for term in ("anrede", "salutation", "title")):
+        return "candidate_profile.cv_extracted.identity.salutation"
     if any(term in label for term in ("vorname", "first name", "nachname", "last name")):
         return "candidate_profile.cv_extracted.identity.full_name"
     if "mail" in label:
         return "candidate_profile.cv_extracted.identity.email"
     if any(term in label for term in ("telefon", "phone", "mobile", "handy")):
         return "candidate_profile.cv_extracted.identity.phone"
+    if "postleitzahl" in label or "postal" in label or "zip" in label:
+        return "candidate_profile.cv_extracted.identity.postal_code"
+    if any(term in label for term in ("straße", "strasse", "street", "address", "hausanschrift")):
+        return "candidate_profile.cv_extracted.identity.street_address"
+    if label in {"ort", "city", "wohnort"}:
+        return "candidate_profile.cv_extracted.identity.city"
+    if "land" in label and "wohn" in label:
+        return "candidate_profile.cv_extracted.identity.country"
     if "linkedin" in label:
         return "candidate_profile.cv_extracted.identity.linkedin_url"
     if "github" in label:
@@ -329,6 +484,87 @@ def _blocked_from_screening_question(
         source=question.evidence,
         confidence=question.confidence,
     )
+
+
+def _target_from_form_field(
+    field: ApplicationFormField,
+    *,
+    default_reason: str,
+) -> FillPlanTargetField:
+    return FillPlanTargetField(
+        label=field.label,
+        name=field.name,
+        required=field.required,
+        input_type=field.input_type,
+        source=field.evidence,
+        confidence=field.confidence,
+        kind="form_field",
+        default_reason=default_reason,
+    )
+
+
+def _target_from_screening_question(
+    question: ApplicationScreeningQuestion,
+    *,
+    default_reason: str,
+) -> FillPlanTargetField:
+    return FillPlanTargetField(
+        label=question.question,
+        required=question.required,
+        input_type=question.input_type,
+        source=question.evidence,
+        confidence=question.confidence,
+        kind="screening_question",
+        default_reason=default_reason,
+    )
+
+
+def _blocked_from_target_field(
+    target: FillPlanTargetField,
+    reason: str,
+) -> ApplicationFillBlockedField:
+    return ApplicationFillBlockedField(
+        label=target.label,
+        name=target.name,
+        reason=reason,
+        required=target.required,
+        input_type=target.input_type,
+        source=target.source,
+        confidence=target.confidence,
+    )
+
+
+def _candidate_evidence(candidate_profile: CandidateProfile) -> dict[str, object]:
+    profile = candidate_profile.candidate_profile
+    extracted = profile.cv_extracted
+    return {
+        "identity": extracted.identity.model_dump(mode="json"),
+        "candidate_preferences": profile.candidate_preferences.model_dump(mode="json"),
+        "work_experience": extracted.work_experience,
+        "education": extracted.education,
+        "skills": extracted.skills,
+        "languages": extracted.languages,
+        "certifications": extracted.certifications,
+        "projects": extracted.projects,
+        "references": extracted.references,
+    }
+
+
+def _package_form_answers(package: ApplicationPackage) -> list[dict[str, object]]:
+    return [
+        {
+            "label": artifact.label,
+            "content": artifact.content,
+            "source_prompt": artifact.source_prompt,
+            "source_requirement": artifact.source_requirement,
+        }
+        for artifact in package.artifacts
+        if artifact.type == "form_answer" and artifact.content.strip()
+    ]
+
+
+def _to_json(value: object) -> str:
+    return json.dumps(value, indent=2, ensure_ascii=True)
 
 
 def _split_full_name(full_name: str) -> tuple[str, str]:
