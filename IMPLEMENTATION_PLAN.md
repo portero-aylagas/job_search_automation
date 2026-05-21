@@ -522,6 +522,48 @@ Web search only discovers candidate jobs.
 
 It does not apply to jobs, message recruiters, or submit forms.
 
+### Recommended Discovery Stack
+
+Use a hybrid background pipeline rather than a free-running autonomous agent:
+
+```text
+daily deterministic runner
+  -> load reviewed candidate profile
+  -> build sanitized search profile
+  -> generate public web-search queries
+  -> collect candidate job URLs
+  -> extract lightweight job facts with structured AI output
+  -> filter duplicates, stale pages, and hard preference mismatches
+  -> score candidates deterministically
+  -> propose one job for user review
+```
+
+The deterministic Python layer should own scheduling, query templates, URL
+normalization, duplicate detection, already-seen accepted/rejected checks,
+location and remote-policy filtering, salary/seniority hard filters, one-job
+daily limits, JSON persistence, and tracker handoff.
+
+Use the LLM only at controlled boundaries where public web data is messy:
+
+- turn search result snippets or fetched pages into structured candidate jobs
+- extract lightweight title, company, location, remote policy, salary, skills,
+  seniority, and freshness signals
+- decide whether a result is probably a real job post
+- explain match reasons and uncertainty for the user-facing proposal
+
+Discovery should store lightweight candidates separately from normalized jobs.
+Suggested runtime files:
+
+```text
+data/runtime/discovery_runs/<date>.json
+data/runtime/discovery_candidates.json
+```
+
+Accepted candidates enter the existing Job Intake pipeline with
+`retrieval_mode="web_search"`. Rejected candidates remain in discovery history
+so the same job is not proposed again. Application package generation and
+Browser Use apply assistance remain downstream human-gated workflows.
+
 ### Acceptance Criteria
 
 - user can search for jobs online
