@@ -455,6 +455,11 @@ make verify
 application code, Python compile checks, and the pytest suite. The command is
 local and does not require live API keys.
 
+Repository hygiene and documentation expectations are documented in
+`docs/development_standards.md`. That file defines which docs should change with
+behavior, what local artifacts must stay out of git, and how development-support
+skills are separated from runtime application behavior.
+
 ---
 
 ## Environment Variables
