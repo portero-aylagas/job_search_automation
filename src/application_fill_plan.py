@@ -14,6 +14,10 @@ from pydantic import BaseModel
 
 from src import llm_client
 from src.application_package_quality import is_sensitive_or_user_decision_field
+from src.candidate_profile import (
+    candidate_optional_document_display_name,
+    normalize_candidate_profile_documents,
+)
 from src.paths import application_fill_plan_paths, runtime_application_fill_plan_path
 from src.prompt_templates import get_prompt
 from src.schemas import (
@@ -98,6 +102,7 @@ class AvailableDocumentUpload:
     file_path: str
     source: str
     confidence: ConfidenceLevel
+    file_name: str = ""
 
 
 class ApplicationFieldMappingSuggestion(BaseModel):
@@ -139,6 +144,7 @@ def generate_application_fill_plan(
 ) -> ApplicationFillPlan:
     """Create a conservative draft fill plan from reviewed application data."""
 
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
     field_values: list[ApplicationFillFieldValue] = []
     blocked_fields: list[ApplicationFillBlockedField] = []
     needs_answer_fields: list[ApplicationFillNeedsAnswerField] = []
@@ -454,6 +460,7 @@ def build_application_fill_plan_source_metadata(
 ) -> dict[str, object]:
     """Return lightweight source metadata used to detect stale fill plans."""
 
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
     source_documents = candidate_profile.candidate_profile.source_documents
     return {
         "candidate_documents": {
@@ -815,12 +822,14 @@ def _build_upload_files(
     for requested_upload in _requested_document_uploads(requirements):
         matches = available_uploads.get(requested_upload.document_type, [])
         if matches:
+            disambiguate_label = len(matches) > 1
             for match in matches:
                 uploads.append(
                     _upload_from_available_document(
                         requested_upload,
                         match,
                         page_snapshot=page_snapshot,
+                        disambiguate_label=disambiguate_label,
                     )
                 )
             continue
@@ -839,6 +848,7 @@ def _available_document_uploads(
     candidate_profile: CandidateProfile,
     package: ApplicationPackage,
 ) -> dict[str, list[AvailableDocumentUpload]]:
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
     uploads_by_type: dict[str, list[AvailableDocumentUpload]] = {}
     cv_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
     if cv_path:
@@ -849,6 +859,7 @@ def _available_document_uploads(
                 file_path=cv_path,
                 source="candidate_profile.source_documents.cv.file_path",
                 confidence="high",
+                file_name=Path(cv_path).name,
             ),
         )
 
@@ -871,6 +882,7 @@ def _available_document_uploads(
                 file_path=document_path,
                 source=f"candidate_profile.source_documents.optional_documents.{index}",
                 confidence="high",
+                file_name=candidate_optional_document_display_name(document),
             ),
         )
 
@@ -887,6 +899,7 @@ def _available_document_uploads(
                 file_path=file_path,
                 source=f"application_package.artifacts.{artifact.id}.{source_suffix}",
                 confidence="medium",
+                file_name=Path(file_path).name,
             ),
         )
     return uploads_by_type
@@ -1017,10 +1030,15 @@ def _upload_from_available_document(
     available_upload: AvailableDocumentUpload,
     *,
     page_snapshot: ApplicationPageSnapshot | None,
+    disambiguate_label: bool = False,
 ) -> ApplicationFillUploadFile:
     return _attach_fill_plan_evidence(
         ApplicationFillUploadFile(
-            label=requested_upload.label,
+            label=_available_document_upload_label(
+                requested_upload,
+                available_upload,
+                disambiguate=disambiguate_label,
+            ),
             file_path=available_upload.file_path,
             document_type=requested_upload.document_type,
             required=requested_upload.required,
@@ -1030,6 +1048,21 @@ def _upload_from_available_document(
         page_snapshot,
         _terms_from_requirement_finding(requested_upload.requirement),
     )
+
+
+def _available_document_upload_label(
+    requested_upload: RequestedDocumentUpload,
+    available_upload: AvailableDocumentUpload,
+    *,
+    disambiguate: bool,
+) -> str:
+    label = requested_upload.label
+    file_name = available_upload.file_name.strip()
+    if not disambiguate or not file_name:
+        return label
+    if file_name.casefold() in label.casefold():
+        return label
+    return f"{label} ({file_name})"
 
 
 def _missing_required_upload(

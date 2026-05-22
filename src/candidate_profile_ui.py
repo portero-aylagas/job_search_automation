@@ -14,6 +14,7 @@ from src.app_workflow import (
 from src.candidate_profile import (
     is_valid_email,
     merge_supplemental_extracted_data,
+    normalize_candidate_profile_documents,
     validate_candidate_profile,
 )
 from src.cv_extraction import (
@@ -186,7 +187,12 @@ def render_candidate_profile_page(base_dir: Path) -> None:
         st.success(success_message)
 
     draft = get_candidate_profile_draft(base_dir)
-    candidate_profile = CandidateProfile.model_validate(draft)
+    candidate_profile = normalize_candidate_profile_documents(
+        CandidateProfile.model_validate(draft)
+    )
+    normalized_draft = candidate_profile.model_dump(mode="json")
+    if normalized_draft != draft:
+        set_candidate_profile_draft(normalized_draft)
 
     render_cv_upload_section(base_dir, candidate_profile)
     render_optional_documents_section(base_dir, candidate_profile)
@@ -322,6 +328,7 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
                     )
                     parsed_count += 1
 
+            updated_profile = normalize_candidate_profile_documents(updated_profile)
             set_candidate_profile_draft(updated_profile.model_dump(mode="json"))
             if parsed_count:
                 st.success(
@@ -650,7 +657,9 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
 def get_latest_candidate_profile(base_dir: Path) -> CandidateProfile:
     """Return the current candidate profile draft as a validated model."""
 
-    return CandidateProfile.model_validate(get_candidate_profile_draft(base_dir))
+    return normalize_candidate_profile_documents(
+        CandidateProfile.model_validate(get_candidate_profile_draft(base_dir))
+    )
 
 
 def render_profile_save_section(base_dir: Path, _candidate_profile: CandidateProfile) -> None:
@@ -665,6 +674,8 @@ def render_profile_save_section(base_dir: Path, _candidate_profile: CandidatePro
             return
 
         saved_path = save_candidate_profile(base_dir, current_profile)
-        set_candidate_profile_draft(current_profile.model_dump(mode="json"))
+        set_candidate_profile_draft(
+            normalize_candidate_profile_documents(current_profile).model_dump(mode="json")
+        )
         st.session_state["candidate_profile_success"] = f"Saved to {saved_path}."
         st.rerun()

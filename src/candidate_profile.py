@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from src.schemas import (
     CandidateCVExtracted,
+    CandidateOptionalDocument,
     CandidateProfile,
     CandidateSupplementalExtracted,
 )
 
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_DIGIT_PATTERN = re.compile(r"\d")
+UPLOAD_TIMESTAMP_PREFIX_PATTERN = re.compile(r"^\d{14}-(?=.)")
 
 
 def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
@@ -88,6 +91,60 @@ def is_valid_email(value: str) -> bool:
     """Return whether an email value is non-empty and syntactically plausible."""
 
     return EMAIL_PATTERN.fullmatch(value.strip()) is not None
+
+
+def normalize_candidate_profile_documents(
+    candidate_profile: CandidateProfile,
+) -> CandidateProfile:
+    """Return a copy with repeated optional document uploads collapsed.
+
+    Optional document uploads are stored with timestamped runtime paths. When the
+    same category and original filename is uploaded again, the newest metadata
+    entry should replace the older one while distinct filenames remain available.
+    """
+
+    normalized_profile = candidate_profile.model_copy(deep=True)
+    source_documents = normalized_profile.candidate_profile.source_documents
+    source_documents.optional_documents = dedupe_optional_documents(
+        source_documents.optional_documents
+    )
+    return normalized_profile
+
+
+def dedupe_optional_documents(
+    documents: list[CandidateOptionalDocument],
+) -> list[CandidateOptionalDocument]:
+    """Return optional documents deduped by category and original filename."""
+
+    documents_by_key: dict[tuple[str, str], CandidateOptionalDocument] = {}
+    ordered_keys: list[tuple[str, str]] = []
+    for document in documents:
+        key = _optional_document_dedupe_key(document)
+        if key not in documents_by_key:
+            ordered_keys.append(key)
+        documents_by_key[key] = document
+    return [documents_by_key[key] for key in ordered_keys]
+
+
+def candidate_optional_document_display_name(
+    document: CandidateOptionalDocument,
+) -> str:
+    """Return the original optional-document filename for labels and dedupe."""
+
+    file_name = document.file_name.strip()
+    if not file_name:
+        file_name = Path(document.file_path).name.strip()
+    return UPLOAD_TIMESTAMP_PREFIX_PATTERN.sub("", file_name)
+
+
+def _optional_document_dedupe_key(
+    document: CandidateOptionalDocument,
+) -> tuple[str, str]:
+    document_type = document.document_type.strip().casefold() or "other"
+    file_name = candidate_optional_document_display_name(document).strip().casefold()
+    if not file_name:
+        file_name = document.file_path.strip().casefold()
+    return (document_type, file_name)
 
 
 def merge_supplemental_extracted_data(

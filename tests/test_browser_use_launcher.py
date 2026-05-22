@@ -310,6 +310,9 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "Merely\n  extracting labels is not verification" in task
     assert "Never start file uploads before every field_values_before_upload row" in task
     assert "If upload_file reports an error" in task
+    assert "Upload each listed file_path at most one time" in task
+    assert "Do not restart the upload list" in task
+    assert "do not search for additional\n  required checkboxes" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
 
@@ -351,6 +354,77 @@ def test_build_fill_plan_application_task_keeps_false_checkboxes_report_only() -
     assert all("ATS gate" not in label for label in field_labels)
     assert all("ATS gate" not in label for label in mandatory_labels)
     assert all("ATS gate" not in label for label in untouched_labels)
+
+
+def test_build_fill_plan_application_task_dedupes_repeated_action_targets() -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.field_values.extend(
+        [
+            ApplicationFillFieldValue(
+                label="Privacy gate before continuing",
+                value="true",
+                required=True,
+                input_type="checkbox",
+                options=["true", "false"],
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Privacy acknowledgement"],
+                evidence_source="form_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Standorte, die fuer Sie in Frage kommen",
+                name="job_application_start_form[location_names][]",
+                value="Munich",
+                required=True,
+                input_type="checkbox_group",
+                options=["Munich", "Berlin"],
+                source="application_package.form_answer",
+                confidence="medium",
+                literal_evidence=["job_application_start_form[location_names][]"],
+                evidence_source="control_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Bitte waehlen Sie alle Standorte aus",
+                value="Munich",
+                required=True,
+                input_type="checkbox_group",
+                options=[],
+                source="application_package.form_answer",
+                confidence="medium",
+                literal_evidence=["Position is available in Munich and Berlin"],
+                evidence_source="visible_text_excerpt",
+                evidence_status="partial_match",
+            ),
+        ]
+    )
+    fill_plan.upload_files.append(
+        ApplicationFillUploadFile(
+            label="Duplicate CV",
+            file_path="/tmp/candidate/cv.pdf",
+            document_type="cv",
+            required=True,
+            source="manual_review",
+            confidence="high",
+        )
+    )
+
+    task_payload = extract_task_payload(build_fill_plan_application_task(fill_plan))
+
+    field_labels = [
+        str(field["label"]) for field in task_payload["field_values_before_upload"]
+    ]
+    mandatory_labels = [
+        str(field["label"]) for field in task_payload["mandatory_checkbox_fields"]
+    ]
+    upload_paths = [
+        str(upload["file_path"]) for upload in task_payload["upload_files_last"]
+    ]
+
+    assert field_labels == ["Vorname", "Standorte, die fuer Sie in Frage kommen"]
+    assert mandatory_labels == ["Privacy acknowledgement"]
+    assert upload_paths == ["/tmp/candidate/cv.pdf"]
 
 
 def test_build_fill_plan_application_task_keeps_uploads_last() -> None:

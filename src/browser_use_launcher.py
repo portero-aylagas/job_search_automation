@@ -194,17 +194,21 @@ def open_apply_url_with_browser_use_fill_plan(
 def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
     """Return the guarded Browser Use task for a reviewed application fill plan."""
 
-    field_values_before_upload = [
-        field
-        for field in fill_plan.field_values
-        if _field_value_is_pre_upload_browser_action(field)
-    ]
-    mandatory_checkbox_fields = [
-        field
-        for field in fill_plan.field_values
-        if _field_value_is_true_checkbox(field)
-        and not _field_value_is_non_actionable_browser_field(field)
-    ]
+    field_values_before_upload = _dedupe_browser_action_fields(
+        [
+            field
+            for field in fill_plan.field_values
+            if _field_value_is_pre_upload_browser_action(field)
+        ]
+    )
+    mandatory_checkbox_fields = _dedupe_browser_action_fields(
+        [
+            field
+            for field in fill_plan.field_values
+            if _field_value_is_true_checkbox(field)
+            and not _field_value_is_non_actionable_browser_field(field)
+        ]
+    )
     intentionally_blank_fields = [
         field
         for field in fill_plan.field_values
@@ -231,7 +235,8 @@ def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
             for field in intentionally_untouched_checkbox_fields
         ],
         "upload_files_last": [
-            _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
+            _fill_plan_payload_item(upload)
+            for upload in _dedupe_browser_upload_files(fill_plan.upload_files)
         ],
         "blocked_fields": [
             _fill_plan_payload_item(field) for field in fill_plan.blocked_fields
@@ -251,7 +256,8 @@ The JSON is split by action intent:
 - field_values_before_upload contains the only non-checkbox form fields to fill
   or inspect before upload.
 - mandatory_checkbox_fields contains the only checkbox controls to check or
-  confirm checked.
+  confirm checked. Treat this list as exact; do not search for additional
+  required checkboxes on the page.
 - intentionally_blank_fields contains reviewed blank values. Do not type empty
   strings into these controls and do not clear nearby fields; just leave them
   untouched and report them as intentionally blank.
@@ -286,6 +292,9 @@ Before filling or uploading:
   wipe form state. Verify in place or report the verification as failed.
 - Do not search for or act on synthetic review labels that are not present in
   field_values_before_upload or mandatory_checkbox_fields.
+- Keep a local completion ledger for every field, checkbox, and file path listed
+  in the JSON. Once a ledger item has been completed successfully, do not repeat
+  that action.
 
 Required action order:
 - First, process every item in field_values_before_upload in the order listed.
@@ -300,10 +309,13 @@ Required action order:
 - Second, process every item in mandatory_checkbox_fields. These are reviewed
   true checkbox confirmations, including required privacy, terms, consent, or
   acknowledgements.
+- For each mandatory checkbox, inspect the live checked state first. Click only
+  when the matching checkbox is currently unchecked; never click a checked
+  checkbox because that can toggle it off.
 - Third, verify live field values and checkbox states before any upload. Merely
   extracting labels is not verification.
 - Last, and only after all field_values_before_upload rows have been handled
-  and verified, upload every file in upload_files_last.
+  and verified, upload every file in upload_files_last exactly once.
 
 Mandatory completion checklist:
 - Process every item in mandatory_checkbox_fields. These are reviewed
@@ -332,6 +344,12 @@ Hard safety rules:
   option label.
 - Upload only files listed in upload_files_last, using Browser Use's upload_file
   action directly on matching upload controls.
+- Upload each listed file_path at most one time. After upload_file reports
+  success for a file_path, mark that file_path complete and never call
+  upload_file for it again, even if a new empty file input appears.
+- If every file_path in upload_files_last has a successful upload_file result,
+  stop and produce the final report. Do not restart the upload list and do not
+  upload the first file again.
 - Never start file uploads before every field_values_before_upload row is
   complete or explicitly reported as failed.
 - Never click upload controls to open the operating-system file picker.
@@ -426,7 +444,70 @@ def _launch_browser_use_runner(
 
 
 def _fill_plan_available_file_paths(fill_plan: ApplicationFillPlan) -> list[Path]:
-    return [Path(upload.file_path) for upload in fill_plan.upload_files if upload.file_path]
+    return [
+        Path(upload.file_path)
+        for upload in _dedupe_browser_upload_files(fill_plan.upload_files)
+        if upload.file_path
+    ]
+
+
+def _dedupe_browser_action_fields(
+    fields: list[ApplicationFillFieldValue],
+) -> list[ApplicationFillFieldValue]:
+    """Return Browser Use action fields without duplicate live-control targets."""
+
+    seen_keys: set[str] = set()
+    deduped: list[ApplicationFillFieldValue] = []
+    for field in fields:
+        keys = _browser_action_field_keys(field)
+        if keys and any(key in seen_keys for key in keys):
+            continue
+        seen_keys.update(keys)
+        deduped.append(field)
+    return deduped
+
+
+def _browser_action_field_keys(field: ApplicationFillFieldValue) -> set[str]:
+    keys: set[str] = set()
+    name = _browser_action_key_part(field.name)
+    if name:
+        keys.add(f"name:{name}")
+
+    input_type = _browser_action_key_part(field.input_type)
+    value = _browser_action_key_part(field.value)
+    if input_type in {"checkbox_group", "multiselect"} and value:
+        keys.add(f"group-value:{input_type}:{value}")
+
+    for evidence in field.literal_evidence:
+        evidence_key = _browser_action_key_part(evidence)
+        if evidence_key:
+            keys.add(f"evidence:{evidence_key}")
+
+    label = _browser_action_key_part(field.label)
+    if label and not name:
+        keys.add(f"label:{input_type}:{label}")
+    return keys
+
+
+def _dedupe_browser_upload_files(
+    uploads: list[ApplicationFillUploadFile],
+) -> list[ApplicationFillUploadFile]:
+    """Return upload rows with each concrete file path listed once."""
+
+    seen_paths: set[str] = set()
+    deduped: list[ApplicationFillUploadFile] = []
+    for upload in uploads:
+        path_key = _browser_action_key_part(upload.file_path)
+        if path_key and path_key in seen_paths:
+            continue
+        if path_key:
+            seen_paths.add(path_key)
+        deduped.append(upload)
+    return deduped
+
+
+def _browser_action_key_part(value: str) -> str:
+    return " ".join(value.casefold().split())
 
 
 def _fill_plan_payload_item(

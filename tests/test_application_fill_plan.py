@@ -369,6 +369,88 @@ def test_grouped_attachment_text_creates_separate_upload_rows() -> None:
     assert len({upload.label for upload in fill_plan.upload_files}) == 4
 
 
+def test_reuploaded_optional_documents_are_deduped_in_upload_rows() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101120000-language-certificate.pdf",
+            file_name="language-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101121500-manager-reference.pdf",
+            file_name="",
+            document_type="reference",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101121000-language-certificate.pdf",
+            file_name="language-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101122000-manager-reference.pdf",
+            file_name="",
+            document_type="reference",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101120500-safety-certificate.pdf",
+            file_name="safety-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+    ]
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = [
+        ApplicationRequirementFinding(
+            label="Attachments",
+            required=True,
+            evidence="Upload CV, cover letter, certificates, references.",
+            confidence="high",
+        )
+    ]
+    requirements.motivation_letter = None
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Dear hiring team...",
+            metadata={"generated_file_path": "/tmp/generated/cover_letter.pdf"},
+        )
+    )
+
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+
+    uploads = [(upload.document_type, upload.file_path) for upload in fill_plan.upload_files]
+    assert uploads == [
+        ("cv", "/tmp/candidate/cv.pdf"),
+        ("cover_letter", "/tmp/generated/cover_letter.pdf"),
+        (
+            "certificate",
+            "/tmp/candidate/20240101121000-language-certificate.pdf",
+        ),
+        ("certificate", "/tmp/candidate/20240101120500-safety-certificate.pdf"),
+        (
+            "reference",
+            "/tmp/candidate/20240101122000-manager-reference.pdf",
+        ),
+    ]
+    certificate_labels = [
+        upload.label
+        for upload in fill_plan.upload_files
+        if upload.document_type == "certificate"
+    ]
+    assert certificate_labels == [
+        "Attachments - Certificate (language-certificate.pdf)",
+        "Attachments - Certificate (safety-certificate.pdf)",
+    ]
+
+
 def test_optional_requested_document_without_uploaded_file_is_not_sent() -> None:
     requirements = make_requirements().model_copy(deep=True)
     requirements.required_documents = []
