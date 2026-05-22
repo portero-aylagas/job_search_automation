@@ -19,6 +19,8 @@ from src.browser_use_launcher import (
 from src.browser_use_visible_runner import (
     _browser_use_agent_max_steps,
     _close_existing_pages,
+    _open_page_with_retries,
+    _page_has_interactive_content,
     _write_stable_profile_preferences,
 )
 from src.schemas import (
@@ -560,6 +562,64 @@ def test_close_existing_pages_closes_tabs_before_navigation() -> None:
 
     assert closed_count == 2
     assert browser.closed_pages == ["about:blank", "old-job"]
+
+
+def test_page_has_interactive_content_rejects_blank_page() -> None:
+    class FakePage:
+        async def evaluate(self, _script: str) -> str:
+            return '{"href": "about:blank", "bodyTextLength": 0, "controlCount": 0}'
+
+    assert asyncio.run(_page_has_interactive_content(FakePage())) is False
+
+
+def test_page_has_interactive_content_accepts_loaded_form() -> None:
+    class FakePage:
+        async def evaluate(self, _script: str) -> str:
+            return (
+                '{"href": "https://example.com/apply", '
+                '"bodyTextLength": 42, "controlCount": 3}'
+            )
+
+    assert asyncio.run(_page_has_interactive_content(FakePage())) is True
+
+
+def test_open_page_with_retries_retries_navigation_until_controls_load() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.goto_calls: list[str] = []
+
+        async def evaluate(self, _script: str) -> str:
+            if self.goto_calls:
+                return (
+                    '{"href": "https://example.com/apply", '
+                    '"bodyTextLength": 42, "controlCount": 3}'
+                )
+            return '{"href": "about:blank", "bodyTextLength": 0, "controlCount": 0}'
+
+        async def goto(self, url: str) -> None:
+            self.goto_calls.append(url)
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.page = FakePage()
+
+        async def new_page(self, url: str) -> FakePage:
+            assert url == "https://example.com/apply"
+            return self.page
+
+    browser = FakeBrowser()
+
+    page = asyncio.run(
+        _open_page_with_retries(
+            browser,
+            "https://example.com/apply",
+            ready_wait_seconds=0.01,
+            poll_interval_seconds=0.001,
+        )
+    )
+
+    assert page is browser.page
+    assert browser.page.goto_calls == ["https://example.com/apply"]
 
 
 def make_fill_plan() -> ApplicationFillPlan:
