@@ -109,7 +109,8 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
         render_application_package_panel(base_dir, job_listing)
     with st.container(border=True):
         render_application_fill_plan_panel(base_dir, job_listing)
-    render_apply_assistance_panel(base_dir, job_listing)
+    with st.container(border=True):
+        render_apply_to_position_panel(base_dir, job_listing)
 
 
 def job_option_label(record: TrackerRecord) -> str:
@@ -473,11 +474,17 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
     )
 
 
+def render_apply_to_position_panel(base_dir: Path, job: JobListing) -> None:
+    """Render the final apply action box for one reviewed job workspace."""
+
+    st.subheader("Apply to position")
+    render_apply_assistance_panel(base_dir, job)
+
+
 def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
     """Render the first apply-assistance action for a reviewed job workspace."""
 
-    st.divider()
-    st.subheader("Apply Assistance")
+    st.markdown("**Apply Assistance**")
     requirements = load_application_requirements(base_dir, job.id)
     package = load_application_package(base_dir, job.id)
     fill_plan = load_application_fill_plan(base_dir, job.id)
