@@ -13,12 +13,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from src.application_fill_plan import get_application_fill_plan_review_blockers
+from src.application_fill_plan import (
+    get_application_fill_plan_freshness_blockers,
+    get_application_fill_plan_review_blockers,
+)
 from src.schemas import (
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
     ApplicationFillPlan,
     ApplicationFillUploadFile,
+    ApplicationPackage,
+    ApplicationRequirements,
+    CandidateProfile,
 )
 
 STARTUP_WAIT_SECONDS = 30.0
@@ -155,6 +161,9 @@ def open_apply_url_with_browser_use_fill_plan(
     fill_plan: ApplicationFillPlan,
     log_dir: Path | str,
     startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
+    candidate_profile: CandidateProfile | None = None,
+    requirements: ApplicationRequirements | None = None,
+    package: ApplicationPackage | None = None,
 ) -> BrowserUseOpenResult:
     """Open an apply URL and start a Browser Use agent from a reviewed fill plan."""
 
@@ -164,6 +173,15 @@ def open_apply_url_with_browser_use_fill_plan(
     review_blockers = get_application_fill_plan_review_blockers(fill_plan)
     if review_blockers:
         raise BrowserUseLaunchError(" ".join(review_blockers))
+    if candidate_profile is not None and requirements is not None and package is not None:
+        freshness_blockers = get_application_fill_plan_freshness_blockers(
+            fill_plan,
+            candidate_profile,
+            requirements,
+            package,
+        )
+        if freshness_blockers:
+            raise BrowserUseLaunchError(" ".join(freshness_blockers))
     return _launch_browser_use_runner(
         normalized_url,
         log_dir=log_dir,

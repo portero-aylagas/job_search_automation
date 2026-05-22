@@ -183,6 +183,64 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert result.log_path.name.startswith("browser-use-apply-agent-")
 
 
+def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_popen(
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: object,
+        stderr: int,
+        text: bool,
+        start_new_session: bool,
+        env: dict[str, str],
+    ) -> FakeRunningProcess:
+        captured["command"] = command
+        return FakeRunningProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    fill_plan = make_fill_plan()
+    fill_plan.upload_files.append(
+        ApplicationFillUploadFile(
+            label="Cover letter",
+            file_path="/tmp/generated/cover_letter.pdf",
+            document_type="cover_letter",
+            required=True,
+            source="manual_review",
+            confidence="high",
+        )
+    )
+
+    open_apply_url_with_browser_use_fill_plan(
+        "https://example.com/apply/automation-engineer",
+        fill_plan=fill_plan,
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    upload_flag_indexes = [
+        index for index, value in enumerate(command) if value == "--available-file-path"
+    ]
+    assert [command[index + 1] for index in upload_flag_indexes] == [
+        "/tmp/candidate/cv.pdf",
+        "/tmp/generated/cover_letter.pdf",
+    ]
+    agent_task = command[command.index("--agent-task") + 1]
+    assert '"label": "Lebenslauf"' in agent_task
+    assert '"label": "Cover letter"' in agent_task
+    assert '"/tmp/candidate/cv.pdf"' in agent_task
+    assert '"/tmp/generated/cover_letter.pdf"' in agent_task
+
+
 def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> None:
     task = build_fill_plan_application_task(make_fill_plan())
 

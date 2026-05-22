@@ -85,6 +85,8 @@ application_requirements:
 
       Extract only requirements supported by snapshot evidence: documents, upload constraints, screening questions, requested profile fields, custom fields, motivation or cover letter needs, consent requirements, privacy/login/ATS gates, deadlines, contact/fallback information, missing or uncertain items, source evidence, job preservation, and confidence.
 
+      Preserve explicit document needs from any provider or ATS. If the page groups attachments in one phrase, split and preserve each named document need in required_documents or upload_expectations, for example "CV, cover letter, certificates, references" means separate CV, cover letter, certificate, and reference needs. Keep the original grouped text as evidence or constraints.
+
       If the snapshot is empty, blocked, generic, not job-preserving, or too uncertain, return status='blocked' or list missing_or_uncertain items. Never invent requirements that are not visible in the snapshot.
     user: |
       Discover application requirements for this selected job from the snapshot evidence.

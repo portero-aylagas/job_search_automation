@@ -23,6 +23,7 @@ from src.application_fill_plan import (
     fill_plan_needs_answer_edit_key,
     fill_plan_upload_edit_key,
     generate_application_fill_plan,
+    get_application_fill_plan_freshness_blockers,
     get_application_fill_plan_review_blockers,
     load_application_fill_plan,
     map_application_fields_with_llm,
@@ -59,6 +60,7 @@ from src.schemas import (
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
+    CandidateProfile,
     JobListing,
     TrackerRecord,
 )
@@ -485,11 +487,18 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
     """Render the first apply-assistance action for a reviewed job workspace."""
 
     st.markdown("**Apply Assistance**")
+    candidate_profile = load_candidate_profile(base_dir)
     requirements = load_application_requirements(base_dir, job.id)
     package = load_application_package(base_dir, job.id)
     fill_plan = load_application_fill_plan(base_dir, job.id)
     browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
-    blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
+    blockers = get_apply_assistance_blockers(
+        job,
+        requirements,
+        package,
+        fill_plan,
+        candidate_profile=candidate_profile,
+    )
 
     if blockers:
         st.warning("Apply assistance is blocked until these review steps are complete:")
@@ -521,6 +530,9 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
                     str(job.apply_url),
                     fill_plan=fill_plan,
                     log_dir=browser_use_log_dir,
+                    candidate_profile=candidate_profile,
+                    requirements=requirements,
+                    package=package,
                 )
         except BrowserUseLaunchError as exc:
             st.error(str(exc))
@@ -1196,6 +1208,8 @@ def get_apply_assistance_blockers(
     requirements: ApplicationRequirements | None,
     package: ApplicationPackage | None,
     fill_plan: ApplicationFillPlan | None,
+    *,
+    candidate_profile: CandidateProfile | None = None,
 ) -> list[str]:
     """Return blockers that prevent opening the apply page from the Jobs workspace."""
 
@@ -1223,6 +1237,19 @@ def get_apply_assistance_blockers(
             blockers.extend(fill_plan_review_blockers)
         elif fill_plan.review_status != "reviewed":
             blockers.append("Review the application fill plan before applying.")
+        elif (
+            candidate_profile is not None
+            and requirements is not None
+            and package is not None
+        ):
+            blockers.extend(
+                get_application_fill_plan_freshness_blockers(
+                    fill_plan,
+                    candidate_profile,
+                    requirements,
+                    package,
+                )
+            )
 
     return blockers
 
