@@ -60,8 +60,9 @@ from src.schemas import (
     TrackerRecord,
 )
 from src.ui_components import (
+    AI_ACTION_COST_HELP,
+    format_detail_value,
     render_additional_details,
-    render_artifact_traceability,
     render_field,
     render_form_fields,
     render_list,
@@ -93,21 +94,19 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
     st.header(f"{selected_record.title}")
     st.caption(selected_record.company)
 
-    status_left, status_right, status_third = st.columns(3)
-    status_left.metric("Status", selected_record.status)
-    if selected_record.match_score is None:
-        match_score = "Not analyzed"
-    else:
-        match_score = f"{selected_record.match_score:g}"
-    status_right.metric("Match Score", match_score)
-    status_third.metric("Retrieval", selected_record.retrieval_mode)
-
-    st.divider()
     if job_listing is None:
+        render_tracker_status_summary(selected_record)
         render_tracker_job_summary(selected_record)
         st.warning("Full intake data is not available for this job yet.")
         return
 
+    requirements = load_application_requirements(base_dir, job_listing.id)
+    package = load_application_package(base_dir, job_listing.id)
+    fill_plan = load_application_fill_plan(base_dir, job_listing.id)
+
+    render_review_checklist(requirements, package, fill_plan)
+
+    st.divider()
     render_job_intake_summary(job_listing)
     render_application_requirements_panel(base_dir, job_listing)
     render_application_package_panel(base_dir, job_listing)
@@ -119,6 +118,155 @@ def job_option_label(record: TrackerRecord) -> str:
     """Return the display label for a job selector option."""
 
     return f"{record.company} / {record.title}"
+
+
+def format_match_score(record: TrackerRecord) -> str:
+    """Return a compact match-score label for a tracker record."""
+
+    if record.match_score is None:
+        return "Not analyzed"
+    return f"{record.match_score:g}"
+
+
+def render_tracker_status_summary(record: TrackerRecord) -> None:
+    """Render compact tracker status when only tracker data is available."""
+
+    status_left, status_right, status_third = st.columns(3)
+    status_left.metric("Status", record.status)
+    status_right.metric("Match Score", format_match_score(record))
+    status_third.metric("Retrieval", record.retrieval_mode)
+
+
+def build_review_checklist(
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+    fill_plan: ApplicationFillPlan | None,
+) -> list[str]:
+    """Build a de-duplicated list of human decisions still worth surfacing."""
+
+    items: list[str] = []
+    if requirements is not None:
+        items.extend(requirement_review_labels(requirements))
+    if package is not None:
+        items.extend(package.missing_information)
+    return [
+        item
+        for item in deduplicate_review_items(items)
+        if not review_item_is_represented_in_fill_plan(item, fill_plan)
+    ]
+
+
+def review_item_is_represented_in_fill_plan(
+    item: str,
+    fill_plan: ApplicationFillPlan | None,
+) -> bool:
+    """Return whether a review item already appears as an editable fill-plan field."""
+
+    if fill_plan is None:
+        return False
+    normalized_item = normalize_review_item(item)
+    editable_labels = [
+        field.label
+        for field in [
+            *fill_plan.field_values,
+            *fill_plan.needs_answer_fields,
+            *fill_plan.blocked_fields,
+        ]
+    ]
+    return normalized_item in {
+        normalize_review_item(label) for label in editable_labels if label.strip()
+    }
+
+
+def requirement_review_labels(requirements: ApplicationRequirements) -> list[str]:
+    """Return concise labels for requirement groups that require human awareness."""
+
+    labels: list[str] = []
+    labels.extend(finding.label for finding in requirements.consent_requirements)
+    labels.extend(question.question for question in requirements.screening_questions)
+    labels.extend(field.label for field in requirements.custom_form_fields)
+    labels.extend(requirements.missing_or_uncertain)
+    return labels
+
+
+def deduplicate_review_items(items: list[str]) -> list[str]:
+    """Return review items without repeated labels across workflow artifacts."""
+
+    seen: set[str] = set()
+    deduplicated: list[str] = []
+    for item in items:
+        normalized_item = normalize_review_item(item)
+        if not normalized_item or normalized_item in seen:
+            continue
+        seen.add(normalized_item)
+        deduplicated.append(clean_review_item_label(item))
+    return deduplicated
+
+
+def normalize_review_item(item: str) -> str:
+    """Normalize semantically repeated review labels for de-duplication."""
+
+    normalized = clean_review_item_label(item).casefold()
+    replacements = {
+        "user decision required: ": "",
+        "user must review consent requirement: ": "",
+        "optional consent for ": "",
+        "privacy policy acknowledgement": "privacy policy acknowledgment",
+    }
+    for old, new in replacements.items():
+        normalized = normalized.replace(old, new)
+
+    if "schwerbehinderung" in normalized or "behinderung" in normalized:
+        return "disability disclosure"
+    if (
+        "empfehlung" in normalized
+        or "referral" in normalized
+        or "recommendation code" in normalized
+    ):
+        return "employee referral"
+    if "datenschutz" in normalized or "privacy policy" in normalized:
+        return "privacy consent"
+    if "firmengruppe" in normalized or "group companies" in normalized:
+        return "group company data sharing"
+    if "intern" in normalized or "internal" in normalized:
+        return "internal application"
+    if "zeugnisse" in normalized or "certificates" in normalized:
+        return "certificates upload"
+    if "deadline" in normalized or "application deadline" in normalized:
+        return "application deadline"
+    if "contact" in normalized or "recruiter" in normalized:
+        return "fallback contact"
+    return normalized
+
+
+def clean_review_item_label(item: str) -> str:
+    """Trim noisy prefixes from review items while preserving meaning."""
+
+    cleaned = item.strip()
+    prefixes = [
+        "User decision required: ",
+        "User must review consent requirement: ",
+        "User should confirm ",
+    ]
+    for prefix in prefixes:
+        if cleaned.startswith(prefix):
+            return cleaned.removeprefix(prefix).strip()
+    return cleaned
+
+
+def render_review_checklist(
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+    fill_plan: ApplicationFillPlan | None,
+) -> None:
+    """Render a single compact human-review checklist."""
+
+    checklist = build_review_checklist(requirements, package, fill_plan)
+    if not checklist:
+        return
+    with st.expander("Human review checklist", expanded=False):
+        for item in checklist:
+            st.write(f"- {item}")
 
 
 def render_tracker_job_summary(record: TrackerRecord) -> None:
@@ -138,29 +286,82 @@ def render_tracker_job_summary(record: TrackerRecord) -> None:
 
 
 def render_job_intake_summary(job: JobListing) -> None:
-    """Render reviewed normalized job-intake data."""
+    """Render a compact reviewed normalized job-intake summary."""
 
-    st.subheader("Intake Data")
+    st.subheader("Job Snapshot")
     left, right = st.columns(2)
     with left:
-        render_field("Company", job.company)
         render_field("Location", job.location)
         render_field("Remote Policy", job.remote_policy)
         render_field("Salary", job.salary)
     with right:
-        render_field("Source URL", str(job.source_url))
-        render_field("Apply URL", str(job.apply_url) if job.apply_url else None)
         render_field("Posted Date", job.posted_date)
         render_field("Source Job ID", job.source_job_id)
+        st.markdown(f"[Source URL]({job.source_url})")
+        if job.apply_url:
+            st.markdown(f"[Apply URL]({job.apply_url})")
 
     if job.description:
         st.markdown("**Role Summary**")
         st.write(job.description)
 
-    render_list("Requirements", job.requirements)
-    render_list("Responsibilities", job.responsibilities)
-    render_list("Nice-to-have Skills", job.nice_to_have_skills)
-    render_additional_details(job.job_details)
+    with st.expander("Role details", expanded=False):
+        render_list("Requirements", job.requirements)
+        render_list("Responsibilities", job.responsibilities)
+        render_list("Nice-to-have Skills", job.nice_to_have_skills)
+
+    with st.expander("Advanced job details", expanded=False):
+        render_job_advanced_details(job)
+
+
+def render_job_advanced_details(job: JobListing) -> None:
+    """Render lower-priority job extraction metadata and dynamic details."""
+
+    dynamic_details = {"dynamic_fields": job.job_details.get("dynamic_fields", [])}
+    render_additional_details(dynamic_details)
+
+    extraction_confidence = job.job_details.get("extraction_confidence")
+    if extraction_confidence:
+        render_field("Extraction Confidence", str(extraction_confidence))
+
+    apply_url_resolution = job.job_details.get("apply_url_resolution")
+    if isinstance(apply_url_resolution, dict):
+        render_apply_url_resolution_details(apply_url_resolution)
+
+    remaining_details = {
+        key: value
+        for key, value in job.job_details.items()
+        if key
+        not in {
+            "dynamic_fields",
+            "extraction_confidence",
+            "job_extraction_trace",
+            "apply_url_resolution",
+        }
+        and value
+    }
+    if remaining_details:
+        st.markdown("**Other Details**")
+        for key, value in remaining_details.items():
+            render_field(key.replace("_", " ").title(), format_detail_value(value))
+
+    trace = job.job_details.get("job_extraction_trace")
+    if isinstance(trace, dict):
+        st.markdown("**Job Extraction Trace**")
+        st.json(trace)
+
+
+def render_apply_url_resolution_details(resolution: dict[str, object]) -> None:
+    """Render apply URL resolution details in the advanced job area."""
+
+    st.markdown("**Apply URL Resolution**")
+    for key in ["status", "confidence", "notes"]:
+        value = resolution.get(key)
+        if value:
+            render_field(key.replace("_", " ").title(), str(value))
+    evidence = resolution.get("evidence")
+    if isinstance(evidence, list) and evidence:
+        render_list("Evidence", [str(item) for item in evidence])
 
 
 def render_application_requirements_panel(base_dir: Path, job: JobListing) -> None:
@@ -175,7 +376,11 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         return
 
     st.caption("This action fetches the apply page and uses AI to interpret requirements.")
-    if st.button("Discover Requirements From Apply URL"):
+    if st.button(
+        "Discover requirements from apply URL with AI",
+        type="primary",
+        help=AI_ACTION_COST_HELP,
+    ):
         try:
             with st.spinner("Inspecting apply page requirements..."):
                 discovery_state = run_requirements_discovery_graph(job)
@@ -220,7 +425,12 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
             st.write(f"- {blocker}")
 
     st.caption("This action uses AI to draft application materials from reviewed data.")
-    if st.button("Generate Application Package", disabled=bool(package_blockers)):
+    if st.button(
+        "Generate application package with AI",
+        disabled=bool(package_blockers),
+        type="primary",
+        help=AI_ACTION_COST_HELP,
+    ):
         if package_blockers:
             st.error("Complete all package prerequisites before generating application material.")
             return
@@ -270,34 +480,18 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
             st.write(f"- {blocker}")
 
     active_session = get_active_browser_use_session(browser_use_log_dir)
-    if active_session is None:
-        st.caption("Browser Use session status: idle.")
-    else:
-        st.info(
-            "Browser Use session running: "
-            f"PID {active_session.pid} for {active_session.url}"
-        )
-        st.caption(
-            f"Started: {active_session.started_at}. "
-            f"Log: {active_session.log_path}"
-        )
-        if st.button("Stop Browser Use Session", key=f"stop_browser_use_session_{job.id}"):
-            stopped = stop_browser_use_session(browser_use_log_dir)
-            if stopped:
-                st.success("Stopped the active Browser Use session.")
-                st.rerun()
-            st.warning("No active Browser Use session was found.")
-
-    if st.button("Kill All Browser Use Processes", key=f"kill_all_browser_use_{job.id}"):
-        stopped_count = stop_all_browser_use_processes(browser_use_log_dir)
-        st.success(f"Killed {stopped_count} Browser Use process group(s).")
-        st.rerun()
+    render_browser_use_process_controls(browser_use_log_dir, job, active_session)
 
     st.caption(
         "This action opens the reviewed apply URL and asks Browser Use to execute "
         "the reviewed application fill plan."
     )
-    if st.button("Apply To Job", disabled=bool(blockers)):
+    if st.button(
+        "Apply to job with AI",
+        disabled=bool(blockers),
+        type="primary",
+        help=AI_ACTION_COST_HELP,
+    ):
         if blockers:
             st.error("Complete the required review steps before opening the apply flow.")
             return
@@ -319,6 +513,38 @@ def render_apply_assistance_panel(base_dir: Path, job: JobListing) -> None:
         st.caption(f"Process ID: {result.pid}. Log: {result.log_path}")
 
 
+def render_browser_use_process_controls(
+    browser_use_log_dir: Path,
+    job: JobListing,
+    active_session: object,
+) -> None:
+    """Render Browser Use process controls without dominating the apply panel."""
+
+    with st.expander("Browser process controls", expanded=False):
+        if active_session is None:
+            st.caption("Browser Use session status: idle.")
+        else:
+            st.info(
+                "Browser Use session running: "
+                f"PID {active_session.pid} for {active_session.url}"
+            )
+            st.caption(
+                f"Started: {active_session.started_at}. "
+                f"Log: {active_session.log_path}"
+            )
+            if st.button("Stop Browser Use Session", key=f"stop_browser_use_session_{job.id}"):
+                stopped = stop_browser_use_session(browser_use_log_dir)
+                if stopped:
+                    st.success("Stopped the active Browser Use session.")
+                    st.rerun()
+                st.warning("No active Browser Use session was found.")
+
+        if st.button("Kill All Browser Use Processes", key=f"kill_all_browser_use_{job.id}"):
+            stopped_count = stop_all_browser_use_processes(browser_use_log_dir)
+            st.success(f"Killed {stopped_count} Browser Use process group(s).")
+            st.rerun()
+
+
 def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
     """Render fill-plan generation, review, and edit controls."""
 
@@ -336,7 +562,12 @@ def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
         for blocker in generation_blockers:
             st.write(f"- {blocker}")
 
-    if st.button("Generate / Refresh Fill Plan", disabled=bool(generation_blockers)):
+    if st.button(
+        "Generate or refresh fill plan with AI",
+        disabled=bool(generation_blockers),
+        type="primary",
+        help=AI_ACTION_COST_HELP,
+    ):
         if requirements is None or package is None:
             st.error("Complete fill plan prerequisites before generating.")
             return
@@ -360,7 +591,6 @@ def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
         st.info("No application fill plan has been generated yet.")
         return
 
-    render_application_fill_plan(fill_plan)
     fill_plan = render_application_fill_plan_edit_actions(base_dir, fill_plan)
     review_blockers = get_application_fill_plan_review_blockers(fill_plan)
     if fill_plan.review_status != "reviewed":
@@ -399,75 +629,6 @@ def get_fill_plan_generation_blockers(
     return blockers
 
 
-def render_application_fill_plan(fill_plan: ApplicationFillPlan) -> None:
-    """Render the reviewed fill contract that will be passed to Browser Use."""
-
-    status_columns = st.columns(5)
-    status_columns[0].metric("Review", fill_plan.review_status)
-    status_columns[1].metric("Fields", len(fill_plan.field_values))
-    status_columns[2].metric("Uploads", len(fill_plan.upload_files))
-    status_columns[3].metric("Needs Answer", len(fill_plan.needs_answer_fields))
-    status_columns[4].metric("Blocked", len(fill_plan.blocked_fields))
-
-    if fill_plan.field_values:
-        st.markdown("**Fields To Fill**")
-        for field in fill_plan.field_values:
-            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
-            st.write(
-                f"- {field.label}: {field.value} "
-                f"({'required' if field.required else 'optional or unclear'}, "
-                f"source: {field.source or 'unknown'}, evidence: {evidence_quality})"
-            )
-            if field.literal_evidence:
-                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
-
-    if fill_plan.upload_files:
-        st.markdown("**Files To Upload**")
-        for upload in fill_plan.upload_files:
-            evidence_quality = fill_plan_evidence_quality_label(upload.evidence_status)
-            st.write(
-                f"- {upload.label}: {upload.file_path} "
-                f"({upload.document_type}, source: {upload.source or 'unknown'}, "
-                f"evidence: {evidence_quality})"
-            )
-            if upload.literal_evidence:
-                st.caption(f"Evidence: {' | '.join(upload.literal_evidence)}")
-
-    if fill_plan.needs_answer_fields:
-        st.markdown("**Fields Needing Answers**")
-        for field in fill_plan.needs_answer_fields:
-            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
-            st.write(
-                f"- {field.label}: {field.reason} "
-                f"({'required' if field.required else 'optional or unclear'}, "
-                f"evidence: {evidence_quality})"
-            )
-            if field.literal_evidence:
-                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
-
-    if fill_plan.blocked_fields:
-        st.markdown("**Blocked Fields**")
-        for field in fill_plan.blocked_fields:
-            evidence_quality = fill_plan_evidence_quality_label(field.evidence_status)
-            st.write(
-                f"- {field.label}: {field.reason} "
-                f"({'required' if field.required else 'optional or unclear'}, "
-                f"evidence: {evidence_quality})"
-            )
-            if field.literal_evidence:
-                st.caption(f"Evidence: {' | '.join(field.literal_evidence)}")
-
-
-def fill_plan_evidence_quality_label(evidence_status: str) -> str:
-    """Return the review-panel label for a fill-plan evidence status."""
-
-    if evidence_status == "literal_verified":
-        return "Literal evidence found"
-    if evidence_status == "partial_match":
-        return "Partial evidence found"
-    return "Interpreted only"
-
-
 def render_application_fill_plan_edit_actions(
     base_dir: Path,
     fill_plan: ApplicationFillPlan,
@@ -482,11 +643,11 @@ def render_application_fill_plan_edit_actions(
     ):
         return fill_plan
 
-    with st.expander("Review application field values", expanded=False):
+    with st.expander("Review application field values", expanded=True):
         with st.form(f"application_fill_plan_edit_form_{fill_plan.job_id}"):
             st.caption(
-                "Required fields are listed first. Add or edit the exact value "
-                "Browser Use is allowed to use for each field."
+                "Prefilled values are ready to save. Edit only the fields that need "
+                "a correction before Browser Use receives them."
             )
             edited_values: dict[str, str] = {}
             needs_answer_values_by_key: dict[str, str] = {}
@@ -778,83 +939,67 @@ def render_application_package_recovery_actions(
 def render_application_package(package: ApplicationPackage) -> None:
     """Render a generated application package for human review."""
 
-    status_columns = st.columns(3)
-    status_columns[0].metric("Status", package.status)
-    status_columns[1].metric("Artifacts", len(package.artifacts))
-    status_columns[2].metric("Missing Items", len(package.missing_information))
-
-    if package.selected_experience_units:
-        render_list("Selected Experience Units", package.selected_experience_units)
-
-    if package.missing_information:
-        st.markdown("**Missing Information**")
-        for item in package.missing_information:
-            st.write(f"- {item}")
-
     for artifact in package.artifacts:
-        with st.expander(artifact.label, expanded=artifact.required):
-            artifact_columns = st.columns(3)
-            artifact_columns[0].metric("Type", artifact.type)
-            artifact_columns[1].metric("Status", artifact.status)
-            artifact_columns[2].metric(
-                "Required",
-                "Yes" if artifact.required else "No",
-            )
-            if artifact.source_prompt:
-                st.markdown("**Source Prompt**")
-                st.write(artifact.source_prompt)
-            if artifact.source_requirement:
-                st.markdown("**Source Requirement**")
-                st.caption(artifact.source_requirement)
-            render_artifact_traceability(artifact.metadata)
-            st.markdown("**Content**")
+        with st.expander(artifact.label, expanded=False):
             st.write(artifact.content or "No content generated.")
-
-    if package.generation_notes:
-        render_list("Generation Notes", package.generation_notes)
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:
-    """Render interpreted application requirements and source evidence."""
-
-    status_columns = st.columns(4)
-    status_columns[0].metric("Status", requirements.status)
-    status_columns[1].metric("Review", requirements.review_status)
-    status_columns[2].metric("Job Preserving", "Yes" if requirements.job_preserving else "No")
-    status_columns[3].metric("Confidence", requirements.confidence)
+    """Render interpreted application requirements with compact defaults."""
 
     if requirements.blocked_reason:
         st.warning(requirements.blocked_reason)
 
-    render_requirement_findings("Required Documents", requirements.required_documents)
-    render_requirement_findings("Upload Expectations", requirements.upload_expectations)
-    render_form_fields("Profile Fields Requested", requirements.profile_fields)
-    render_screening_questions("Screening Questions", requirements.screening_questions)
-    render_form_fields("Custom Form Fields", requirements.custom_form_fields)
+    render_application_requirements_compact(requirements)
 
-    if requirements.motivation_letter:
+    with st.expander("Requirements evidence and form details", expanded=False):
+        render_requirement_findings("Required Documents", requirements.required_documents)
+        render_requirement_findings("Upload Expectations", requirements.upload_expectations)
+        render_form_fields("Profile Fields Requested", requirements.profile_fields)
+        render_screening_questions("Screening Questions", requirements.screening_questions)
+        render_form_fields("Custom Form Fields", requirements.custom_form_fields)
+
+        if requirements.motivation_letter:
+            render_requirement_findings(
+                "Motivation / Cover Letter",
+                [requirements.motivation_letter],
+            )
+
+        render_requirement_findings("Consent Requirements", requirements.consent_requirements)
         render_requirement_findings(
-            "Motivation / Cover Letter",
-            [requirements.motivation_letter],
+            "Privacy, Login, and ATS Gates",
+            requirements.privacy_login_ats_gates,
         )
+        render_requirement_findings("Deadlines", requirements.deadlines)
+        render_requirement_findings("Contact / Fallback Info", requirements.contact_or_fallback)
 
-    render_requirement_findings("Consent Requirements", requirements.consent_requirements)
-    render_requirement_findings(
-        "Privacy, Login, and ATS Gates",
-        requirements.privacy_login_ats_gates,
-    )
-    render_requirement_findings("Deadlines", requirements.deadlines)
-    render_requirement_findings("Contact / Fallback Info", requirements.contact_or_fallback)
+        if requirements.missing_or_uncertain:
+            st.markdown("**Missing Or Uncertain**")
+            for item in requirements.missing_or_uncertain:
+                st.write(f"- {item}")
 
-    if requirements.missing_or_uncertain:
-        st.markdown("**Missing Or Uncertain**")
-        for item in requirements.missing_or_uncertain:
-            st.write(f"- {item}")
-
-    if requirements.source_evidence:
-        with st.expander("Source Evidence", expanded=False):
+        if requirements.source_evidence:
+            st.markdown("**Source Evidence**")
             for evidence in requirements.source_evidence:
                 st.write(f"- {evidence}")
+
+
+def render_application_requirements_compact(requirements: ApplicationRequirements) -> None:
+    """Render the application requirements that matter most at a glance."""
+
+    key_items: list[str] = []
+    key_items.extend(finding.label for finding in requirements.required_documents)
+    key_items.extend(finding.label for finding in requirements.upload_expectations)
+    if requirements.motivation_letter:
+        key_items.append(requirements.motivation_letter.label)
+    key_items.extend(
+        finding.label for finding in requirements.consent_requirements if finding.required
+    )
+
+    if key_items:
+        st.markdown("**Key Requirements**")
+        for item in deduplicate_review_items(key_items):
+            st.write(f"- {item}")
 
 
 def get_apply_assistance_blockers(

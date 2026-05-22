@@ -6,6 +6,8 @@ import streamlit as st
 
 from src.schemas import AIWorkflowTrace
 
+AI_ACTION_COST_HELP = "Uses AI credits."
+
 
 def render_artifact_traceability(metadata: dict[str, object]) -> None:
     """Render artifact traceability metadata when available."""
