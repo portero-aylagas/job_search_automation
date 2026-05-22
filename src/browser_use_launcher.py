@@ -199,6 +199,11 @@ def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
         "field_values": [
             _fill_plan_payload_item(field) for field in fill_plan.field_values
         ],
+        "mandatory_checkbox_fields": [
+            _fill_plan_payload_item(field)
+            for field in fill_plan.field_values
+            if _field_value_is_true_checkbox(field)
+        ],
         "upload_files": [
             _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
         ],
@@ -236,6 +241,19 @@ Before filling or uploading:
 - Wait for the page to settle after any redirect or popup dismissal before
   looking for upload controls or fillable fields.
 
+Mandatory completion checklist:
+- Process every item in mandatory_checkbox_fields. These are reviewed
+  confirmations from field_values, including required privacy, terms, consent,
+  or ATS acknowledgements.
+- Check or confirm each matching mandatory checkbox before declaring the task
+  complete. If a matching control cannot be found, report it as a failed action
+  and do not say all fields are complete.
+- Upload completion is not task completion. Before your final answer, compare
+  field_values, mandatory_checkbox_fields, and upload_files against the actions
+  you actually performed.
+- In the final answer, separately list checked mandatory checkboxes, uploaded
+  files, failed actions, and intentionally untouched false checkbox fields.
+
 Hard safety rules:
 - Fill only fields listed in field_values.
 - If a listed field has an empty value and required is false, treat it as an
@@ -243,6 +261,8 @@ Hard safety rules:
   unchecked, and report it as intentionally blank.
 - For checkbox fields, value "true" means check/confirm the matching control
   and value "false" means leave it unchecked or uncheck it if needed.
+- A sensitive or consent checkbox with value "true" in field_values is a
+  reviewed instruction to check that specific control. It is not optional.
 - For checkbox_group or multiselect fields, split reviewed values on semicolons
   when semicolons are present; otherwise treat the whole value as one exact
   option label.
@@ -265,8 +285,9 @@ Hard safety rules:
 - Stop after all fill-plan actions are completed or blocked. Leave the page
   ready for manual inspection.
 
-Your final answer should summarize filled fields, uploaded files, blocked
-fields, failed actions, and whether the page is ready for human review.
+Your final answer should summarize filled fields, checked mandatory checkboxes,
+intentionally untouched false checkbox fields, uploaded files, blocked fields,
+failed actions, and whether the page is ready for human review.
 """.strip()
 
 
@@ -347,6 +368,16 @@ def _fill_plan_payload_item(
     payload = item.model_dump(mode="json")
     payload["interpreted_label"] = item.label
     return payload
+
+
+def _field_value_is_true_checkbox(field: ApplicationFillFieldValue) -> bool:
+    return field.input_type.casefold() == "checkbox" and field.value.strip().casefold() in {
+        "true",
+        "yes",
+        "ja",
+        "1",
+        "checked",
+    }
 
 
 def _require_http_url(url: str) -> str:

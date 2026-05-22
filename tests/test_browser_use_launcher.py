@@ -153,6 +153,7 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "reviewed application fill plan" in agent_task
     assert "https://example.com/apply/automation-engineer" not in agent_task
     assert '"field_values"' in agent_task
+    assert '"mandatory_checkbox_fields"' in agent_task
     assert '"upload_files"' in agent_task
     assert '"blocked_fields"' in agent_task
     assert '"accept_terms_and_privacy"' not in agent_task
@@ -178,6 +179,9 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "evidence_status is \"interpreted_only\"" in agent_task
     assert "intentionally reviewed blank value" in agent_task
     assert "value \"false\" means leave it unchecked" in agent_task
+    assert "Process every item in mandatory_checkbox_fields" in agent_task
+    assert "Upload completion is not task completion" in agent_task
+    assert "checked mandatory checkboxes" in agent_task
     assert "candidate_profile" not in agent_task
     assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
@@ -246,6 +250,7 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
 
     assert "reviewed application fill plan" in task
     assert '"field_values"' in task
+    assert '"mandatory_checkbox_fields"' in task
     assert '"upload_files"' in task
     assert '"blocked_fields"' in task
     assert '"accept_terms_and_privacy"' not in task
@@ -274,9 +279,24 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "Do not fill, select, type into, click, or modify any field" in task
     assert "intentionally reviewed blank value" in task
     assert "split reviewed values on semicolons" in task
+    assert "A sensitive or consent checkbox with value \"true\"" in task
+    assert "Process every item in mandatory_checkbox_fields" in task
+    assert "Upload completion is not task completion" in task
     assert "If upload_file reports an error" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
+
+
+def test_build_fill_plan_application_task_highlights_true_checkboxes_only() -> None:
+    task = build_fill_plan_application_task(make_fill_plan())
+
+    mandatory_section = task.split('"mandatory_checkbox_fields"', maxsplit=1)[1]
+    mandatory_section = mandatory_section.split('"upload_files"', maxsplit=1)[0]
+
+    assert '"label": "Privacy acknowledgement"' in mandatory_section
+    assert '"value": "true"' in mandatory_section
+    assert '"label": "Vorname"' not in mandatory_section
+    assert '"value": "false"' not in mandatory_section
 
 
 def test_build_fill_plan_application_task_omits_unresolved_needs_answer_fields() -> None:
