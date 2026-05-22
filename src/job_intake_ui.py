@@ -49,7 +49,6 @@ def render_job_url_extraction_form() -> tuple[bool, str]:
 
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
-        st.caption("Extract uses AI to resolve application data.")
         extract_submitted = st.form_submit_button(
             "Extract application data with AI",
             type="primary",

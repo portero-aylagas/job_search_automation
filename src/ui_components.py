@@ -125,45 +125,65 @@ def build_ai_usage_summary(
     }
 
 
-def render_ai_usage_summary(label: str, traces: list[AIWorkflowTrace | None]) -> None:
-    """Render summarized AI usage for visible workflow traceability."""
+def format_ai_usage_summary_bullets(traces: list[AIWorkflowTrace | None]) -> list[str]:
+    """Return AI usage summary fields as compact Markdown bullet lines."""
 
     summary = build_ai_usage_summary(traces)
     if summary["call_count"] == 0:
+        return []
+    return [
+        f"- AI calls: {summary['call_count']}",
+        f"- Provider attempts: {summary['attempt_count']}",
+        f"- Retries used: {summary['retry_count']}",
+        f"- Output token budget used by attempts: {summary['output_token_budget']}",
+        "- Worst-case output token budget with configured retries: "
+        f"{summary['worst_case_output_token_budget']}",
+        f"- Tool call cap: {summary['tool_call_cap'] or 'none'}",
+    ]
+
+
+def render_ai_usage_summary(label: str, traces: list[AIWorkflowTrace | None]) -> None:
+    """Render summarized AI usage for visible workflow traceability."""
+
+    bullets = format_ai_usage_summary_bullets(traces)
+    if not bullets:
         return
 
     with st.expander(label, expanded=False):
-        st.write(f"AI calls: {summary['call_count']}")
-        st.write(f"Provider attempts: {summary['attempt_count']}")
-        st.write(f"Retries used: {summary['retry_count']}")
-        st.write(f"Output token budget used by attempts: {summary['output_token_budget']}")
-        st.write(
-            "Worst-case output token budget with configured retries: "
-            f"{summary['worst_case_output_token_budget']}"
-        )
-        st.write(f"Tool call cap: {summary['tool_call_cap'] or 'none'}")
+        st.markdown("\n".join(bullets))
+
+
+def format_workflow_trace_bullets(trace: AIWorkflowTrace | None) -> list[str]:
+    """Return AI workflow trace fields as compact Markdown bullet lines."""
+
+    if trace is None:
+        return []
+    return [
+        f"- Workflow: {trace.workflow_name}",
+        f"- Operation: {trace.operation}",
+        f"- Model: {trace.model}",
+        f"- Profile: {trace.profile_name}",
+        f"- Temperature: {trace.temperature}",
+        f"- Max output tokens: {trace.max_output_tokens}",
+        f"- Timeout seconds: {trace.timeout_seconds}",
+        f"- Retries allowed: {trace.max_retries}",
+        f"- Retry backoff seconds: {trace.retry_backoff_seconds}",
+        f"- Tool call cap: {trace.max_tool_calls or 'none'}",
+        f"- Attempt count: {trace.attempt_count}",
+        f"- Duration (ms): {trace.duration_ms or 0}",
+        f"- Recorded at: {trace.recorded_at}",
+    ]
 
 
 def render_workflow_trace(label: str, trace: AIWorkflowTrace | None) -> None:
     """Render detailed AI workflow trace metadata when present."""
 
-    if trace is None:
+    bullets = format_workflow_trace_bullets(trace)
+    if not bullets:
         return
 
     with st.expander(label, expanded=False):
-        st.write(f"Workflow: {trace.workflow_name}")
-        st.write(f"Operation: {trace.operation}")
-        st.write(f"Model: {trace.model}")
-        st.write(f"Profile: {trace.profile_name}")
-        st.write(f"Temperature: {trace.temperature}")
-        st.write(f"Max output tokens: {trace.max_output_tokens}")
-        st.write(f"Timeout seconds: {trace.timeout_seconds}")
-        st.write(f"Retries allowed: {trace.max_retries}")
-        st.write(f"Retry backoff seconds: {trace.retry_backoff_seconds}")
-        st.write(f"Tool call cap: {trace.max_tool_calls or 'none'}")
-        st.write(f"Attempt count: {trace.attempt_count}")
-        st.write(f"Duration (ms): {trace.duration_ms or 0}")
-        st.caption(f"Recorded at {trace.recorded_at}")
+        st.markdown("\n".join(bullets))
 
 
 def render_optional_ai_details(

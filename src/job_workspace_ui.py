@@ -91,26 +91,20 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
     )
     job_listing = load_normalized_job(base_dir, selected_record.job_id)
 
-    st.header(f"{selected_record.title}")
-    st.caption(selected_record.company)
-
     if job_listing is None:
         render_tracker_status_summary(selected_record)
         render_tracker_job_summary(selected_record)
         st.warning("Full intake data is not available for this job yet.")
         return
 
-    requirements = load_application_requirements(base_dir, job_listing.id)
-    package = load_application_package(base_dir, job_listing.id)
-    fill_plan = load_application_fill_plan(base_dir, job_listing.id)
-
-    render_review_checklist(requirements, package, fill_plan)
-
-    st.divider()
-    render_job_intake_summary(job_listing)
-    render_application_requirements_panel(base_dir, job_listing)
-    render_application_package_panel(base_dir, job_listing)
-    render_application_fill_plan_panel(base_dir, job_listing)
+    with st.container(border=True):
+        render_job_intake_summary(job_listing)
+    with st.container(border=True):
+        render_application_requirements_panel(base_dir, job_listing)
+    with st.container(border=True):
+        render_application_package_panel(base_dir, job_listing)
+    with st.container(border=True):
+        render_application_fill_plan_panel(base_dir, job_listing)
     render_apply_assistance_panel(base_dir, job_listing)
 
 
@@ -367,7 +361,6 @@ def render_apply_url_resolution_details(resolution: dict[str, object]) -> None:
 def render_application_requirements_panel(base_dir: Path, job: JobListing) -> None:
     """Render requirements discovery, review status, and save actions."""
 
-    st.divider()
     st.subheader("Application Requirements")
     requirements = load_application_requirements(base_dir, job.id)
 
@@ -409,7 +402,6 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
 def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
     """Render application package generation and review controls."""
 
-    st.divider()
     st.subheader("Application Package")
     package = load_application_package(base_dir, job.id)
     requirements = load_application_requirements(base_dir, job.id)
@@ -548,7 +540,6 @@ def render_browser_use_process_controls(
 def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
     """Render fill-plan generation, review, and edit controls."""
 
-    st.divider()
     st.subheader("Application Fill Plan")
     candidate_profile = load_candidate_profile(base_dir)
     requirements = load_application_requirements(base_dir, job.id)
