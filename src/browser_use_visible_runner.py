@@ -107,7 +107,7 @@ async def open_visible_browser(
                 if path.exists()
             ],
         )
-        await agent.run(max_steps=40)
+        await agent.run(max_steps=_browser_use_agent_max_steps())
         print("Browser Use agent task finished. Browser remains open.", flush=True)
 
     stop_event = asyncio.Event()
@@ -204,6 +204,17 @@ def _write_stable_profile_preferences(user_data_dir: Path) -> None:
             },
         },
     )
+
+
+def _browser_use_agent_max_steps() -> int:
+    raw_value = os.getenv("BROWSER_USE_AGENT_MAX_STEPS", "").strip()
+    if not raw_value:
+        return 80
+    try:
+        max_steps = int(raw_value)
+    except ValueError:
+        return 80
+    return max(20, max_steps)
 
 
 def _merge_json_file(path: Path, updates: dict[str, object]) -> None:

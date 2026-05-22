@@ -199,12 +199,18 @@ def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
         "field_values": [
             _fill_plan_payload_item(field) for field in fill_plan.field_values
         ],
+        "field_values_before_upload": [
+            _fill_plan_payload_item(field) for field in fill_plan.field_values
+        ],
         "mandatory_checkbox_fields": [
             _fill_plan_payload_item(field)
             for field in fill_plan.field_values
             if _field_value_is_true_checkbox(field)
         ],
         "upload_files": [
+            _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
+        ],
+        "upload_files_last": [
             _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
         ],
         "blocked_fields": [
@@ -241,6 +247,24 @@ Before filling or uploading:
 - Wait for the page to settle after any redirect or popup dismissal before
   looking for upload controls or fillable fields.
 
+Required action order:
+- First, process every item in field_values_before_upload in the order listed.
+  Do not upload files yet.
+- For each text, email, tel, select, radio, checkbox_group, or multiselect row,
+  perform the needed action or inspect the live control and confirm it already
+  has the exact reviewed value.
+- Do not mark a field complete from memory. A field is complete only after you
+  acted on its matching control or inspected its live value/state.
+- Pay particular attention to optional non-empty fields such as telephone
+  numbers; optional does not mean skippable when a reviewed value is present.
+- Second, process every item in mandatory_checkbox_fields. These are reviewed
+  confirmations from field_values, including required privacy, terms, consent,
+  or ATS acknowledgements.
+- Third, verify live field values and checkbox states before any upload. Merely
+  extracting labels is not verification.
+- Last, and only after all field_values_before_upload rows have been handled
+  and verified, upload every file in upload_files_last.
+
 Mandatory completion checklist:
 - Process every item in mandatory_checkbox_fields. These are reviewed
   confirmations from field_values, including required privacy, terms, consent,
@@ -249,8 +273,8 @@ Mandatory completion checklist:
   complete. If a matching control cannot be found, report it as a failed action
   and do not say all fields are complete.
 - Upload completion is not task completion. Before your final answer, compare
-  field_values, mandatory_checkbox_fields, and upload_files against the actions
-  you actually performed.
+  field_values_before_upload, mandatory_checkbox_fields, and upload_files_last
+  against the actions you actually performed.
 - In the final answer, separately list checked mandatory checkboxes, uploaded
   files, failed actions, and intentionally untouched false checkbox fields.
 
@@ -266,8 +290,10 @@ Hard safety rules:
 - For checkbox_group or multiselect fields, split reviewed values on semicolons
   when semicolons are present; otherwise treat the whole value as one exact
   option label.
-- Upload only files listed in upload_files, using Browser Use's upload_file
+- Upload only files listed in upload_files_last, using Browser Use's upload_file
   action directly on matching upload controls.
+- Never start file uploads before every field_values_before_upload row is
+  complete or explicitly reported as failed.
 - Never click upload controls to open the operating-system file picker.
 - Never type or paste the CV file path, or any other file path, into any page
   field or file picker.

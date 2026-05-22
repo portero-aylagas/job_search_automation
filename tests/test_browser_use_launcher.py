@@ -16,7 +16,11 @@ from src.browser_use_launcher import (
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
-from src.browser_use_visible_runner import _close_existing_pages, _write_stable_profile_preferences
+from src.browser_use_visible_runner import (
+    _browser_use_agent_max_steps,
+    _close_existing_pages,
+    _write_stable_profile_preferences,
+)
 from src.schemas import (
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
@@ -153,8 +157,10 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "reviewed application fill plan" in agent_task
     assert "https://example.com/apply/automation-engineer" not in agent_task
     assert '"field_values"' in agent_task
+    assert '"field_values_before_upload"' in agent_task
     assert '"mandatory_checkbox_fields"' in agent_task
     assert '"upload_files"' in agent_task
+    assert '"upload_files_last"' in agent_task
     assert '"blocked_fields"' in agent_task
     assert '"accept_terms_and_privacy"' not in agent_task
     assert '"interpreted_label": "Vorname"' in agent_task
@@ -182,6 +188,9 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "Process every item in mandatory_checkbox_fields" in agent_task
     assert "Upload completion is not task completion" in agent_task
     assert "checked mandatory checkboxes" in agent_task
+    assert "First, process every item in field_values_before_upload" in agent_task
+    assert "optional non-empty fields such as telephone" in agent_task
+    assert "Last, and only after all field_values_before_upload" in agent_task
     assert "candidate_profile" not in agent_task
     assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
@@ -250,8 +259,10 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
 
     assert "reviewed application fill plan" in task
     assert '"field_values"' in task
+    assert '"field_values_before_upload"' in task
     assert '"mandatory_checkbox_fields"' in task
     assert '"upload_files"' in task
+    assert '"upload_files_last"' in task
     assert '"blocked_fields"' in task
     assert '"accept_terms_and_privacy"' not in task
     assert '"interpreted_label": "Vorname"' in task
@@ -282,6 +293,9 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "A sensitive or consent checkbox with value \"true\"" in task
     assert "Process every item in mandatory_checkbox_fields" in task
     assert "Upload completion is not task completion" in task
+    assert "Do not mark a field complete from memory" in task
+    assert "Merely\n  extracting labels is not verification" in task
+    assert "Never start file uploads before every field_values_before_upload row" in task
     assert "If upload_file reports an error" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
@@ -297,6 +311,15 @@ def test_build_fill_plan_application_task_highlights_true_checkboxes_only() -> N
     assert '"value": "true"' in mandatory_section
     assert '"label": "Vorname"' not in mandatory_section
     assert '"value": "false"' not in mandatory_section
+
+
+def test_build_fill_plan_application_task_keeps_uploads_last() -> None:
+    task = build_fill_plan_application_task(make_fill_plan())
+
+    assert task.index('"field_values_before_upload"') < task.index('"upload_files_last"')
+    assert task.index("First, process every item in field_values_before_upload") < task.index(
+        "Last, and only after all field_values_before_upload"
+    )
 
 
 def test_build_fill_plan_application_task_omits_unresolved_needs_answer_fields() -> None:
@@ -490,6 +513,34 @@ def test_stable_profile_preferences_disable_translate(tmp_path: Path) -> None:
     assert '"enabled": false' in preferences
     assert '"notifications": 2' in preferences
     assert '"app_locale": "en-US"' in local_state
+
+
+def test_browser_use_agent_max_steps_defaults_to_80(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BROWSER_USE_AGENT_MAX_STEPS", raising=False)
+
+    assert _browser_use_agent_max_steps() == 80
+
+
+def test_browser_use_agent_max_steps_allows_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "120")
+
+    assert _browser_use_agent_max_steps() == 120
+
+
+def test_browser_use_agent_max_steps_has_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "5")
+
+    assert _browser_use_agent_max_steps() == 20
+
+
+def test_browser_use_agent_max_steps_ignores_invalid_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "not-a-number")
+
+    assert _browser_use_agent_max_steps() == 80
 
 
 def test_close_existing_pages_closes_tabs_before_navigation() -> None:
