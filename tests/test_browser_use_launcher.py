@@ -20,6 +20,7 @@ from src.browser_use_launcher import (
 from src.browser_use_visible_runner import (
     _browser_use_agent_max_steps,
     _close_existing_pages,
+    _close_other_pages,
     _open_page_with_retries,
     _page_has_interactive_content,
     _write_stable_profile_preferences,
@@ -160,6 +161,9 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     command = captured["command"]
     assert isinstance(command, list)
     assert "--agent-task" in command
+    assert "--require-interactive-page" in command
+    assert "--page-ready-timeout-seconds" in command
+    assert command[command.index("--page-ready-timeout-seconds") + 1] == "60.0"
     assert "--available-file-path" in command
     assert command[command.index("--available-file-path") + 1] == "/tmp/candidate/cv.pdf"
     agent_task = command[command.index("--agent-task") + 1]
@@ -697,6 +701,37 @@ def test_close_existing_pages_closes_tabs_before_navigation() -> None:
     assert browser.closed_pages == ["about:blank", "old-job"]
 
 
+def test_close_other_pages_keeps_active_target_focused() -> None:
+    class FakePage:
+        def __init__(self, target_id: str) -> None:
+            self._target_id = target_id
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.active_page = FakePage("target-active")
+            self.other_page = FakePage("target-other")
+            self.closed_pages: list[str] = []
+            self.focused_pages: list[str] = []
+
+        async def get_pages(self) -> list[FakePage]:
+            return [self.other_page, self.active_page]
+
+        async def close_page(self, page: FakePage) -> None:
+            self.closed_pages.append(page._target_id)
+
+        async def get_or_create_cdp_session(self, target_id: str, *, focus: bool) -> None:
+            if focus:
+                self.focused_pages.append(target_id)
+
+    browser = FakeBrowser()
+
+    closed_count = asyncio.run(_close_other_pages(browser, browser.active_page))
+
+    assert closed_count == 1
+    assert browser.closed_pages == ["target-other"]
+    assert browser.focused_pages == ["target-active"]
+
+
 def test_page_has_interactive_content_rejects_blank_page() -> None:
     class FakePage:
         async def evaluate(self, _script: str) -> str:
@@ -753,6 +788,127 @@ def test_open_page_with_retries_retries_navigation_until_controls_load() -> None
 
     assert page is browser.page
     assert browser.page.goto_calls == ["https://example.com/apply"]
+
+
+def test_open_page_with_retries_strict_waits_for_loaded_form() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.goto_calls: list[str] = []
+
+        async def evaluate(self, _script: str) -> str:
+            if self.goto_calls:
+                return (
+                    '{"href": "https://example.com/apply", '
+                    '"bodyTextLength": 42, "controlCount": 3, "readyState": "complete"}'
+                )
+            return (
+                '{"href": "about:blank", "bodyTextLength": 0, '
+                '"controlCount": 0, "readyState": "complete"}'
+            )
+
+        async def goto(self, url: str) -> None:
+            self.goto_calls.append(url)
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.page = FakePage()
+
+        async def new_page(self, url: str) -> FakePage:
+            assert url == "https://example.com/apply"
+            return self.page
+
+    browser = FakeBrowser()
+
+    page = asyncio.run(
+        _open_page_with_retries(
+            browser,
+            "https://example.com/apply",
+            require_interactive_page=True,
+            page_ready_timeout_seconds=0.1,
+            ready_wait_seconds=0.001,
+            poll_interval_seconds=0.001,
+        )
+    )
+
+    assert page is browser.page
+    assert browser.page.goto_calls == ["https://example.com/apply"]
+
+
+def test_open_page_with_retries_strict_fails_when_page_stays_blank() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.goto_calls: list[str] = []
+
+        async def evaluate(self, _script: str) -> str:
+            return (
+                '{"href": "about:blank", "bodyTextLength": 0, '
+                '"controlCount": 0, "readyState": "complete"}'
+            )
+
+        async def goto(self, url: str) -> None:
+            self.goto_calls.append(url)
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.page = FakePage()
+
+        async def new_page(self, url: str) -> FakePage:
+            assert url == "https://example.com/apply"
+            return self.page
+
+    browser = FakeBrowser()
+
+    with pytest.raises(RuntimeError, match="could not load an interactive apply page"):
+        asyncio.run(
+            _open_page_with_retries(
+                browser,
+                "https://example.com/apply",
+                require_interactive_page=True,
+                page_ready_timeout_seconds=0.01,
+                ready_wait_seconds=0.001,
+                poll_interval_seconds=0.001,
+            )
+        )
+
+    assert browser.page.goto_calls
+
+
+def test_open_page_with_retries_non_strict_allows_blank_page_for_manual_use() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.goto_calls: list[str] = []
+
+        async def evaluate(self, _script: str) -> str:
+            return (
+                '{"href": "about:blank", "bodyTextLength": 0, '
+                '"controlCount": 0, "readyState": "complete"}'
+            )
+
+        async def goto(self, url: str) -> None:
+            self.goto_calls.append(url)
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.page = FakePage()
+
+        async def new_page(self, url: str) -> FakePage:
+            assert url == "https://example.com/apply"
+            return self.page
+
+    browser = FakeBrowser()
+
+    page = asyncio.run(
+        _open_page_with_retries(
+            browser,
+            "https://example.com/apply",
+            max_attempts=1,
+            ready_wait_seconds=0.001,
+            poll_interval_seconds=0.001,
+        )
+    )
+
+    assert page is browser.page
+    assert browser.page.goto_calls == []
 
 
 def make_fill_plan() -> ApplicationFillPlan:

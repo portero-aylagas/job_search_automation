@@ -11,6 +11,7 @@ import signal
 from pathlib import Path
 
 SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
+APPLY_PAGE_READY_TIMEOUT_SECONDS = 60.0
 STABLE_BROWSER_ARGS = [
     "--disable-translate",
     "--disable-features=Translate,TranslateUI",
@@ -59,6 +60,8 @@ async def open_visible_browser(
     agent_task: str | None = None,
     user_data_dir: Path | None = None,
     available_file_paths: list[Path] | None = None,
+    require_interactive_page: bool = False,
+    page_ready_timeout_seconds: float = APPLY_PAGE_READY_TIMEOUT_SECONDS,
 ) -> None:
     """Open a URL with Browser Use, optionally run an agent task, then wait."""
 
@@ -89,8 +92,13 @@ async def open_visible_browser(
     )
     try:
         await browser.start()
-        await _close_existing_pages(browser)
-        await _open_page_with_retries(browser, url)
+        page = await _open_page_with_retries(
+            browser,
+            url,
+            require_interactive_page=require_interactive_page,
+            page_ready_timeout_seconds=page_ready_timeout_seconds,
+        )
+        await _close_other_pages(browser, page)
     except Exception:
         with contextlib.suppress(Exception):
             await browser.stop()
@@ -158,6 +166,17 @@ def main() -> None:
         default=[],
         help="File path the Browser Use agent is allowed to upload.",
     )
+    parser.add_argument(
+        "--require-interactive-page",
+        action="store_true",
+        help="Fail startup unless the target page exposes interactive content.",
+    )
+    parser.add_argument(
+        "--page-ready-timeout-seconds",
+        type=float,
+        default=APPLY_PAGE_READY_TIMEOUT_SECONDS,
+        help="Seconds to retry loading an interactive target page.",
+    )
     args = parser.parse_args()
     asyncio.run(
         open_visible_browser(
@@ -166,6 +185,8 @@ def main() -> None:
             args.agent_task,
             args.user_data_dir,
             args.available_file_path,
+            args.require_interactive_page,
+            args.page_ready_timeout_seconds,
         )
     )
 
@@ -199,6 +220,31 @@ async def _close_existing_pages(browser: object) -> int:
     return closed_count
 
 
+async def _close_other_pages(browser: object, active_page: object) -> int:
+    """Close tabs other than the selected target page."""
+
+    active_target_id = _page_target_id(active_page)
+    if not active_target_id:
+        return 0
+
+    get_pages = getattr(browser, "get_pages", None)
+    close_page = getattr(browser, "close_page", None)
+    if get_pages is None or close_page is None:
+        return 0
+
+    closed_count = 0
+    pages = await get_pages()
+    for page in pages:
+        if _page_target_id(page) == active_target_id:
+            continue
+        with contextlib.suppress(Exception):
+            await close_page(page)
+            closed_count += 1
+
+    await _focus_page(browser, active_page)
+    return closed_count
+
+
 async def _open_page_with_retries(
     browser: object,
     url: str,
@@ -206,10 +252,22 @@ async def _open_page_with_retries(
     max_attempts: int = 3,
     ready_wait_seconds: float = 4.0,
     poll_interval_seconds: float = 0.5,
+    require_interactive_page: bool = False,
+    page_ready_timeout_seconds: float = APPLY_PAGE_READY_TIMEOUT_SECONDS,
 ) -> object:
     """Open a page and retry navigation until real page controls are present."""
 
-    page = await browser.new_page(url)
+    page = await _open_target_page(browser, url)
+    if require_interactive_page:
+        return await _require_interactive_page(
+            browser,
+            page,
+            url,
+            timeout_seconds=page_ready_timeout_seconds,
+            retry_interval_seconds=ready_wait_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
     for attempt in range(1, max_attempts + 1):
         if await _wait_for_interactive_page(
             page,
@@ -226,7 +284,7 @@ async def _open_page_with_retries(
             flush=True,
         )
         with contextlib.suppress(Exception):
-            await page.goto(url)
+            page = await _navigate_page(browser, page, url)
 
     print(
         "Page still has no detected controls after navigation retries; "
@@ -234,6 +292,63 @@ async def _open_page_with_retries(
         flush=True,
     )
     return page
+
+
+async def _open_target_page(browser: object, url: str) -> object:
+    navigate_to = getattr(browser, "navigate_to", None)
+    get_current_page = getattr(browser, "get_current_page", None)
+    if navigate_to is not None and get_current_page is not None:
+        with contextlib.suppress(Exception):
+            await navigate_to(url, new_tab=False)
+            page = await get_current_page()
+            if page is not None:
+                await _focus_page(browser, page)
+                return page
+
+    page = await browser.new_page(url)
+    await _focus_page(browser, page)
+    return page
+
+
+async def _require_interactive_page(
+    browser: object,
+    page: object,
+    url: str,
+    *,
+    timeout_seconds: float,
+    retry_interval_seconds: float,
+    poll_interval_seconds: float,
+) -> object:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    next_retry_at = 0.0
+    retry_count = 0
+    last_state: dict[str, object] = {}
+    retry_interval = max(1.0, retry_interval_seconds)
+
+    while asyncio.get_running_loop().time() < deadline:
+        last_state = await _get_page_ready_state(page)
+        if _page_ready_state_is_interactive(last_state):
+            _log_page_ready_state("Apply page is interactive", last_state)
+            await _focus_page(browser, page)
+            return page
+
+        now = asyncio.get_running_loop().time()
+        if now >= next_retry_at:
+            retry_count += 1
+            _log_page_ready_state(
+                f"Apply page is not interactive; retrying navigation {retry_count}",
+                last_state,
+            )
+            page = await _navigate_page(browser, page, url)
+            next_retry_at = now + retry_interval
+
+        await asyncio.sleep(poll_interval_seconds)
+
+    raise RuntimeError(
+        "Browser Use could not load an interactive apply page within "
+        f"{timeout_seconds:.0f} seconds. Last page readiness: "
+        f"{_format_page_ready_state(last_state)}"
+    )
 
 
 async def _wait_for_interactive_page(
@@ -251,20 +366,55 @@ async def _wait_for_interactive_page(
 
 
 async def _page_has_interactive_content(page: object) -> bool:
+    return _page_ready_state_is_interactive(await _get_page_ready_state(page))
+
+
+async def _get_page_ready_state(page: object) -> dict[str, object]:
     evaluate = getattr(page, "evaluate", None)
     if evaluate is None:
-        return True
+        return {
+            "href": "unavailable",
+            "readyState": "unavailable",
+            "title": "",
+            "bodyTextLength": 1,
+            "controlCount": 1,
+        }
 
     try:
         raw_result = await evaluate(PAGE_READY_CHECK_SCRIPT)
     except Exception:
-        return False
+        return {
+            "href": "",
+            "readyState": "evaluate_failed",
+            "title": "",
+            "bodyTextLength": 0,
+            "controlCount": 0,
+        }
 
     try:
         payload = json.loads(raw_result)
     except (TypeError, json.JSONDecodeError):
-        return False
+        return {
+            "href": "",
+            "readyState": "invalid_ready_payload",
+            "title": "",
+            "bodyTextLength": 0,
+            "controlCount": 0,
+        }
 
+    if not isinstance(payload, dict):
+        return {
+            "href": "",
+            "readyState": "invalid_ready_payload",
+            "title": "",
+            "bodyTextLength": 0,
+            "controlCount": 0,
+        }
+
+    return payload
+
+
+def _page_ready_state_is_interactive(payload: dict[str, object]) -> bool:
     href = str(payload.get("href") or "")
     if not href or href == "about:blank":
         return False
@@ -272,6 +422,63 @@ async def _page_has_interactive_content(page: object) -> bool:
     control_count = _safe_int(payload.get("controlCount"))
     body_text_length = _safe_int(payload.get("bodyTextLength"))
     return control_count > 0 and body_text_length > 0
+
+
+async def _navigate_page(browser: object, page: object, url: str) -> object:
+    goto = getattr(page, "goto", None)
+    if goto is not None:
+        try:
+            await goto(url)
+            await _focus_page(browser, page)
+            return page
+        except Exception as exc:
+            print(
+                "Page navigation on the current tab failed "
+                f"({type(exc).__name__}); retrying Browser Use navigation.",
+                flush=True,
+            )
+
+    navigate_to = getattr(browser, "navigate_to", None)
+    if navigate_to is not None:
+        await navigate_to(url, new_tab=False)
+        get_current_page = getattr(browser, "get_current_page", None)
+        if get_current_page is not None:
+            current_page = await get_current_page()
+            if current_page is not None:
+                await _focus_page(browser, current_page)
+                return current_page
+
+    await _focus_page(browser, page)
+    return page
+
+
+async def _focus_page(browser: object, page: object) -> None:
+    target_id = _page_target_id(page)
+    focus = getattr(browser, "get_or_create_cdp_session", None)
+    if not target_id or focus is None:
+        return
+
+    with contextlib.suppress(Exception):
+        await focus(target_id, focus=True)
+
+
+def _page_target_id(page: object) -> str:
+    return str(getattr(page, "_target_id", "") or "")
+
+
+def _log_page_ready_state(message: str, payload: dict[str, object]) -> None:
+    print(f"{message}: {_format_page_ready_state(payload)}", flush=True)
+
+
+def _format_page_ready_state(payload: dict[str, object]) -> str:
+    href = str(payload.get("href") or "")
+    ready_state = str(payload.get("readyState") or "")
+    control_count = _safe_int(payload.get("controlCount"))
+    body_text_length = _safe_int(payload.get("bodyTextLength"))
+    return (
+        f"href={href or '<empty>'}, readyState={ready_state or '<empty>'}, "
+        f"bodyTextLength={body_text_length}, controlCount={control_count}"
+    )
 
 
 def _safe_int(value: object) -> int:
