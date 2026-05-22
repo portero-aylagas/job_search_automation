@@ -177,8 +177,8 @@ def render_candidate_profile_page(base_dir: Path) -> None:
 
     st.title("Candidate Profile")
     st.write(
-        "Upload your CV once, review the extracted data, and fill in the missing "
-        "job-search preferences."
+        "Upload your CV and certifications once, review the extracted data, and "
+        "fill in the missing job-search preferences."
     )
 
     success_message = st.session_state.pop("candidate_profile_success", None)
@@ -215,9 +215,6 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
         if uploaded_cv is not None:
             st.caption(f"Selected file: {uploaded_cv.name}")
 
-        st.caption(
-            "This action uploads the CV to the AI provider and parses it into review fields."
-        )
         if st.button("Parse CV with AI", type="primary", help=AI_ACTION_COST_HELP):
             if uploaded_cv is None:
                 st.error("Upload a CV before parsing.")
