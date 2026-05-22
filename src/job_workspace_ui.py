@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import streamlit as st
@@ -703,7 +704,7 @@ def render_application_fill_plan_edit_actions(
         ]
 
         with st.container(border=True):
-            st.markdown("**Required Fields**")
+            st.markdown("**Required fields**")
             if not required_rows:
                 st.caption("No required fields.")
             for kind, index, field in required_rows:
@@ -724,8 +725,21 @@ def render_application_fill_plan_edit_actions(
                 )
                 _render_fill_plan_edit_reason(field)
 
+        upload_paths_by_key: dict[str, str] = {}
         with st.container(border=True):
-            st.markdown("**Optional or unclear fields**")
+            st.markdown("**Uploads Sent To Browser**")
+            if not fill_plan.upload_files:
+                st.caption("No uploads sent to browser.")
+            for index, upload in enumerate(fill_plan.upload_files):
+                edit_key = fill_plan_upload_edit_key(upload, index)
+                path_key = f"application_fill_plan_upload_path_{fill_plan.job_id}_{edit_key}"
+                upload_paths_by_key[edit_key] = st.text_input(
+                    f"{upload.label} file path",
+                    value=upload.file_path,
+                    key=path_key,
+                )
+
+        with st.expander("Optional or unclear", expanded=False):
             if not optional_rows:
                 st.caption("No optional or unclear fields.")
             for kind, index, field in optional_rows:
@@ -746,19 +760,7 @@ def render_application_fill_plan_edit_actions(
                 )
                 _render_fill_plan_edit_reason(field)
 
-        upload_paths_by_key: dict[str, str] = {}
-        if fill_plan.upload_files:
-            st.markdown("**Uploads Sent To Browser Use**")
-        for index, upload in enumerate(fill_plan.upload_files):
-            edit_key = fill_plan_upload_edit_key(upload, index)
-            path_key = f"application_fill_plan_upload_path_{fill_plan.job_id}_{edit_key}"
-            upload_paths_by_key[edit_key] = st.text_input(
-                f"{upload.label} file path",
-                value=upload.file_path,
-                key=path_key,
-            )
-
-        save_edits = st.form_submit_button("Save Fill Plan Edits")
+        save_edits = st.form_submit_button("Save Fill Plan Edits", type="primary")
 
     if not save_edits:
         return fill_plan
@@ -922,7 +924,7 @@ def render_application_package_review_form(
                 edited_content[artifact.id] = st.text_area(
                     f"{artifact.label} content",
                     value=artifact.content,
-                    key=f"application_package_review_{job.id}_{artifact.id}",
+                    key=application_artifact_review_key(job.id, artifact),
                 )
                 render_artifact_traceability(artifact.metadata)
 
@@ -1068,6 +1070,13 @@ def build_application_artifact_review_metadata(
     if artifact.source_requirement:
         metadata.append(f"Source requirement: {artifact.source_requirement}")
     return metadata
+
+
+def application_artifact_review_key(job_id: str, artifact: ApplicationArtifact) -> str:
+    """Return a Streamlit widget key tied to the current artifact content."""
+
+    content_hash = hashlib.sha256(artifact.content.encode("utf-8")).hexdigest()[:12]
+    return f"application_package_review_{job_id}_{artifact.id}_{content_hash}"
 
 
 def order_application_package_artifacts_for_review(

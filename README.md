@@ -377,7 +377,7 @@ installed on Windows.
 Activate your project Python environment before running Browser Use setup:
 
 ```bash
-cd /home/javi/projects/ironhack_AI_integration/ironhack_projects/job_search_automation
+cd /path/to/job_search_automation
 source .venv/bin/activate
 uvx --version
 ```

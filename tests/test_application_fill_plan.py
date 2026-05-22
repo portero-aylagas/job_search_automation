@@ -117,7 +117,7 @@ def make_requirements() -> ApplicationRequirements:
         ],
         custom_form_fields=[
             ApplicationFormField(
-                label="Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH",
+                label="Internal referral at Example Mobility GmbH",
                 required=False,
                 input_type="text",
             )
@@ -143,7 +143,7 @@ def make_package() -> ApplicationPackage:
                 type="form_answer",
                 label="Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen",
                 required=True,
-                content="Dresden, München",
+                content="Berlin, Hamburg",
             )
         ],
     )
@@ -271,7 +271,7 @@ def test_fill_plan_includes_generated_and_uploaded_required_documents() -> None:
             type="cover_letter",
             label="Cover Letter Draft",
             content="Sehr geehrtes Team...",
-            metadata={"generated_file_path": "/tmp/generated/cover-letter-draft.pdf"},
+            metadata={"generated_file_path": "/tmp/generated/cover_letter.pdf"},
         )
     )
 
@@ -282,7 +282,7 @@ def test_fill_plan_includes_generated_and_uploaded_required_documents() -> None:
     assert uploads_by_type["certificate"].file_path == "/tmp/candidate/certificate.pdf"
     assert uploads_by_type["reference"].file_path == "/tmp/candidate/reference.pdf"
     assert uploads_by_type["cover_letter"].file_path == (
-        "/tmp/generated/cover-letter-draft.pdf"
+        "/tmp/generated/cover_letter.pdf"
     )
     assert uploads_by_type["cover_letter"].source == (
         "application_package.artifacts.cover-letter-draft.generated_file_path"
@@ -478,7 +478,7 @@ def test_missing_values_and_sensitive_fields_are_blocked() -> None:
     blocked_by_label = {field.label: field.reason for field in fill_plan.blocked_fields}
 
     assert "Haben Sie eine anerkannte Schwerbehinderung?" in blocked_by_label
-    assert "Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH" in blocked_by_label
+    assert "Internal referral at Example Mobility GmbH" in blocked_by_label
     assert "Privacy acknowledgement required to continue" in blocked_by_label
     assert "Haben Sie eine anerkannte Schwerbehinderung?" not in {
         field.label for field in fill_plan.needs_answer_fields
@@ -589,7 +589,7 @@ def test_package_form_answer_artifacts_map_to_matching_questions() -> None:
 
     assert (
         values_by_label["Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"]
-        == "Dresden, München"
+        == "Berlin, Hamburg"
     )
 
 
@@ -685,7 +685,7 @@ def test_mapper_can_skip_duplicate_of_existing_resolved_field() -> None:
     )
     assert (
         values_by_label["Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"]
-        == "Dresden, München"
+        == "Berlin, Hamburg"
     )
 
 
@@ -710,7 +710,7 @@ def test_apply_fill_plan_edits_updates_fields_and_upload_path() -> None:
             field_keys["Vorname"]: "Jordan",
             field_keys[
                 "Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"
-            ]: "München",
+            ]: "Berlin",
         },
         upload_paths_by_key={
             upload_keys["Application attachments / Bewerbungsunterlagen"]: "/tmp/updated.pdf"
@@ -723,7 +723,7 @@ def test_apply_fill_plan_edits_updates_fields_and_upload_path() -> None:
     assert values_by_label["Vorname"] == "Jordan"
     assert (
         values_by_label["Bitte wählen Sie alle Standorte aus, die für Sie in Frage kommen"]
-        == "München"
+        == "Berlin"
     )
     assert values_by_label["Anrede"] == "Frau"
     first_name = next(field for field in edited.field_values if field.label == "Vorname")
@@ -814,25 +814,18 @@ def test_apply_fill_plan_edits_promotes_blocked_field_to_field_value() -> None:
         fill_plan,
         {},
         blocked_values_by_key={
-            blocked_keys[
-                "Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH"
-            ]: ""
+            blocked_keys["Internal referral at Example Mobility GmbH"]: ""
         },
     )
 
     values_by_label = {field.label: field for field in edited.field_values}
     blocked_labels = {field.label for field in edited.blocked_fields}
-    promoted = values_by_label[
-        "Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH"
-    ]
+    promoted = values_by_label["Internal referral at Example Mobility GmbH"]
 
     assert promoted.value == ""
     assert promoted.source == "manual_review"
     assert promoted.required is False
-    assert (
-        "Empfehlung durch eine/n Mitarbeiter/in von tracetronic GmbH"
-        not in blocked_labels
-    )
+    assert "Internal referral at Example Mobility GmbH" not in blocked_labels
 
 
 def test_required_blocked_consent_can_be_reviewed_as_true() -> None:

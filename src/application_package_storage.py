@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from html import escape
 from pathlib import Path
 
@@ -30,6 +29,8 @@ __all__ = [
     "save_application_package",
     "update_tracker_for_application_package",
 ]
+
+COVER_LETTER_ARTIFACT_FILENAME = "cover_letter.pdf"
 
 
 def save_application_package(
@@ -87,8 +88,8 @@ def _export_artifact_pdf(
     """Write one generated artifact as a PDF and record its path in metadata."""
 
     destination_dir.mkdir(parents=True, exist_ok=True)
-    artifact_path = destination_dir / f"{_safe_artifact_filename(artifact.id)}.pdf"
-    _write_text_pdf(artifact_path, artifact.label, artifact.content)
+    artifact_path = destination_dir / COVER_LETTER_ARTIFACT_FILENAME
+    _write_text_pdf(artifact_path, _cover_letter_pdf_content(artifact))
     metadata = dict(artifact.metadata)
     metadata[f"{metadata_prefix}_file_path"] = str(artifact_path)
     metadata[f"{metadata_prefix}_file_format"] = "pdf"
@@ -103,22 +104,42 @@ def _is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:
     return artifact_type == "cover_letter" or "cover letter" in label
 
 
-def _write_text_pdf(path: Path, title: str, content: str) -> None:
+def _cover_letter_pdf_content(artifact: ApplicationArtifact) -> str:
+    """Return cover letter text without internal artifact headings."""
+
+    lines = artifact.content.strip().splitlines()
+    heading_index = next(
+        (index for index, line in enumerate(lines) if line.strip()),
+        None,
+    )
+    if heading_index is None:
+        return ""
+
+    heading = lines[heading_index].strip().casefold()
+    removable_headings = {
+        artifact.label.strip().casefold(),
+        "cover letter",
+        "cover letter draft",
+        "cover letter reviewed",
+        "reviewed cover letter",
+        COVER_LETTER_ARTIFACT_FILENAME.casefold(),
+    }
+    if heading in removable_headings:
+        del lines[heading_index]
+    return "\n".join(lines).strip()
+
+
+def _write_text_pdf(path: Path, content: str) -> None:
     """Write plain generated artifact text as a simple PDF document."""
 
     styles = getSampleStyleSheet()
-    story = [Paragraph(escape(title), styles["Title"]), Spacer(1, 18)]
+    story = []
     for block in content.strip().split("\n\n"):
         normalized_block = "<br/>".join(escape(line) for line in block.splitlines())
         if normalized_block.strip():
             story.extend([Paragraph(normalized_block, styles["BodyText"]), Spacer(1, 10)])
     document = SimpleDocTemplate(str(path), pagesize=A4)
     document.build(story)
-
-
-def _safe_artifact_filename(value: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip(".-_")
-    return normalized or "artifact"
 
 
 def load_application_package(

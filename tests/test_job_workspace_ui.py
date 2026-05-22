@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import src.job_workspace_ui as job_workspace_ui
 from src.job_intake import create_job_listing
 from src.job_workspace_ui import (
+    application_artifact_review_key,
     application_package_review_has_content_changes,
     apply_application_package_review_edits,
     build_application_artifact_review_metadata,
@@ -27,6 +28,7 @@ from src.schemas import (
     ApplicationFillFieldValue,
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
+    ApplicationFillUploadFile,
     ApplicationPackage,
     ApplicationRequirementFinding,
     ApplicationRequirements,
@@ -239,20 +241,29 @@ class FakeStreamlitContext:
         return None
 
 
-def test_fill_plan_edit_actions_show_required_and_optional_boxes(monkeypatch) -> None:
+def test_fill_plan_edit_actions_orders_boxed_sections(monkeypatch) -> None:
     rendered: list[tuple[str, object]] = []
 
     def fake_container(**kwargs: object) -> FakeStreamlitContext:
         rendered.append(("container", kwargs))
         return FakeStreamlitContext()
 
+    def fake_expander(label: str, expanded: bool) -> FakeStreamlitContext:
+        rendered.append(("expander", {"label": label, "expanded": expanded}))
+        return FakeStreamlitContext()
+
+    def fake_form_submit_button(label: str, **kwargs: object) -> bool:
+        rendered.append(("form_submit_button", {"label": label, **kwargs}))
+        return False
+
     fake_streamlit = SimpleNamespace(
         form=lambda _key: FakeStreamlitContext(),
         container=fake_container,
+        expander=fake_expander,
         caption=lambda value: rendered.append(("caption", value)),
         markdown=lambda value: rendered.append(("markdown", value)),
         text_input=lambda label, value, key: rendered.append(("text_input", label)) or value,
-        form_submit_button=lambda _label: False,
+        form_submit_button=fake_form_submit_button,
     )
     monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
     fill_plan = ApplicationFillPlan(
@@ -272,6 +283,13 @@ def test_fill_plan_edit_actions_show_required_and_optional_boxes(monkeypatch) ->
                 input_type="text",
             ),
         ],
+        upload_files=[
+            ApplicationFillUploadFile(
+                label="CV",
+                file_path="/tmp/cv.pdf",
+                required=True,
+            )
+        ],
     )
 
     returned_plan = render_application_fill_plan_edit_actions(Path("."), fill_plan)
@@ -279,10 +297,22 @@ def test_fill_plan_edit_actions_show_required_and_optional_boxes(monkeypatch) ->
     assert returned_plan == fill_plan
     assert ("container", {"border": True}) in rendered
     assert rendered.count(("container", {"border": True})) == 2
-    assert ("markdown", "**Required Fields**") in rendered
-    assert ("markdown", "**Optional or unclear fields**") in rendered
+    assert ("markdown", "**Required fields**") in rendered
+    assert ("markdown", "**Uploads Sent To Browser**") in rendered
+    assert ("expander", {"label": "Optional or unclear", "expanded": False}) in rendered
+    assert rendered.index(("markdown", "**Required fields**")) < rendered.index(
+        ("markdown", "**Uploads Sent To Browser**")
+    )
+    assert rendered.index(("markdown", "**Uploads Sent To Browser**")) < rendered.index(
+        ("expander", {"label": "Optional or unclear", "expanded": False})
+    )
     assert ("text_input", "First name") in rendered
+    assert ("text_input", "CV file path") in rendered
     assert ("text_input", "Referral code") in rendered
+    assert (
+        "form_submit_button",
+        {"label": "Save Fill Plan Edits", "type": "primary"},
+    ) in rendered
 
 
 def test_apply_assistance_blocks_rejected_package() -> None:
@@ -464,7 +494,7 @@ def test_package_review_saved_message_lists_exports() -> None:
                 type="cover_letter",
                 label="Cover Letter Draft",
                 content="Dear hiring team.",
-                metadata={"generated_file_path": "/tmp/cover-letter-draft.pdf"},
+                metadata={"generated_file_path": "/tmp/cover_letter.pdf"},
             )
         ],
     )
@@ -478,7 +508,7 @@ def test_package_review_saved_message_lists_exports() -> None:
     assert "Package review changes saved." in message
     assert "- Package JSON: /tmp/application_package.json" in message
     assert "- Markdown export: /tmp/application_package.md" in message
-    assert "- Cover letter PDF artifact: /tmp/cover-letter-draft.pdf" in message
+    assert "- Cover letter PDF artifact: /tmp/cover_letter.pdf" in message
 
 
 def test_cover_letter_artifact_export_controls_use_selected_folder(
@@ -511,11 +541,11 @@ def test_cover_letter_artifact_export_controls_use_selected_folder(
 
     render_cover_letter_artifact_export_controls(tmp_path, job, package)
 
-    exported_path = destination / "cover-letter-draft.pdf"
+    exported_path = destination / "cover_letter.pdf"
     assert exported_path.exists()
     assert package.artifacts[0].metadata["downloaded_file_path"] == str(exported_path)
     assert package.artifacts[0].metadata["generated_file_path"] == str(
-        tmp_path / "outputs" / job.id / "artifacts" / "cover-letter-draft.pdf"
+        tmp_path / "outputs" / job.id / "artifacts" / "cover_letter.pdf"
     )
     assert any(str(exported_path) in str(value) for kind, value in rendered if kind == "success")
 
@@ -539,6 +569,25 @@ def test_artifact_review_metadata_includes_context_without_mutating_content() ->
         "Source requirement: Answer required before submit.",
     ]
     assert artifact.content == "Draft answer."
+
+
+def test_artifact_review_key_changes_when_generated_content_changes() -> None:
+    first_artifact = ApplicationArtifact(
+        id="cover-letter-draft",
+        type="cover_letter",
+        label="Cover Letter Draft",
+        content="Previous reviewed letter.",
+    )
+    regenerated_artifact = first_artifact.model_copy(
+        update={"content": "Freshly generated letter."}
+    )
+
+    first_key = application_artifact_review_key("job-001", first_artifact)
+    regenerated_key = application_artifact_review_key("job-001", regenerated_artifact)
+
+    assert first_key.startswith("application_package_review_job-001_cover-letter-draft_")
+    assert regenerated_key.startswith("application_package_review_job-001_cover-letter-draft_")
+    assert regenerated_key != first_key
 
 
 def test_package_review_orders_cover_letter_before_other_artifacts() -> None:

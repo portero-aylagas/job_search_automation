@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import src.application_package_storage as application_package_storage
 from src.application_package import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
     LLMApplicationArtifact,
@@ -523,9 +524,7 @@ def test_save_application_package_exports_cover_letter_artifact_file(
     )
 
     save_application_package(tmp_path, package, job)
-    exported_path = (
-        application_package_artifacts_dir(tmp_path, job.id) / "cover-letter-draft.pdf"
-    )
+    exported_path = application_package_artifacts_dir(tmp_path, job.id) / "cover_letter.pdf"
     reloaded = load_application_package(tmp_path, job.id)
 
     assert exported_path.exists()
@@ -552,11 +551,50 @@ def test_export_cover_letter_artifact_writes_to_selected_folder(tmp_path: Path) 
 
     exported_path = export_cover_letter_artifact(package, destination)
 
-    assert exported_path == destination / "cover-letter-draft.pdf"
+    assert exported_path == destination / "cover_letter.pdf"
     assert exported_path.exists()
     assert exported_path.read_bytes().startswith(b"%PDF")
     assert package.artifacts[0].metadata["downloaded_file_path"] == str(exported_path)
     assert package.artifacts[0].metadata["downloaded_file_format"] == "pdf"
+
+
+def test_cover_letter_pdf_export_does_not_inject_artifact_heading(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    written_pdf: dict[str, object] = {}
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content=(
+                    "Cover Letter Draft\n"
+                    "Taylor Rivera\n\n"
+                    "Dear hiring team,"
+                ),
+            )
+        ],
+    )
+
+    def fake_write_text_pdf(path: Path, content: str) -> None:
+        written_pdf["path"] = path
+        written_pdf["content"] = content
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"%PDF test")
+
+    monkeypatch.setattr(application_package_storage, "_write_text_pdf", fake_write_text_pdf)
+
+    exported_path = export_cover_letter_artifact(package, tmp_path)
+
+    assert exported_path == tmp_path / "cover_letter.pdf"
+    assert written_pdf == {
+        "path": exported_path,
+        "content": "Taylor Rivera\n\nDear hiring team,",
+    }
+    assert "Cover Letter Draft" not in str(written_pdf["content"])
 
 
 def test_update_tracker_for_application_package(tmp_path: Path) -> None:
