@@ -28,6 +28,7 @@ from src.schemas import (
     ApplicationRequirementFinding,
     ApplicationRequirements,
     ApplicationScreeningQuestion,
+    CandidateOptionalDocument,
     CandidateProfile,
 )
 
@@ -233,6 +234,59 @@ def test_cv_becomes_allowed_upload() -> None:
     assert upload.file_path == "/tmp/candidate/cv.pdf"
     assert upload.document_type == "cv"
     assert upload.required is True
+
+
+def test_fill_plan_includes_generated_and_uploaded_required_documents() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/certificate.pdf",
+            file_name="certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/reference.pdf",
+            file_name="reference.pdf",
+            document_type="reference",
+            parsed=True,
+        ),
+    ]
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents[0].constraints = [
+        "Lebenslauf",
+        "Zeugnisse",
+        "Referenzen",
+    ]
+    requirements.motivation_letter = ApplicationRequirementFinding(
+        label="Cover Letter / Anschreiben",
+        required=True,
+        evidence="Bitte Anschreiben hochladen.",
+        confidence="high",
+    )
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Sehr geehrtes Team...",
+            metadata={"generated_file_path": "/tmp/generated/cover-letter-draft.pdf"},
+        )
+    )
+
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+
+    uploads_by_type = {upload.document_type: upload for upload in fill_plan.upload_files}
+    assert uploads_by_type["cv"].file_path == "/tmp/candidate/cv.pdf"
+    assert uploads_by_type["certificate"].file_path == "/tmp/candidate/certificate.pdf"
+    assert uploads_by_type["reference"].file_path == "/tmp/candidate/reference.pdf"
+    assert uploads_by_type["cover_letter"].file_path == (
+        "/tmp/generated/cover-letter-draft.pdf"
+    )
+    assert uploads_by_type["cover_letter"].source == (
+        "application_package.artifacts.cover-letter-draft.generated_file_path"
+    )
 
 
 def test_fill_plan_preserves_discovered_field_options() -> None:

@@ -32,7 +32,6 @@ from src.application_package import (
     apply_manual_artifact_edits,
     generate_application_package,
     load_application_package,
-    reject_application_package,
     save_application_package,
     update_tracker_for_application_package,
 )
@@ -50,6 +49,8 @@ from src.browser_use_launcher import (
 )
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
+    AIWorkflowTrace,
+    ApplicationArtifact,
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
     ApplicationFillNeedsAnswerField,
@@ -63,6 +64,7 @@ from src.ui_components import (
     AI_ACTION_COST_HELP,
     format_detail_value,
     render_additional_details,
+    render_artifact_traceability,
     render_field,
     render_form_fields,
     render_list,
@@ -307,6 +309,26 @@ def render_job_intake_summary(job: JobListing) -> None:
     with st.expander("Advanced job details", expanded=False):
         render_job_advanced_details(job)
 
+    job_extraction_trace = get_job_extraction_trace(job)
+    render_optional_ai_details(
+        "job snapshot",
+        [("Job Extraction Trace", job_extraction_trace)],
+        summary_label="Job Intake AI Usage Summary",
+        summary_traces=[job_extraction_trace],
+    )
+
+
+def get_job_extraction_trace(job: JobListing) -> AIWorkflowTrace | None:
+    """Return the stored job extraction trace as workflow metadata when valid."""
+
+    raw_trace = job.job_details.get("job_extraction_trace")
+    if raw_trace is None:
+        return None
+    try:
+        return AIWorkflowTrace.model_validate(raw_trace)
+    except ValueError:
+        return None
+
 
 def render_job_advanced_details(job: JobListing) -> None:
     """Render lower-priority job extraction metadata and dynamic details."""
@@ -338,11 +360,6 @@ def render_job_advanced_details(job: JobListing) -> None:
         st.markdown("**Other Details**")
         for key, value in remaining_details.items():
             render_field(key.replace("_", " ").title(), format_detail_value(value))
-
-    trace = job.job_details.get("job_extraction_trace")
-    if isinstance(trace, dict):
-        st.markdown("**Job Extraction Trace**")
-        st.json(trace)
 
 
 def render_apply_url_resolution_details(resolution: dict[str, object]) -> None:
@@ -445,8 +462,7 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
         st.info("No application package has been generated yet.")
         return
 
-    package = render_application_package_recovery_actions(base_dir, job, package)
-    render_application_package(package)
+    package = render_application_package_review_form(base_dir, job, package)
     render_optional_ai_details(
         "application package",
         [("Package Generation Trace", package.workflow_trace)],
@@ -882,57 +898,150 @@ def _render_fill_plan_edit_reason(
         st.caption(reason)
 
 
-def render_application_package_recovery_actions(
+def render_application_package_review_form(
     base_dir: Path,
     job: JobListing,
     package: ApplicationPackage,
 ) -> ApplicationPackage:
-    """Render package edit/reject actions and return the current package state."""
+    """Render package review fields and return the current package state."""
 
-    with st.expander("Edit or reject generated package", expanded=False):
-        with st.form(f"application_package_edit_form_{job.id}"):
-            edited_content = {
-                artifact.id: st.text_area(
-                    artifact.label,
+    render_application_package_summary(package)
+
+    with st.form(f"application_package_review_form_{job.id}"):
+        edited_content: dict[str, str] = {}
+        for artifact in order_application_package_artifacts_for_review(package.artifacts):
+            with st.expander(
+                artifact.label,
+                expanded=is_cover_letter_artifact(artifact),
+            ):
+                render_application_artifact_review_metadata(artifact)
+                edited_content[artifact.id] = st.text_area(
+                    f"{artifact.label} content",
                     value=artifact.content,
-                    key=f"application_package_edit_{job.id}_{artifact.id}",
+                    key=f"application_package_review_{job.id}_{artifact.id}",
                 )
-                for artifact in package.artifacts
-            }
-            save_edits = st.form_submit_button("Save manual edits")
+                render_artifact_traceability(artifact.metadata)
 
-        rejection_reason = st.text_area(
-            "Rejection reason",
-            key=f"application_package_reject_reason_{job.id}",
-        )
-        reject_package = st.button(
-            "Reject package",
-            key=f"application_package_reject_{job.id}",
+        save_edits = st.form_submit_button(
+            "Save package review changes",
+            type="primary",
         )
 
     if save_edits:
-        edited_package = apply_manual_artifact_edits(package, edited_content)
+        if not application_package_review_has_content_changes(package, edited_content):
+            st.info("No package review changes were made.")
+            return package
+        edited_package = apply_application_package_review_edits(package, edited_content)
         json_path, markdown_path = save_application_package(base_dir, edited_package, job)
         update_tracker_for_application_package(base_dir, job.id, json_path)
-        st.success(f"Manual edits saved. Markdown export: {markdown_path}")
+        st.success(f"Package review changes saved. Markdown export: {markdown_path}")
         return edited_package
-
-    if reject_package:
-        rejected_package = reject_application_package(package, rejection_reason)
-        json_path, markdown_path = save_application_package(base_dir, rejected_package, job)
-        update_tracker_for_application_package(base_dir, job.id, json_path)
-        st.warning(f"Package rejected and saved. Markdown export: {markdown_path}")
-        return rejected_package
 
     return package
 
 
-def render_application_package(package: ApplicationPackage) -> None:
-    """Render a generated application package for human review."""
+def render_application_package_summary(package: ApplicationPackage) -> None:
+    """Render compact generated package status before editable review fields."""
+
+    summary = build_application_package_summary(package)
+    missing_information = summary["missing_information"]
+    if isinstance(missing_information, list) and missing_information:
+        st.markdown("**Missing Information**")
+        for item in missing_information:
+            st.write(f"- {item}")
+
+    selected_experience_units = summary["selected_experience_units"]
+    if isinstance(selected_experience_units, list) and selected_experience_units:
+        st.markdown("**Selected Experience Units**")
+        for item in selected_experience_units:
+            st.write(f"- {item}")
+
+    generation_notes = summary["generation_notes"]
+    if isinstance(generation_notes, list) and generation_notes:
+        st.markdown("**Generation Notes**")
+        for item in generation_notes:
+            st.write(f"- {item}")
+
+
+def build_application_package_summary(
+    package: ApplicationPackage,
+) -> dict[str, str | int | list[str]]:
+    """Return compact package metadata for the package review form."""
+
+    return {
+        "status": package.status,
+        "artifact_count": len(package.artifacts),
+        "missing_information": list(package.missing_information),
+        "selected_experience_units": list(package.selected_experience_units),
+        "generation_notes": list(package.generation_notes),
+    }
+
+
+def render_application_artifact_review_metadata(artifact: ApplicationArtifact) -> None:
+    """Render artifact metadata next to its editable content field."""
+
+    for item in build_application_artifact_review_metadata(artifact):
+        st.caption(item)
+
+
+def build_application_artifact_review_metadata(
+    artifact: ApplicationArtifact,
+) -> list[str]:
+    """Return reviewer-facing metadata labels for an application artifact."""
+
+    metadata = []
+    if artifact.source_prompt:
+        metadata.append(f"Source prompt: {artifact.source_prompt}")
+    if artifact.source_requirement:
+        metadata.append(f"Source requirement: {artifact.source_requirement}")
+    return metadata
+
+
+def order_application_package_artifacts_for_review(
+    artifacts: list[ApplicationArtifact],
+) -> list[ApplicationArtifact]:
+    """Return artifacts with the cover letter first while preserving other order."""
+
+    return sorted(
+        artifacts,
+        key=lambda artifact: 0 if is_cover_letter_artifact(artifact) else 1,
+    )
+
+
+def is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:
+    """Return whether an artifact is the cover-letter draft."""
+
+    normalized_label = artifact.label.casefold()
+    return artifact.type == "cover_letter" or "cover letter" in normalized_label
+
+
+def application_package_review_has_content_changes(
+    package: ApplicationPackage,
+    edits_by_artifact_id: dict[str, str],
+) -> bool:
+    """Return whether reviewer edits change any stored artifact content."""
 
     for artifact in package.artifacts:
-        with st.expander(artifact.label, expanded=False):
-            st.write(artifact.content or "No content generated.")
+        if artifact.id not in edits_by_artifact_id:
+            continue
+        if str(edits_by_artifact_id[artifact.id]).strip() != artifact.content:
+            return True
+    return False
+
+
+def apply_application_package_review_edits(
+    package: ApplicationPackage,
+    edits_by_artifact_id: dict[str, str],
+) -> ApplicationPackage:
+    """Apply reviewer edits and unlock legacy rejected packages when changed."""
+
+    edited_package = apply_manual_artifact_edits(package, edits_by_artifact_id)
+    if (
+        package.status == "rejected"
+        and application_package_review_has_content_changes(package, edits_by_artifact_id)
+    ):
+        edited_package.status = "manually_edited"
+    return edited_package
 
 
 def render_application_requirements(requirements: ApplicationRequirements) -> None:

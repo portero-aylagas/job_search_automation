@@ -261,7 +261,12 @@ def generate_application_fill_plan(
         apply_url=requirements.apply_url,
         review_status="draft",
         field_values=_dedupe_field_values(field_values),
-        upload_files=_build_upload_files(candidate_profile, requirements, page_snapshot),
+        upload_files=_build_upload_files(
+            candidate_profile,
+            requirements,
+            package,
+            page_snapshot,
+        ),
         needs_answer_fields=_dedupe_needs_answer_fields(needs_answer_fields),
         blocked_fields=_dedupe_blocked_fields(blocked_fields),
         submit_guard_labels=DEFAULT_SUBMIT_GUARD_LABELS,
@@ -694,43 +699,187 @@ def _matching_option(options: list[str], accepted_values: tuple[str, ...]) -> st
 def _build_upload_files(
     candidate_profile: CandidateProfile,
     requirements: ApplicationRequirements,
+    package: ApplicationPackage,
     page_snapshot: ApplicationPageSnapshot | None,
 ) -> list[ApplicationFillUploadFile]:
+    uploads: list[ApplicationFillUploadFile] = []
+    uploads.extend(_candidate_document_uploads(candidate_profile, requirements, page_snapshot))
+    uploads.extend(_generated_package_document_uploads(package, requirements, page_snapshot))
+    return _dedupe_upload_files(uploads)
+
+
+def _candidate_document_uploads(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> list[ApplicationFillUploadFile]:
+    uploads: list[ApplicationFillUploadFile] = []
     cv_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
-    if not cv_path:
-        return []
 
-    required = any(item.required for item in requirements.required_documents)
-    label = "CV / Resume"
-    matched_requirement: ApplicationRequirementFinding | None = None
-    for item in [*requirements.required_documents, *requirements.upload_expectations]:
-        item_text = _field_key(" ".join([item.label, item.evidence, *item.constraints]))
-        upload_terms = ("cv", "resume", "lebenslauf", "bewerbungsunterlagen")
-        if any(term in item_text for term in upload_terms):
-            label = item.label
-            required = required or item.required
-            matched_requirement = item
-            break
-
-    evidence_terms = (
-        _terms_from_requirement_finding(matched_requirement)
-        if matched_requirement is not None
-        else ["CV / Resume"]
+    cv_requirement = _first_matching_document_requirement(
+        requirements,
+        _document_terms("cv"),
     )
-    return [
-        _attach_fill_plan_evidence(
-            ApplicationFillUploadFile(
-                label=label,
+    if cv_path and cv_requirement is not None:
+        uploads.append(
+            _upload_from_path(
+                label=cv_requirement.label,
                 file_path=cv_path,
                 document_type="cv",
-                required=required,
+                required=cv_requirement.required,
                 source="candidate_profile.source_documents.cv.file_path",
                 confidence="high",
-            ),
-            page_snapshot,
-            evidence_terms,
+                requirement=cv_requirement,
+                page_snapshot=page_snapshot,
+            )
         )
-    ]
+
+    for index, document in enumerate(
+        candidate_profile.candidate_profile.source_documents.optional_documents
+    ):
+        document_path = document.file_path.strip()
+        if not document_path:
+            continue
+        document_type = document.document_type.strip() or "other"
+        requirement = _first_matching_document_requirement(
+            requirements,
+            _document_terms(document_type),
+        )
+        if requirement is None:
+            continue
+        uploads.append(
+            _upload_from_path(
+                label=requirement.label,
+                file_path=document_path,
+                document_type=document_type,
+                required=requirement.required,
+                source=f"candidate_profile.source_documents.optional_documents.{index}",
+                confidence="high",
+                requirement=requirement,
+                page_snapshot=page_snapshot,
+            )
+        )
+    return uploads
+
+
+def _generated_package_document_uploads(
+    package: ApplicationPackage,
+    requirements: ApplicationRequirements,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> list[ApplicationFillUploadFile]:
+    cover_letter_requirement = _cover_letter_requirement(requirements)
+    if cover_letter_requirement is None:
+        return []
+
+    uploads: list[ApplicationFillUploadFile] = []
+    for artifact in package.artifacts:
+        if artifact.type != "cover_letter":
+            continue
+        file_path = str(artifact.metadata.get("generated_file_path") or "").strip()
+        if not file_path:
+            continue
+        uploads.append(
+            _upload_from_path(
+                label=cover_letter_requirement.label,
+                file_path=file_path,
+                document_type="cover_letter",
+                required=cover_letter_requirement.required,
+                source=f"application_package.artifacts.{artifact.id}.generated_file_path",
+                confidence="medium",
+                requirement=cover_letter_requirement,
+                page_snapshot=page_snapshot,
+            )
+        )
+        break
+    return uploads
+
+
+def _upload_from_path(
+    *,
+    label: str,
+    file_path: str,
+    document_type: str,
+    required: bool,
+    source: str,
+    confidence: ConfidenceLevel,
+    requirement: ApplicationRequirementFinding,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> ApplicationFillUploadFile:
+    return _attach_fill_plan_evidence(
+        ApplicationFillUploadFile(
+            label=label,
+            file_path=file_path,
+            document_type=document_type,
+            required=required,
+            source=source,
+            confidence=confidence,
+        ),
+        page_snapshot,
+        _terms_from_requirement_finding(requirement),
+    )
+
+
+def _cover_letter_requirement(
+    requirements: ApplicationRequirements,
+) -> ApplicationRequirementFinding | None:
+    if requirements.motivation_letter is not None:
+        return requirements.motivation_letter
+    return _first_matching_document_requirement(requirements, _document_terms("cover_letter"))
+
+
+def _first_matching_document_requirement(
+    requirements: ApplicationRequirements,
+    terms: tuple[str, ...],
+) -> ApplicationRequirementFinding | None:
+    for requirement in [*requirements.required_documents, *requirements.upload_expectations]:
+        if _requirement_matches_document_terms(requirement, terms):
+            return requirement
+    return None
+
+
+def _requirement_matches_document_terms(
+    requirement: ApplicationRequirementFinding,
+    terms: tuple[str, ...],
+) -> bool:
+    requirement_text = _field_key(
+        " ".join([requirement.label, requirement.evidence, *requirement.constraints])
+    )
+    return any(term in requirement_text for term in terms)
+
+
+def _document_terms(document_type: str) -> tuple[str, ...]:
+    normalized_type = _field_key(document_type)
+    if normalized_type == "cv":
+        return ("cv", "resume", "lebenslauf", "bewerbungsunterlagen")
+    if normalized_type in {"cover letter", "coverletter"}:
+        return ("cover letter", "motivation", "anschreiben", "motivationsschreiben")
+    if normalized_type in {"certificate", "certificates"}:
+        return (
+            "certificate",
+            "certificates",
+            "zeugnis",
+            "zeugnisse",
+            "abschluss",
+            "degree",
+            "transcript",
+        )
+    if normalized_type in {"reference", "references"}:
+        return ("reference", "references", "referenz", "referenzen")
+    return (normalized_type,)
+
+
+def _dedupe_upload_files(
+    uploads: list[ApplicationFillUploadFile],
+) -> list[ApplicationFillUploadFile]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[ApplicationFillUploadFile] = []
+    for upload in uploads:
+        key = (upload.file_path, upload.document_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(upload)
+    return deduped
 
 
 def _package_answer_for_label(package: ApplicationPackage, label: str) -> str:

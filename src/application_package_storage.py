@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import re
+from html import escape
 from pathlib import Path
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from src.application_package_markdown import render_application_package_markdown
 from src.paths import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
+    application_package_artifacts_dir,
     application_package_markdown_path,
     application_package_paths,
     runtime_application_package_path,
@@ -33,10 +40,49 @@ def save_application_package(
 
     json_path = runtime_application_package_path(base_dir, package.job_id)
     markdown_path = application_package_markdown_path(base_dir, package.job_id)
+    _save_uploadable_package_artifacts(base_dir, package)
     save_model(json_path, package)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.write_text(render_application_package_markdown(package, job), encoding="utf-8")
     return json_path, markdown_path
+
+
+def _save_uploadable_package_artifacts(
+    base_dir: Path | str,
+    package: ApplicationPackage,
+) -> None:
+    """Write generated package artifacts that can be referenced by fill plans."""
+
+    artifacts_dir = application_package_artifacts_dir(base_dir, package.job_id)
+    for artifact in package.artifacts:
+        if artifact.type != "cover_letter" or not artifact.content.strip():
+            continue
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = artifacts_dir / f"{_safe_artifact_filename(artifact.id)}.pdf"
+        _write_text_pdf(artifact_path, artifact.label, artifact.content)
+        metadata = dict(artifact.metadata)
+        metadata["generated_file_path"] = str(artifact_path)
+        metadata["generated_file_format"] = "pdf"
+        metadata["generated_file_mime_type"] = "application/pdf"
+        artifact.metadata = metadata
+
+
+def _write_text_pdf(path: Path, title: str, content: str) -> None:
+    """Write plain generated artifact text as a simple PDF document."""
+
+    styles = getSampleStyleSheet()
+    story = [Paragraph(escape(title), styles["Title"]), Spacer(1, 18)]
+    for block in content.strip().split("\n\n"):
+        normalized_block = "<br/>".join(escape(line) for line in block.splitlines())
+        if normalized_block.strip():
+            story.extend([Paragraph(normalized_block, styles["BodyText"]), Spacer(1, 10)])
+    document = SimpleDocTemplate(str(path), pagesize=A4)
+    document.build(story)
+
+
+def _safe_artifact_filename(value: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip(".-_")
+    return normalized or "artifact"
 
 
 def load_application_package(

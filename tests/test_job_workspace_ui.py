@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from src.job_intake import create_job_listing
 from src.job_workspace_ui import (
+    application_package_review_has_content_changes,
+    apply_application_package_review_edits,
+    build_application_artifact_review_metadata,
+    build_application_package_summary,
     build_review_checklist,
     deduplicate_review_items,
     get_application_fill_plan_review_blockers,
     get_apply_assistance_blockers,
+    get_job_extraction_trace,
+    order_application_package_artifacts_for_review,
 )
 from src.schemas import (
+    AIWorkflowTrace,
+    ApplicationArtifact,
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationPackage,
@@ -322,3 +330,141 @@ def test_review_checklist_skips_items_represented_by_fill_plan_fields() -> None:
     )
 
     assert build_review_checklist(requirements, package, fill_plan) == []
+
+
+def test_application_package_summary_includes_review_context() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        status="needs_review",
+        artifacts=[
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Application Summary",
+                content="Draft summary.",
+            ),
+            ApplicationArtifact(
+                id="cover-letter",
+                type="cover_letter",
+                label="Cover Letter",
+                content="Draft letter.",
+            ),
+        ],
+        missing_information=["Candidate phone is missing."],
+        selected_experience_units=["exp-001"],
+        generation_notes=["Generated from reviewed requirements."],
+    )
+
+    summary = build_application_package_summary(package)
+
+    assert summary == {
+        "status": "needs_review",
+        "artifact_count": 2,
+        "missing_information": ["Candidate phone is missing."],
+        "selected_experience_units": ["exp-001"],
+        "generation_notes": ["Generated from reviewed requirements."],
+    }
+
+
+def test_artifact_review_metadata_includes_context_without_mutating_content() -> None:
+    artifact = ApplicationArtifact(
+        id="question-1",
+        type="form_answer",
+        label="Screening Answer 1",
+        required=True,
+        status="needs_review",
+        content="Draft answer.",
+        source_prompt="Why do you want this role?",
+        source_requirement="Answer required before submit.",
+    )
+
+    metadata = build_application_artifact_review_metadata(artifact)
+
+    assert metadata == [
+        "Source prompt: Why do you want this role?",
+        "Source requirement: Answer required before submit.",
+    ]
+    assert artifact.content == "Draft answer."
+
+
+def test_package_review_orders_cover_letter_before_other_artifacts() -> None:
+    summary = ApplicationArtifact(
+        id="summary",
+        type="application_summary",
+        label="Application Summary",
+        content="Draft summary.",
+    )
+    cover_letter = ApplicationArtifact(
+        id="cover-letter-draft",
+        type="cover_letter",
+        label="Cover Letter Draft",
+        content="Draft letter.",
+    )
+    notes = ApplicationArtifact(
+        id="cv-tailoring-notes",
+        type="cv_tailoring_notes",
+        label="CV Tailoring Notes",
+        content="Draft notes.",
+    )
+
+    ordered = order_application_package_artifacts_for_review([summary, cover_letter, notes])
+
+    assert ordered == [cover_letter, summary, notes]
+
+
+def test_rejected_package_status_clears_only_when_review_edits_change_content() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        status="rejected",
+        artifacts=[
+            ApplicationArtifact(
+                id="summary",
+                type="application_summary",
+                label="Summary",
+                content="Draft text.",
+            )
+        ],
+    )
+
+    unchanged = apply_application_package_review_edits(package, {"summary": "Draft text."})
+    edited = apply_application_package_review_edits(package, {"summary": "Reviewed text."})
+
+    assert application_package_review_has_content_changes(
+        package,
+        {"summary": "Reviewed text."},
+    )
+    assert unchanged.status == "rejected"
+    assert edited.status == "manually_edited"
+    assert edited.artifacts[0].content == "Reviewed text."
+    assert edited.artifacts[0].status == "manually_edited"
+
+
+def test_get_job_extraction_trace_loads_stored_workflow_trace() -> None:
+    job = make_job()
+    trace = AIWorkflowTrace(
+        workflow_name="job_extraction",
+        operation="AI job extraction",
+        model="gpt-5.4",
+        profile_name="job_extraction",
+        temperature=0.0,
+        max_output_tokens=5000,
+        timeout_seconds=90.0,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+        max_tool_calls=4,
+        attempt_count=1,
+        duration_ms=14287,
+        recorded_at="2026-05-21T21:35:03.744971+00:00",
+    )
+    job.job_details["job_extraction_trace"] = trace.model_dump(mode="json")
+
+    loaded_trace = get_job_extraction_trace(job)
+
+    assert loaded_trace == trace
+
+
+def test_get_job_extraction_trace_skips_invalid_stored_trace() -> None:
+    job = make_job()
+    job.job_details["job_extraction_trace"] = {"workflow_name": "job_extraction"}
+
+    assert get_job_extraction_trace(job) is None

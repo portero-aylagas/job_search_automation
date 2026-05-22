@@ -159,6 +159,12 @@ def application_package_markdown_path(base_dir: Path | str, job_id: str) -> Path
     return Path(base_dir) / OUTPUTS_DIR / job_id / APPLICATION_PACKAGE_MARKDOWN_FILENAME
 
 
+def application_package_artifacts_dir(base_dir: Path | str, job_id: str) -> Path:
+    """Return the generated per-artifact export directory for a job package."""
+
+    return Path(base_dir) / OUTPUTS_DIR / job_id / "artifacts"
+
+
 def runtime_jobs_index_path(base_dir: Path | str) -> Path:
     """Return the mutable runtime jobs index path."""
 

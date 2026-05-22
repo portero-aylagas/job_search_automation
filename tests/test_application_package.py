@@ -22,6 +22,7 @@ from src.application_package import (
     update_tracker_for_application_package,
 )
 from src.job_intake import create_job_listing
+from src.paths import application_package_artifacts_dir
 from src.sample_data import get_sample_candidate_profile, get_sample_experience_units
 from src.schemas import (
     ApplicationArtifact,
@@ -502,6 +503,36 @@ def test_markdown_render_and_save_round_trip(tmp_path: Path) -> None:
     assert json_path.exists()
     assert markdown_path.name == APPLICATION_PACKAGE_MARKDOWN_FILENAME
     assert markdown_path.read_text(encoding="utf-8") == markdown
+
+
+def test_save_application_package_exports_cover_letter_artifact_file(
+    tmp_path: Path,
+) -> None:
+    job = make_job()
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team,\n\nGenerated cover letter.",
+            )
+        ],
+    )
+
+    save_application_package(tmp_path, package, job)
+    exported_path = (
+        application_package_artifacts_dir(tmp_path, job.id) / "cover-letter-draft.pdf"
+    )
+    reloaded = load_application_package(tmp_path, job.id)
+
+    assert exported_path.exists()
+    assert exported_path.read_bytes().startswith(b"%PDF")
+    assert reloaded is not None
+    assert reloaded.artifacts[0].metadata["generated_file_path"] == str(exported_path)
+    assert reloaded.artifacts[0].metadata["generated_file_format"] == "pdf"
+    assert reloaded.artifacts[0].metadata["generated_file_mime_type"] == "application/pdf"
 
 
 def test_update_tracker_for_application_package(tmp_path: Path) -> None:
