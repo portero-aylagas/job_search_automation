@@ -4,6 +4,7 @@ from pathlib import Path
 
 from src import app_workflow
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
+from src.schemas import CandidateProfile
 
 
 def test_app_workflow_has_no_streamlit_dependency() -> None:
@@ -19,6 +20,59 @@ def test_load_app_data_uses_supplied_base_dir(tmp_path: Path) -> None:
     assert tracker_records == []
     assert (tmp_path / "data" / "candidate_profile.json").is_file()
     assert (tmp_path / "data" / "runtime" / "jobs.json").is_file()
+
+
+def test_candidate_profile_save_and_load_dedupe_reuploaded_optional_documents(
+    tmp_path: Path,
+) -> None:
+    profile = CandidateProfile.model_validate(
+        {
+            "candidate_profile": {
+                "source_documents": {
+                    "optional_documents": [
+                        {
+                            "file_path": "/tmp/20240101120000-language-certificate.pdf",
+                            "file_name": "language-certificate.pdf",
+                            "document_type": "certificate",
+                            "parsed": True,
+                        },
+                        {
+                            "file_path": "/tmp/20240101120500-safety-certificate.pdf",
+                            "file_name": "safety-certificate.pdf",
+                            "document_type": "certificate",
+                            "parsed": True,
+                        },
+                        {
+                            "file_path": "/tmp/20240101121000-language-certificate.pdf",
+                            "file_name": "language-certificate.pdf",
+                            "document_type": "certificate",
+                            "parsed": True,
+                        },
+                        {
+                            "file_path": "/tmp/20240101121500-manager-reference.pdf",
+                            "document_type": "reference",
+                            "parsed": True,
+                        },
+                        {
+                            "file_path": "/tmp/20240101122000-manager-reference.pdf",
+                            "document_type": "reference",
+                            "parsed": True,
+                        },
+                    ]
+                },
+            }
+        }
+    )
+
+    app_workflow.save_candidate_profile(tmp_path, profile)
+
+    loaded = app_workflow.load_candidate_profile(tmp_path)
+    documents = loaded.candidate_profile.source_documents.optional_documents
+    assert [(document.document_type, document.file_path) for document in documents] == [
+        ("certificate", "/tmp/20240101121000-language-certificate.pdf"),
+        ("certificate", "/tmp/20240101120500-safety-certificate.pdf"),
+        ("reference", "/tmp/20240101122000-manager-reference.pdf"),
+    ]
 
 
 def test_extract_job_intake_data_accepts_fake_extractor_and_resolver() -> None:

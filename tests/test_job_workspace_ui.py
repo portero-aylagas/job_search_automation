@@ -4,6 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import src.job_workspace_ui as job_workspace_ui
+from src.application_fill_plan import (
+    generate_application_fill_plan,
+    mark_application_fill_plan_reviewed,
+)
 from src.job_intake import create_job_listing
 from src.job_workspace_ui import (
     application_artifact_review_key,
@@ -210,6 +214,60 @@ def test_apply_assistance_blocks_unresolved_needs_answer_fields() -> None:
     blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
 
     assert "Save reviewed values for all fields needing answers." in blockers
+
+
+def test_apply_assistance_blocks_stale_reviewed_fill_plan_until_refresh() -> None:
+    job = make_job()
+    profile = make_profile()
+    requirements = make_requirements(job)
+    requirements.motivation_letter = ApplicationRequirementFinding(
+        label="Optional cover letter",
+        required=False,
+        evidence="You may upload a cover letter.",
+        confidence="medium",
+    )
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team.",
+            )
+        ],
+    )
+    fill_plan = mark_application_fill_plan_reviewed(
+        generate_application_fill_plan(profile, requirements, package)
+    )
+    package.artifacts[0].metadata["generated_file_path"] = "/tmp/cover_letter.pdf"
+
+    blockers = get_apply_assistance_blockers(
+        job,
+        requirements,
+        package,
+        fill_plan,
+        candidate_profile=profile,
+    )
+
+    assert blockers == [
+        "Refresh the application fill plan because application package upload "
+        "artifacts changed since review."
+    ]
+
+    refreshed_plan = mark_application_fill_plan_reviewed(
+        generate_application_fill_plan(profile, requirements, package)
+    )
+    assert (
+        get_apply_assistance_blockers(
+            job,
+            requirements,
+            package,
+            refreshed_plan,
+            candidate_profile=profile,
+        )
+        == []
+    )
 
 
 def test_fill_plan_review_blockers_require_resolved_needs_answer_fields() -> None:

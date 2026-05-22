@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Protocol
 
 from src.apply_url_resolution import resolve_apply_url_agentically
-from src.candidate_profile import validate_candidate_profile
+from src.candidate_profile import (
+    normalize_candidate_profile_documents,
+    validate_candidate_profile,
+)
 from src.job_intake import validate_apply_url
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, extract_job_data_from_url
 from src.paths import (
@@ -93,11 +96,11 @@ def load_candidate_profile(base_dir: Path | str) -> CandidateProfile:
     legacy_path = legacy_profile_path(base_dir)
 
     if active_path.exists():
-        return load_model(active_path, CandidateProfile)
+        return normalize_candidate_profile_documents(load_model(active_path, CandidateProfile))
     if runtime_path.exists():
-        return load_model(runtime_path, CandidateProfile)
+        return normalize_candidate_profile_documents(load_model(runtime_path, CandidateProfile))
     if legacy_path.exists():
-        return load_model(legacy_path, CandidateProfile)
+        return normalize_candidate_profile_documents(load_model(legacy_path, CandidateProfile))
     return CandidateProfile()
 
 
@@ -105,7 +108,7 @@ def save_candidate_profile(base_dir: Path | str, profile: CandidateProfile) -> P
     """Persist the reviewed candidate profile to the active profile path."""
 
     target = candidate_profile_path(base_dir)
-    save_model(target, profile)
+    save_model(target, normalize_candidate_profile_documents(profile))
     return target
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -13,9 +14,14 @@ from pydantic import BaseModel
 
 from src import llm_client
 from src.application_package_quality import is_sensitive_or_user_decision_field
+from src.candidate_profile import (
+    candidate_optional_document_display_name,
+    normalize_candidate_profile_documents,
+)
 from src.paths import application_fill_plan_paths, runtime_application_fill_plan_path
 from src.prompt_templates import get_prompt
 from src.schemas import (
+    ApplicationArtifact,
     ApplicationFillBlockedField,
     ApplicationFillEvidenceSource,
     ApplicationFillEvidenceStatus,
@@ -78,6 +84,27 @@ class FillPlanEvidence:
     evidence_status: ApplicationFillEvidenceStatus
 
 
+@dataclass(frozen=True)
+class RequestedDocumentUpload:
+    """Document type requested by reviewed application requirements."""
+
+    document_type: str
+    label: str
+    required: bool
+    requirement: ApplicationRequirementFinding
+
+
+@dataclass(frozen=True)
+class AvailableDocumentUpload:
+    """Reviewed local file that may satisfy a requested upload."""
+
+    document_type: str
+    file_path: str
+    source: str
+    confidence: ConfidenceLevel
+    file_name: str = ""
+
+
 class ApplicationFieldMappingSuggestion(BaseModel):
     """Suggested value for one unresolved application field."""
 
@@ -117,6 +144,7 @@ def generate_application_fill_plan(
 ) -> ApplicationFillPlan:
     """Create a conservative draft fill plan from reviewed application data."""
 
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
     field_values: list[ApplicationFillFieldValue] = []
     blocked_fields: list[ApplicationFillBlockedField] = []
     needs_answer_fields: list[ApplicationFillNeedsAnswerField] = []
@@ -256,10 +284,17 @@ def generate_application_fill_plan(
             )
         )
 
+    source_metadata = build_application_fill_plan_source_metadata(
+        candidate_profile,
+        requirements,
+        package,
+    )
     return ApplicationFillPlan(
         job_id=requirements.job_id,
         apply_url=requirements.apply_url,
         review_status="draft",
+        source_fingerprints=_source_fingerprints(source_metadata),
+        source_metadata=source_metadata,
         field_values=_dedupe_field_values(field_values),
         upload_files=_build_upload_files(
             candidate_profile,
@@ -416,6 +451,86 @@ def mark_application_fill_plan_reviewed(fill_plan: ApplicationFillPlan) -> Appli
     reviewed = fill_plan.model_copy(deep=True)
     reviewed.review_status = "reviewed"
     return reviewed
+
+
+def build_application_fill_plan_source_metadata(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+) -> dict[str, object]:
+    """Return lightweight source metadata used to detect stale fill plans."""
+
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
+    source_documents = candidate_profile.candidate_profile.source_documents
+    return {
+        "candidate_documents": {
+            "cv": source_documents.cv.model_dump(mode="json"),
+            "optional_documents": [
+                document.model_dump(mode="json")
+                for document in source_documents.optional_documents
+            ],
+        },
+        "application_requirements": requirements.model_dump(
+            mode="json",
+            exclude={"workflow_trace"},
+        ),
+        "package_upload_artifacts": [
+            _package_upload_artifact_metadata(artifact)
+            for artifact in package.artifacts
+            if _is_cover_letter_artifact(artifact)
+        ],
+    }
+
+
+def build_application_fill_plan_source_fingerprints(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+) -> dict[str, str]:
+    """Return current source fingerprints for a fill plan's input artifacts."""
+
+    return _source_fingerprints(
+        build_application_fill_plan_source_metadata(
+            candidate_profile,
+            requirements,
+            package,
+        )
+    )
+
+
+def get_application_fill_plan_freshness_blockers(
+    fill_plan: ApplicationFillPlan,
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+) -> list[str]:
+    """Return blockers when a reviewed fill plan no longer matches current sources."""
+
+    if not fill_plan.source_fingerprints:
+        return [
+            "Refresh the application fill plan because this saved plan does not "
+            "include source freshness metadata."
+        ]
+
+    current_fingerprints = build_application_fill_plan_source_fingerprints(
+        candidate_profile,
+        requirements,
+        package,
+    )
+    blockers: list[str] = []
+    source_labels = {
+        "candidate_documents": "candidate profile documents",
+        "application_requirements": "application requirements",
+        "package_upload_artifacts": "application package upload artifacts",
+    }
+    for source_name, current_fingerprint in current_fingerprints.items():
+        if fill_plan.source_fingerprints.get(source_name) == current_fingerprint:
+            continue
+        blockers.append(
+            "Refresh the application fill plan because "
+            f"{source_labels.get(source_name, source_name)} changed since review."
+        )
+    return blockers
 
 
 def save_application_fill_plan(base_dir: Path | str, fill_plan: ApplicationFillPlan) -> Path:
@@ -703,35 +818,49 @@ def _build_upload_files(
     page_snapshot: ApplicationPageSnapshot | None,
 ) -> list[ApplicationFillUploadFile]:
     uploads: list[ApplicationFillUploadFile] = []
-    uploads.extend(_candidate_document_uploads(candidate_profile, requirements, page_snapshot))
-    uploads.extend(_generated_package_document_uploads(package, requirements, page_snapshot))
+    available_uploads = _available_document_uploads(candidate_profile, package)
+    for requested_upload in _requested_document_uploads(requirements):
+        matches = available_uploads.get(requested_upload.document_type, [])
+        if matches:
+            disambiguate_label = len(matches) > 1
+            for match in matches:
+                uploads.append(
+                    _upload_from_available_document(
+                        requested_upload,
+                        match,
+                        page_snapshot=page_snapshot,
+                        disambiguate_label=disambiguate_label,
+                    )
+                )
+            continue
+
+        if requested_upload.required:
+            uploads.append(
+                _missing_required_upload(
+                    requested_upload,
+                    page_snapshot=page_snapshot,
+                )
+            )
     return _dedupe_upload_files(uploads)
 
 
-def _candidate_document_uploads(
+def _available_document_uploads(
     candidate_profile: CandidateProfile,
-    requirements: ApplicationRequirements,
-    page_snapshot: ApplicationPageSnapshot | None,
-) -> list[ApplicationFillUploadFile]:
-    uploads: list[ApplicationFillUploadFile] = []
+    package: ApplicationPackage,
+) -> dict[str, list[AvailableDocumentUpload]]:
+    candidate_profile = normalize_candidate_profile_documents(candidate_profile)
+    uploads_by_type: dict[str, list[AvailableDocumentUpload]] = {}
     cv_path = candidate_profile.candidate_profile.source_documents.cv.file_path.strip()
-
-    cv_requirement = _first_matching_document_requirement(
-        requirements,
-        _document_terms("cv"),
-    )
-    if cv_path and cv_requirement is not None:
-        uploads.append(
-            _upload_from_path(
-                label=cv_requirement.label,
-                file_path=cv_path,
+    if cv_path:
+        _append_available_upload(
+            uploads_by_type,
+            AvailableDocumentUpload(
                 document_type="cv",
-                required=cv_requirement.required,
+                file_path=cv_path,
                 source="candidate_profile.source_documents.cv.file_path",
                 confidence="high",
-                requirement=cv_requirement,
-                page_snapshot=page_snapshot,
-            )
+                file_name=Path(cv_path).name,
+            ),
         )
 
     for index, document in enumerate(
@@ -740,131 +869,292 @@ def _candidate_document_uploads(
         document_path = document.file_path.strip()
         if not document_path:
             continue
-        document_type = document.document_type.strip() or "other"
-        requirement = _first_matching_document_requirement(
-            requirements,
-            _document_terms(document_type),
+        document_type = _canonical_document_type(
+            document.document_type,
+            fallback_text=f"{document.file_name} {document_path}",
         )
-        if requirement is None:
+        if document_type is None:
             continue
-        uploads.append(
-            _upload_from_path(
-                label=requirement.label,
-                file_path=document_path,
+        _append_available_upload(
+            uploads_by_type,
+            AvailableDocumentUpload(
                 document_type=document_type,
-                required=requirement.required,
+                file_path=document_path,
                 source=f"candidate_profile.source_documents.optional_documents.{index}",
                 confidence="high",
-                requirement=requirement,
-                page_snapshot=page_snapshot,
-            )
+                file_name=candidate_optional_document_display_name(document),
+            ),
         )
-    return uploads
 
-
-def _generated_package_document_uploads(
-    package: ApplicationPackage,
-    requirements: ApplicationRequirements,
-    page_snapshot: ApplicationPageSnapshot | None,
-) -> list[ApplicationFillUploadFile]:
-    cover_letter_requirement = _cover_letter_requirement(requirements)
-    if cover_letter_requirement is None:
-        return []
-
-    uploads: list[ApplicationFillUploadFile] = []
     for artifact in package.artifacts:
-        if artifact.type != "cover_letter":
+        if not _is_cover_letter_artifact(artifact):
             continue
-        file_path = str(artifact.metadata.get("generated_file_path") or "").strip()
+        file_path, source_suffix = _package_artifact_file_path(artifact)
         if not file_path:
             continue
-        uploads.append(
-            _upload_from_path(
-                label=cover_letter_requirement.label,
-                file_path=file_path,
+        _append_available_upload(
+            uploads_by_type,
+            AvailableDocumentUpload(
                 document_type="cover_letter",
-                required=cover_letter_requirement.required,
-                source=f"application_package.artifacts.{artifact.id}.generated_file_path",
+                file_path=file_path,
+                source=f"application_package.artifacts.{artifact.id}.{source_suffix}",
                 confidence="medium",
-                requirement=cover_letter_requirement,
-                page_snapshot=page_snapshot,
+                file_name=Path(file_path).name,
+            ),
+        )
+    return uploads_by_type
+
+
+def _append_available_upload(
+    uploads_by_type: dict[str, list[AvailableDocumentUpload]],
+    upload: AvailableDocumentUpload,
+) -> None:
+    uploads_by_type.setdefault(upload.document_type, []).append(upload)
+
+
+def _package_artifact_file_path(artifact: ApplicationArtifact) -> tuple[str, str]:
+    generated_file_path = str(artifact.metadata.get("generated_file_path") or "").strip()
+    if generated_file_path:
+        return generated_file_path, "generated_file_path"
+    downloaded_file_path = str(artifact.metadata.get("downloaded_file_path") or "").strip()
+    if downloaded_file_path:
+        return downloaded_file_path, "downloaded_file_path"
+    return "", ""
+
+
+def _requested_document_uploads(
+    requirements: ApplicationRequirements,
+) -> list[RequestedDocumentUpload]:
+    requested: list[RequestedDocumentUpload] = []
+    for finding in requirements.required_documents:
+        requested.extend(
+            _requested_document_uploads_from_finding(
+                finding,
+                required=True,
             )
         )
-        break
+    for finding in requirements.upload_expectations:
+        requested.extend(
+            _requested_document_uploads_from_finding(
+                finding,
+                required=finding.required,
+            )
+        )
+    if requirements.motivation_letter is not None:
+        requested.extend(
+            _requested_document_uploads_from_finding(
+                requirements.motivation_letter,
+                required=requirements.motivation_letter.required,
+                forced_document_type="cover_letter",
+            )
+        )
+    return _dedupe_requested_document_uploads(requested)
+
+
+def _requested_document_uploads_from_finding(
+    finding: ApplicationRequirementFinding,
+    *,
+    required: bool,
+    forced_document_type: str | None = None,
+) -> list[RequestedDocumentUpload]:
+    document_types = (
+        [forced_document_type]
+        if forced_document_type is not None
+        else _document_types_from_requirement(finding)
+    )
+    document_types = [document_type for document_type in document_types if document_type]
+    if not document_types:
+        return []
+
+    multiple_types = len(document_types) > 1
+    uploads: list[RequestedDocumentUpload] = []
+    for document_type in document_types:
+        uploads.append(
+            RequestedDocumentUpload(
+                document_type=document_type,
+                label=_requested_document_upload_label(
+                    finding,
+                    document_type,
+                    multiple_types=multiple_types,
+                ),
+                required=required,
+                requirement=finding,
+            )
+        )
     return uploads
 
 
-def _upload_from_path(
-    *,
-    label: str,
-    file_path: str,
+def _document_types_from_requirement(
+    finding: ApplicationRequirementFinding,
+) -> list[str]:
+    haystack = _field_key(
+        " ".join([finding.label, finding.evidence, *finding.constraints])
+    )
+    document_types: list[str] = []
+    for document_type in ("cv", "cover_letter", "certificate", "reference"):
+        if _requirement_text_matches_document_type(haystack, document_type):
+            document_types.append(document_type)
+    return document_types
+
+
+def _requested_document_upload_label(
+    finding: ApplicationRequirementFinding,
     document_type: str,
-    required: bool,
-    source: str,
-    confidence: ConfidenceLevel,
-    requirement: ApplicationRequirementFinding,
+    *,
+    multiple_types: bool,
+) -> str:
+    label = finding.label.strip() or _document_type_label(document_type)
+    if not multiple_types:
+        return label
+    return f"{label} - {_document_type_label(document_type)}"
+
+
+def _dedupe_requested_document_uploads(
+    requested_uploads: list[RequestedDocumentUpload],
+) -> list[RequestedDocumentUpload]:
+    by_type: dict[str, RequestedDocumentUpload] = {}
+    ordered_types: list[str] = []
+    for requested_upload in requested_uploads:
+        existing = by_type.get(requested_upload.document_type)
+        if existing is None:
+            by_type[requested_upload.document_type] = requested_upload
+            ordered_types.append(requested_upload.document_type)
+            continue
+        if requested_upload.required and not existing.required:
+            by_type[requested_upload.document_type] = requested_upload
+    return [by_type[document_type] for document_type in ordered_types]
+
+
+def _upload_from_available_document(
+    requested_upload: RequestedDocumentUpload,
+    available_upload: AvailableDocumentUpload,
+    *,
+    page_snapshot: ApplicationPageSnapshot | None,
+    disambiguate_label: bool = False,
+) -> ApplicationFillUploadFile:
+    return _attach_fill_plan_evidence(
+        ApplicationFillUploadFile(
+            label=_available_document_upload_label(
+                requested_upload,
+                available_upload,
+                disambiguate=disambiguate_label,
+            ),
+            file_path=available_upload.file_path,
+            document_type=requested_upload.document_type,
+            required=requested_upload.required,
+            source=available_upload.source,
+            confidence=available_upload.confidence,
+        ),
+        page_snapshot,
+        _terms_from_requirement_finding(requested_upload.requirement),
+    )
+
+
+def _available_document_upload_label(
+    requested_upload: RequestedDocumentUpload,
+    available_upload: AvailableDocumentUpload,
+    *,
+    disambiguate: bool,
+) -> str:
+    label = requested_upload.label
+    file_name = available_upload.file_name.strip()
+    if not disambiguate or not file_name:
+        return label
+    if file_name.casefold() in label.casefold():
+        return label
+    return f"{label} ({file_name})"
+
+
+def _missing_required_upload(
+    requested_upload: RequestedDocumentUpload,
+    *,
     page_snapshot: ApplicationPageSnapshot | None,
 ) -> ApplicationFillUploadFile:
     return _attach_fill_plan_evidence(
         ApplicationFillUploadFile(
-            label=label,
-            file_path=file_path,
-            document_type=document_type,
-            required=required,
-            source=source,
-            confidence=confidence,
+            label=requested_upload.label,
+            file_path="",
+            document_type=requested_upload.document_type,
+            required=True,
+            source="missing_required_document",
+            confidence=requested_upload.requirement.confidence,
         ),
         page_snapshot,
-        _terms_from_requirement_finding(requirement),
+        _terms_from_requirement_finding(requested_upload.requirement),
     )
 
 
-def _cover_letter_requirement(
-    requirements: ApplicationRequirements,
-) -> ApplicationRequirementFinding | None:
-    if requirements.motivation_letter is not None:
-        return requirements.motivation_letter
-    return _first_matching_document_requirement(requirements, _document_terms("cover_letter"))
-
-
-def _first_matching_document_requirement(
-    requirements: ApplicationRequirements,
-    terms: tuple[str, ...],
-) -> ApplicationRequirementFinding | None:
-    for requirement in [*requirements.required_documents, *requirements.upload_expectations]:
-        if _requirement_matches_document_terms(requirement, terms):
-            return requirement
-    return None
-
-
-def _requirement_matches_document_terms(
-    requirement: ApplicationRequirementFinding,
-    terms: tuple[str, ...],
+def _requirement_text_matches_document_type(
+    requirement_text: str,
+    document_type: str,
 ) -> bool:
-    requirement_text = _field_key(
-        " ".join([requirement.label, requirement.evidence, *requirement.constraints])
-    )
-    return any(term in requirement_text for term in terms)
+    return any(term in requirement_text for term in _document_terms(document_type))
+
+
+def _canonical_document_type(
+    document_type: str,
+    *,
+    fallback_text: str = "",
+) -> str | None:
+    normalized_type = _field_key(document_type)
+    fallback = _field_key(fallback_text)
+    haystack = " ".join(item for item in (normalized_type, fallback) if item)
+    for candidate in ("cv", "cover_letter", "certificate", "reference"):
+        if _requirement_text_matches_document_type(haystack, candidate):
+            return candidate
+    if normalized_type in {"other", "misc", "miscellaneous", "supporting document"}:
+        return None
+    return normalized_type or None
+
+
+def _document_type_label(document_type: str) -> str:
+    return {
+        "cv": "CV",
+        "cover_letter": "Cover letter",
+        "certificate": "Certificate",
+        "reference": "Reference",
+    }.get(document_type, document_type.replace("_", " ").title())
 
 
 def _document_terms(document_type: str) -> tuple[str, ...]:
     normalized_type = _field_key(document_type)
     if normalized_type == "cv":
-        return ("cv", "resume", "lebenslauf", "bewerbungsunterlagen")
-    if normalized_type in {"cover letter", "coverletter"}:
-        return ("cover letter", "motivation", "anschreiben", "motivationsschreiben")
-    if normalized_type in {"certificate", "certificates"}:
+        return ("cv", "resume", "curriculum vitae", "lebenslauf")
+    if normalized_type in {"cover letter", "coverletter", "cover_letter"}:
+        return (
+            "cover letter",
+            "coverletter",
+            "motivation letter",
+            "motivation",
+            "anschreiben",
+            "motivationsschreiben",
+            "bewerbungsschreiben",
+        )
+    if normalized_type in {"certificate", "certificates", "zertifikat", "zertifikate"}:
         return (
             "certificate",
             "certificates",
+            "certification",
+            "certifications",
+            "zertifikat",
+            "zertifikate",
             "zeugnis",
             "zeugnisse",
             "abschluss",
             "degree",
+            "diploma",
             "transcript",
         )
-    if normalized_type in {"reference", "references"}:
-        return ("reference", "references", "referenz", "referenzen")
+    if normalized_type in {"reference", "references", "referenz", "referenzen"}:
+        return (
+            "reference",
+            "references",
+            "letter of recommendation",
+            "recommendation letter",
+            "referenz",
+            "referenzen",
+            "empfehlungsschreiben",
+        )
     return (normalized_type,)
 
 
@@ -1310,6 +1600,49 @@ def _package_form_answers(package: ApplicationPackage) -> list[dict[str, object]
         for artifact in package.artifacts
         if artifact.type == "form_answer" and artifact.content.strip()
     ]
+
+
+def _package_upload_artifact_metadata(artifact: ApplicationArtifact) -> dict[str, object]:
+    metadata = artifact.metadata
+    return {
+        "id": artifact.id,
+        "type": artifact.type,
+        "label": artifact.label,
+        "required": artifact.required,
+        "status": artifact.status,
+        "content_fingerprint": _fingerprint_text(artifact.content),
+        "generated_file_path": str(metadata.get("generated_file_path") or ""),
+        "downloaded_file_path": str(metadata.get("downloaded_file_path") or ""),
+    }
+
+
+def _is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:
+    artifact_type = artifact.type.casefold()
+    label = artifact.label.casefold()
+    return artifact_type == "cover_letter" or "cover letter" in label or "anschreiben" in label
+
+
+def _source_fingerprints(source_metadata: dict[str, object]) -> dict[str, str]:
+    return {
+        source_name: _fingerprint_json(source_value)
+        for source_name, source_value in source_metadata.items()
+    }
+
+
+def _fingerprint_json(value: object) -> str:
+    return _fingerprint_text(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            default=str,
+        )
+    )
+
+
+def _fingerprint_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _to_json(value: object) -> str:

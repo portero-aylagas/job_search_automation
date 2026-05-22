@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -16,7 +17,13 @@ from src.browser_use_launcher import (
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
-from src.browser_use_visible_runner import _close_existing_pages, _write_stable_profile_preferences
+from src.browser_use_visible_runner import (
+    _browser_use_agent_max_steps,
+    _close_existing_pages,
+    _open_page_with_retries,
+    _page_has_interactive_content,
+    _write_stable_profile_preferences,
+)
 from src.schemas import (
     ApplicationFillBlockedField,
     ApplicationFillFieldValue,
@@ -41,6 +48,12 @@ class FakeRunningProcess:
 
 def no_stale_processes(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(args=[], returncode=0, stdout="")
+
+
+def extract_task_payload(task: str) -> dict[str, object]:
+    payload_text = task.split("Reviewed application fill plan:\n", maxsplit=1)[1]
+    payload_text = payload_text.split("\n\nThe JSON is split by action intent:", maxsplit=1)[0]
+    return json.loads(payload_text)
 
 
 def test_open_url_with_browser_use_rejects_blank_url(tmp_path: Path) -> None:
@@ -152,8 +165,11 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     agent_task = command[command.index("--agent-task") + 1]
     assert "reviewed application fill plan" in agent_task
     assert "https://example.com/apply/automation-engineer" not in agent_task
-    assert '"field_values"' in agent_task
-    assert '"upload_files"' in agent_task
+    assert '"field_values_before_upload"' in agent_task
+    assert '"mandatory_checkbox_fields"' in agent_task
+    assert '"intentionally_blank_fields"' in agent_task
+    assert '"intentionally_untouched_checkbox_fields"' in agent_task
+    assert '"upload_files_last"' in agent_task
     assert '"blocked_fields"' in agent_task
     assert '"accept_terms_and_privacy"' not in agent_task
     assert '"interpreted_label": "Vorname"' in agent_task
@@ -176,19 +192,88 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "semantic hints" in agent_task
     assert "guaranteed live page" in agent_task
     assert "evidence_status is \"interpreted_only\"" in agent_task
-    assert "intentionally reviewed blank value" in agent_task
-    assert "value \"false\" means leave it unchecked" in agent_task
+    assert "reviewed blank values" in agent_task
+    assert "Never click checkbox controls listed" in agent_task
+    assert "Process every item in mandatory_checkbox_fields" in agent_task
+    assert "Upload completion is not task completion" in agent_task
+    assert "checked mandatory checkboxes" in agent_task
+    assert "First, process every item in field_values_before_upload" in agent_task
+    assert "optional non-empty fields such as telephone" in agent_task
+    assert "Last, and only after all field_values_before_upload" in agent_task
+    assert "never navigate, reload, or open a new tab" in agent_task
+    assert "ATS gate" not in agent_task
     assert "candidate_profile" not in agent_task
     assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
+
+
+def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_popen(
+        command: list[str],
+        *,
+        cwd: Path,
+        stdout: object,
+        stderr: int,
+        text: bool,
+        start_new_session: bool,
+        env: dict[str, str],
+    ) -> FakeRunningProcess:
+        captured["command"] = command
+        return FakeRunningProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(subprocess, "run", no_stale_processes)
+    monkeypatch.setattr(os, "kill", lambda pid, sig: None)
+
+    fill_plan = make_fill_plan()
+    fill_plan.upload_files.append(
+        ApplicationFillUploadFile(
+            label="Cover letter",
+            file_path="/tmp/generated/cover_letter.pdf",
+            document_type="cover_letter",
+            required=True,
+            source="manual_review",
+            confidence="high",
+        )
+    )
+
+    open_apply_url_with_browser_use_fill_plan(
+        "https://example.com/apply/automation-engineer",
+        fill_plan=fill_plan,
+        log_dir=tmp_path,
+        startup_wait_seconds=0,
+    )
+
+    command = captured["command"]
+    assert isinstance(command, list)
+    upload_flag_indexes = [
+        index for index, value in enumerate(command) if value == "--available-file-path"
+    ]
+    assert [command[index + 1] for index in upload_flag_indexes] == [
+        "/tmp/candidate/cv.pdf",
+        "/tmp/generated/cover_letter.pdf",
+    ]
+    agent_task = command[command.index("--agent-task") + 1]
+    assert '"label": "Lebenslauf"' in agent_task
+    assert '"label": "Cover letter"' in agent_task
+    assert '"/tmp/candidate/cv.pdf"' in agent_task
+    assert '"/tmp/generated/cover_letter.pdf"' in agent_task
 
 
 def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> None:
     task = build_fill_plan_application_task(make_fill_plan())
 
     assert "reviewed application fill plan" in task
-    assert '"field_values"' in task
-    assert '"upload_files"' in task
+    assert '"field_values_before_upload"' in task
+    assert '"mandatory_checkbox_fields"' in task
+    assert '"intentionally_blank_fields"' in task
+    assert '"intentionally_untouched_checkbox_fields"' in task
+    assert '"upload_files_last"' in task
     assert '"blocked_fields"' in task
     assert '"accept_terms_and_privacy"' not in task
     assert '"interpreted_label": "Vorname"' in task
@@ -198,7 +283,9 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert '"value": "Taylor"' in task
     assert '"label": "Privacy acknowledgement"' in task
     assert '"value": "true"' in task
-    assert "Upload only files listed in upload_files" in task
+    assert '"label": "Internal application"' in task
+    assert "ATS gate" not in task
+    assert "Upload only files listed in upload_files_last" in task
     assert '"/tmp/candidate/cv.pdf"' in task
     assert "Do not translate the page" in task
     assert "dismiss them instead of accepting translation" in task
@@ -214,11 +301,139 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "Never click upload controls" in task
     assert "Never type or paste the CV file path" in task
     assert "Do not fill, select, type into, click, or modify any field" in task
-    assert "intentionally reviewed blank value" in task
+    assert "reviewed blank values" in task
     assert "split reviewed values on semicolons" in task
+    assert "A sensitive or consent checkbox with value \"true\"" in task
+    assert "Process every item in mandatory_checkbox_fields" in task
+    assert "Upload completion is not task completion" in task
+    assert "Do not mark a field complete from memory" in task
+    assert "Merely\n  extracting labels is not verification" in task
+    assert "Never start file uploads before every field_values_before_upload row" in task
     assert "If upload_file reports an error" in task
+    assert "Upload each listed file_path at most one time" in task
+    assert "Do not restart the upload list" in task
+    assert "do not search for additional\n  required checkboxes" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
+
+
+def test_build_fill_plan_application_task_highlights_true_checkboxes_only() -> None:
+    task = build_fill_plan_application_task(make_fill_plan())
+
+    mandatory_section = task.split('"mandatory_checkbox_fields"', maxsplit=1)[1]
+    mandatory_section = mandatory_section.split('"intentionally_blank_fields"', maxsplit=1)[0]
+
+    assert '"label": "Privacy acknowledgement"' in mandatory_section
+    assert '"value": "true"' in mandatory_section
+    assert '"label": "Vorname"' not in mandatory_section
+    assert '"value": "false"' not in mandatory_section
+    assert "ATS gate" not in mandatory_section
+
+
+def test_build_fill_plan_application_task_keeps_false_checkboxes_report_only() -> None:
+    task_payload = extract_task_payload(build_fill_plan_application_task(make_fill_plan()))
+
+    field_labels = [
+        str(field["label"]) for field in task_payload["field_values_before_upload"]
+    ]
+    mandatory_labels = [
+        str(field["label"]) for field in task_payload["mandatory_checkbox_fields"]
+    ]
+    untouched_labels = [
+        str(field["label"])
+        for field in task_payload["intentionally_untouched_checkbox_fields"]
+    ]
+    blank_labels = [
+        str(field["label"]) for field in task_payload["intentionally_blank_fields"]
+    ]
+
+    assert field_labels == ["Vorname"]
+    assert mandatory_labels == ["Privacy acknowledgement"]
+    assert untouched_labels == ["Internal application"]
+    assert blank_labels == ["Employee referral"]
+    assert all("ATS gate" not in label for label in field_labels)
+    assert all("ATS gate" not in label for label in mandatory_labels)
+    assert all("ATS gate" not in label for label in untouched_labels)
+
+
+def test_build_fill_plan_application_task_dedupes_repeated_action_targets() -> None:
+    fill_plan = make_fill_plan()
+    fill_plan.field_values.extend(
+        [
+            ApplicationFillFieldValue(
+                label="Privacy gate before continuing",
+                value="true",
+                required=True,
+                input_type="checkbox",
+                options=["true", "false"],
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Privacy acknowledgement"],
+                evidence_source="form_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Standorte, die fuer Sie in Frage kommen",
+                name="job_application_start_form[location_names][]",
+                value="Munich",
+                required=True,
+                input_type="checkbox_group",
+                options=["Munich", "Berlin"],
+                source="application_package.form_answer",
+                confidence="medium",
+                literal_evidence=["job_application_start_form[location_names][]"],
+                evidence_source="control_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Bitte waehlen Sie alle Standorte aus",
+                value="Munich",
+                required=True,
+                input_type="checkbox_group",
+                options=[],
+                source="application_package.form_answer",
+                confidence="medium",
+                literal_evidence=["Position is available in Munich and Berlin"],
+                evidence_source="visible_text_excerpt",
+                evidence_status="partial_match",
+            ),
+        ]
+    )
+    fill_plan.upload_files.append(
+        ApplicationFillUploadFile(
+            label="Duplicate CV",
+            file_path="/tmp/candidate/cv.pdf",
+            document_type="cv",
+            required=True,
+            source="manual_review",
+            confidence="high",
+        )
+    )
+
+    task_payload = extract_task_payload(build_fill_plan_application_task(fill_plan))
+
+    field_labels = [
+        str(field["label"]) for field in task_payload["field_values_before_upload"]
+    ]
+    mandatory_labels = [
+        str(field["label"]) for field in task_payload["mandatory_checkbox_fields"]
+    ]
+    upload_paths = [
+        str(upload["file_path"]) for upload in task_payload["upload_files_last"]
+    ]
+
+    assert field_labels == ["Vorname", "Standorte, die fuer Sie in Frage kommen"]
+    assert mandatory_labels == ["Privacy acknowledgement"]
+    assert upload_paths == ["/tmp/candidate/cv.pdf"]
+
+
+def test_build_fill_plan_application_task_keeps_uploads_last() -> None:
+    task = build_fill_plan_application_task(make_fill_plan())
+
+    assert task.index('"field_values_before_upload"') < task.index('"upload_files_last"')
+    assert task.index("First, process every item in field_values_before_upload") < task.index(
+        "Last, and only after all field_values_before_upload"
+    )
 
 
 def test_build_fill_plan_application_task_omits_unresolved_needs_answer_fields() -> None:
@@ -414,6 +629,36 @@ def test_stable_profile_preferences_disable_translate(tmp_path: Path) -> None:
     assert '"app_locale": "en-US"' in local_state
 
 
+def test_browser_use_agent_max_steps_defaults_to_8000(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("BROWSER_USE_AGENT_MAX_STEPS", raising=False)
+
+    assert _browser_use_agent_max_steps() == 8000
+
+
+def test_browser_use_agent_max_steps_allows_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "120")
+
+    assert _browser_use_agent_max_steps() == 120
+
+
+def test_browser_use_agent_max_steps_has_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "5")
+
+    assert _browser_use_agent_max_steps() == 20
+
+
+def test_browser_use_agent_max_steps_ignores_invalid_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "not-a-number")
+
+    assert _browser_use_agent_max_steps() == 8000
+
+
 def test_close_existing_pages_closes_tabs_before_navigation() -> None:
     class FakeBrowser:
         def __init__(self) -> None:
@@ -431,6 +676,64 @@ def test_close_existing_pages_closes_tabs_before_navigation() -> None:
 
     assert closed_count == 2
     assert browser.closed_pages == ["about:blank", "old-job"]
+
+
+def test_page_has_interactive_content_rejects_blank_page() -> None:
+    class FakePage:
+        async def evaluate(self, _script: str) -> str:
+            return '{"href": "about:blank", "bodyTextLength": 0, "controlCount": 0}'
+
+    assert asyncio.run(_page_has_interactive_content(FakePage())) is False
+
+
+def test_page_has_interactive_content_accepts_loaded_form() -> None:
+    class FakePage:
+        async def evaluate(self, _script: str) -> str:
+            return (
+                '{"href": "https://example.com/apply", '
+                '"bodyTextLength": 42, "controlCount": 3}'
+            )
+
+    assert asyncio.run(_page_has_interactive_content(FakePage())) is True
+
+
+def test_open_page_with_retries_retries_navigation_until_controls_load() -> None:
+    class FakePage:
+        def __init__(self) -> None:
+            self.goto_calls: list[str] = []
+
+        async def evaluate(self, _script: str) -> str:
+            if self.goto_calls:
+                return (
+                    '{"href": "https://example.com/apply", '
+                    '"bodyTextLength": 42, "controlCount": 3}'
+                )
+            return '{"href": "about:blank", "bodyTextLength": 0, "controlCount": 0}'
+
+        async def goto(self, url: str) -> None:
+            self.goto_calls.append(url)
+
+    class FakeBrowser:
+        def __init__(self) -> None:
+            self.page = FakePage()
+
+        async def new_page(self, url: str) -> FakePage:
+            assert url == "https://example.com/apply"
+            return self.page
+
+    browser = FakeBrowser()
+
+    page = asyncio.run(
+        _open_page_with_retries(
+            browser,
+            "https://example.com/apply",
+            ready_wait_seconds=0.01,
+            poll_interval_seconds=0.001,
+        )
+    )
+
+    assert page is browser.page
+    assert browser.page.goto_calls == ["https://example.com/apply"]
 
 
 def make_fill_plan() -> ApplicationFillPlan:
@@ -461,7 +764,41 @@ def make_fill_plan() -> ApplicationFillPlan:
                 literal_evidence=["Privacy acknowledgement"],
                 evidence_source="form_label",
                 evidence_status="literal_verified",
-            )
+            ),
+            ApplicationFillFieldValue(
+                label="Internal application",
+                value="false",
+                required=False,
+                input_type="checkbox",
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Internal application"],
+                evidence_source="control_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="Employee referral",
+                value="",
+                required=False,
+                input_type="text",
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Employee referral"],
+                evidence_source="control_label",
+                evidence_status="literal_verified",
+            ),
+            ApplicationFillFieldValue(
+                label="ATS gate: external application system",
+                value="true",
+                required=True,
+                input_type="checkbox",
+                options=["true", "false"],
+                source="manual_review",
+                confidence="high",
+                literal_evidence=["Application system gate text"],
+                evidence_source="visible_text_excerpt",
+                evidence_status="partial_match",
+            ),
         ],
         upload_files=[
             ApplicationFillUploadFile(

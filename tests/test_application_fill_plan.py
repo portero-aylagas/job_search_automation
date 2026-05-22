@@ -8,11 +8,13 @@ from src.application_fill_plan import (
     ApplicationFieldMappingSuggestion,
     FillPlanTargetField,
     apply_fill_plan_edits,
+    build_application_fill_plan_source_fingerprints,
     fill_plan_blocked_field_edit_key,
     fill_plan_field_edit_key,
     fill_plan_needs_answer_edit_key,
     fill_plan_upload_edit_key,
     generate_application_fill_plan,
+    get_application_fill_plan_freshness_blockers,
     get_application_fill_plan_review_blockers,
     load_application_fill_plan,
     mark_application_fill_plan_reviewed,
@@ -236,6 +238,35 @@ def test_cv_becomes_allowed_upload() -> None:
     assert upload.required is True
 
 
+def test_required_cover_letter_becomes_generated_pdf_upload() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = []
+    requirements.motivation_letter = ApplicationRequirementFinding(
+        label="Cover Letter / Anschreiben",
+        required=True,
+        evidence="Please upload a cover letter.",
+        confidence="high",
+    )
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Dear hiring team...",
+            metadata={"generated_file_path": "/tmp/generated/cover_letter.pdf"},
+        )
+    )
+
+    fill_plan = generate_application_fill_plan(make_profile(), requirements, package)
+
+    assert len(fill_plan.upload_files) == 1
+    upload = fill_plan.upload_files[0]
+    assert upload.document_type == "cover_letter"
+    assert upload.file_path == "/tmp/generated/cover_letter.pdf"
+    assert upload.required is True
+
+
 def test_fill_plan_includes_generated_and_uploaded_required_documents() -> None:
     profile = make_profile().model_copy(deep=True)
     profile.candidate_profile.source_documents.optional_documents = [
@@ -287,6 +318,211 @@ def test_fill_plan_includes_generated_and_uploaded_required_documents() -> None:
     assert uploads_by_type["cover_letter"].source == (
         "application_package.artifacts.cover-letter-draft.generated_file_path"
     )
+
+
+def test_grouped_attachment_text_creates_separate_upload_rows() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/certificate.pdf",
+            file_name="certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/reference.pdf",
+            file_name="reference.pdf",
+            document_type="reference",
+            parsed=True,
+        ),
+    ]
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = [
+        ApplicationRequirementFinding(
+            label="Attachments",
+            required=True,
+            evidence="Upload CV, cover letter, certificates, references.",
+            confidence="high",
+        )
+    ]
+    requirements.motivation_letter = None
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Dear hiring team...",
+            metadata={"generated_file_path": "/tmp/generated/cover_letter.pdf"},
+        )
+    )
+
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+
+    uploads = [(upload.document_type, upload.file_path) for upload in fill_plan.upload_files]
+    assert uploads == [
+        ("cv", "/tmp/candidate/cv.pdf"),
+        ("cover_letter", "/tmp/generated/cover_letter.pdf"),
+        ("certificate", "/tmp/candidate/certificate.pdf"),
+        ("reference", "/tmp/candidate/reference.pdf"),
+    ]
+    assert len({upload.label for upload in fill_plan.upload_files}) == 4
+
+
+def test_reuploaded_optional_documents_are_deduped_in_upload_rows() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101120000-language-certificate.pdf",
+            file_name="language-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101121500-manager-reference.pdf",
+            file_name="",
+            document_type="reference",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101121000-language-certificate.pdf",
+            file_name="language-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101122000-manager-reference.pdf",
+            file_name="",
+            document_type="reference",
+            parsed=True,
+        ),
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/20240101120500-safety-certificate.pdf",
+            file_name="safety-certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        ),
+    ]
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = [
+        ApplicationRequirementFinding(
+            label="Attachments",
+            required=True,
+            evidence="Upload CV, cover letter, certificates, references.",
+            confidence="high",
+        )
+    ]
+    requirements.motivation_letter = None
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Dear hiring team...",
+            metadata={"generated_file_path": "/tmp/generated/cover_letter.pdf"},
+        )
+    )
+
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+
+    uploads = [(upload.document_type, upload.file_path) for upload in fill_plan.upload_files]
+    assert uploads == [
+        ("cv", "/tmp/candidate/cv.pdf"),
+        ("cover_letter", "/tmp/generated/cover_letter.pdf"),
+        (
+            "certificate",
+            "/tmp/candidate/20240101121000-language-certificate.pdf",
+        ),
+        ("certificate", "/tmp/candidate/20240101120500-safety-certificate.pdf"),
+        (
+            "reference",
+            "/tmp/candidate/20240101122000-manager-reference.pdf",
+        ),
+    ]
+    certificate_labels = [
+        upload.label
+        for upload in fill_plan.upload_files
+        if upload.document_type == "certificate"
+    ]
+    assert certificate_labels == [
+        "Attachments - Certificate (language-certificate.pdf)",
+        "Attachments - Certificate (safety-certificate.pdf)",
+    ]
+
+
+def test_optional_requested_document_without_uploaded_file_is_not_sent() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = []
+    requirements.upload_expectations = [
+        ApplicationRequirementFinding(
+            label="Additional certificates",
+            required=False,
+            evidence="You may upload certificates.",
+            confidence="medium",
+        )
+    ]
+
+    fill_plan = generate_application_fill_plan(
+        make_profile(),
+        requirements,
+        make_package(),
+    )
+
+    assert fill_plan.upload_files == []
+    reviewed_non_upload_blockers = review_all_blocked_fields(fill_plan)
+    assert get_application_fill_plan_review_blockers(reviewed_non_upload_blockers) == []
+
+
+def test_required_document_without_available_file_creates_upload_blocker() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = [
+        ApplicationRequirementFinding(
+            label="Certificates",
+            required=True,
+            evidence="Certificates are required.",
+            confidence="high",
+        )
+    ]
+
+    fill_plan = generate_application_fill_plan(
+        make_profile(),
+        requirements,
+        make_package(),
+    )
+
+    assert len(fill_plan.upload_files) == 1
+    upload = fill_plan.upload_files[0]
+    assert upload.document_type == "certificate"
+    assert upload.file_path == ""
+    assert upload.required is True
+    assert upload.source == "missing_required_document"
+    reviewed_non_upload_blockers = review_all_blocked_fields(fill_plan)
+    assert get_application_fill_plan_review_blockers(reviewed_non_upload_blockers) == [
+        "Provide file paths for required uploads: Certificates."
+    ]
+
+
+def test_unrequested_optional_documents_are_not_sent_to_browser() -> None:
+    profile = make_profile().model_copy(deep=True)
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/certificate.pdf",
+            file_name="certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+        )
+    ]
+
+    fill_plan = generate_application_fill_plan(
+        profile,
+        make_requirements(),
+        make_package(),
+    )
+
+    assert [(upload.document_type, upload.file_path) for upload in fill_plan.upload_files] == [
+        ("cv", "/tmp/candidate/cv.pdf")
+    ]
 
 
 def test_fill_plan_preserves_discovered_field_options() -> None:
@@ -873,3 +1109,95 @@ def test_mark_fill_plan_reviewed_blocks_unresolved_needs_answer_fields() -> None
 
     with pytest.raises(ValueError, match="Save reviewed values"):
         mark_application_fill_plan_reviewed(fill_plan)
+
+
+def test_reviewed_fill_plan_becomes_stale_when_package_gains_generated_file_path() -> None:
+    requirements = make_requirements().model_copy(deep=True)
+    requirements.required_documents = []
+    requirements.motivation_letter = ApplicationRequirementFinding(
+        label="Optional cover letter",
+        required=False,
+        evidence="You may upload a cover letter.",
+        confidence="medium",
+    )
+    package = make_package().model_copy(deep=True)
+    package.artifacts.append(
+        ApplicationArtifact(
+            id="cover-letter-draft",
+            type="cover_letter",
+            label="Cover Letter Draft",
+            content="Dear hiring team...",
+        )
+    )
+    fill_plan = mark_application_fill_plan_reviewed(
+        review_all_blocked_fields(
+            generate_application_fill_plan(make_profile(), requirements, package)
+        )
+    )
+    package.artifacts[-1].metadata["generated_file_path"] = (
+        "/tmp/generated/cover_letter.pdf"
+    )
+
+    blockers = get_application_fill_plan_freshness_blockers(
+        fill_plan,
+        make_profile(),
+        requirements,
+        package,
+    )
+
+    assert blockers == [
+        "Refresh the application fill plan because application package upload "
+        "artifacts changed since review."
+    ]
+
+
+def test_reviewed_fill_plan_becomes_stale_when_optional_documents_change() -> None:
+    profile = make_profile()
+    fill_plan = mark_application_fill_plan_reviewed(
+        review_all_blocked_fields(
+            generate_application_fill_plan(profile, make_requirements(), make_package())
+        )
+    )
+    changed_profile = profile.model_copy(deep=True)
+    changed_profile.candidate_profile.source_documents.optional_documents.append(
+        CandidateOptionalDocument(
+            file_path="/tmp/candidate/reference.pdf",
+            file_name="reference.pdf",
+            document_type="reference",
+            parsed=True,
+        )
+    )
+
+    blockers = get_application_fill_plan_freshness_blockers(
+        fill_plan,
+        changed_profile,
+        make_requirements(),
+        make_package(),
+    )
+
+    assert blockers == [
+        "Refresh the application fill plan because candidate profile documents "
+        "changed since review."
+    ]
+
+
+def test_refreshed_fill_plan_matches_current_source_fingerprints() -> None:
+    profile = make_profile()
+    requirements = make_requirements()
+    package = make_package()
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+
+    assert fill_plan.source_fingerprints == build_application_fill_plan_source_fingerprints(
+        profile,
+        requirements,
+        package,
+    )
+    assert (
+        get_application_fill_plan_freshness_blockers(
+            fill_plan,
+            profile,
+            requirements,
+            package,
+        )
+        == []
+    )

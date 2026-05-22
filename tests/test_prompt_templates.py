@@ -50,3 +50,10 @@ def test_get_prompt_renders_large_serialized_payload_without_truncating() -> Non
 
     assert payload in rendered
     assert "value-249" in rendered
+
+
+def test_application_requirements_prompt_preserves_grouped_attachment_needs() -> None:
+    rendered = get_prompt("application_requirements", "extract_requirements", "system")
+
+    assert "CV, cover letter, certificates, references" in rendered
+    assert "separate CV, cover letter, certificate, and reference needs" in rendered

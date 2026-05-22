@@ -842,6 +842,8 @@ class ApplicationFillPlan(BaseModel):
     job_id: str
     apply_url: HttpUrl
     review_status: ApplicationFillPlanReviewStatus = "draft"
+    source_fingerprints: dict[str, str] = Field(default_factory=dict)
+    source_metadata: dict[str, Any] = Field(default_factory=dict)
     field_values: list[ApplicationFillFieldValue] = Field(default_factory=list)
     upload_files: list[ApplicationFillUploadFile] = Field(default_factory=list)
     needs_answer_fields: list[ApplicationFillNeedsAnswerField] = Field(

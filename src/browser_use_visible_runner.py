@@ -38,6 +38,19 @@ STABLE_BROWSER_PROFILE_PREFERENCES = {
         "site_blacklist": ["*"],
     },
 }
+PAGE_READY_CHECK_SCRIPT = """() => {
+  const controls = document.querySelectorAll(
+    'input, select, textarea, button, [role], [data-testid], [data-test]'
+  );
+  const bodyText = (document.body?.innerText || '').trim();
+  return JSON.stringify({
+    bodyTextLength: bodyText.length,
+    controlCount: controls.length,
+    href: window.location.href,
+    readyState: document.readyState,
+    title: document.title || ''
+  });
+}"""
 
 
 async def open_visible_browser(
@@ -77,7 +90,7 @@ async def open_visible_browser(
     try:
         await browser.start()
         await _close_existing_pages(browser)
-        await browser.new_page(url)
+        await _open_page_with_retries(browser, url)
     except Exception:
         with contextlib.suppress(Exception):
             await browser.stop()
@@ -107,7 +120,7 @@ async def open_visible_browser(
                 if path.exists()
             ],
         )
-        await agent.run(max_steps=40)
+        await agent.run(max_steps=_browser_use_agent_max_steps())
         print("Browser Use agent task finished. Browser remains open.", flush=True)
 
     stop_event = asyncio.Event()
@@ -186,6 +199,88 @@ async def _close_existing_pages(browser: object) -> int:
     return closed_count
 
 
+async def _open_page_with_retries(
+    browser: object,
+    url: str,
+    *,
+    max_attempts: int = 3,
+    ready_wait_seconds: float = 4.0,
+    poll_interval_seconds: float = 0.5,
+) -> object:
+    """Open a page and retry navigation until real page controls are present."""
+
+    page = await browser.new_page(url)
+    for attempt in range(1, max_attempts + 1):
+        if await _wait_for_interactive_page(
+            page,
+            ready_wait_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        ):
+            return page
+
+        if attempt >= max_attempts:
+            break
+
+        print(
+            f"Page did not expose controls after attempt {attempt}; retrying navigation.",
+            flush=True,
+        )
+        with contextlib.suppress(Exception):
+            await page.goto(url)
+
+    print(
+        "Page still has no detected controls after navigation retries; "
+        "starting Browser Use agent so it can attempt recovery.",
+        flush=True,
+    )
+    return page
+
+
+async def _wait_for_interactive_page(
+    page: object,
+    timeout_seconds: float,
+    *,
+    poll_interval_seconds: float = 0.5,
+) -> bool:
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
+    while asyncio.get_running_loop().time() < deadline:
+        if await _page_has_interactive_content(page):
+            return True
+        await asyncio.sleep(poll_interval_seconds)
+    return False
+
+
+async def _page_has_interactive_content(page: object) -> bool:
+    evaluate = getattr(page, "evaluate", None)
+    if evaluate is None:
+        return True
+
+    try:
+        raw_result = await evaluate(PAGE_READY_CHECK_SCRIPT)
+    except Exception:
+        return False
+
+    try:
+        payload = json.loads(raw_result)
+    except (TypeError, json.JSONDecodeError):
+        return False
+
+    href = str(payload.get("href") or "")
+    if not href or href == "about:blank":
+        return False
+
+    control_count = _safe_int(payload.get("controlCount"))
+    body_text_length = _safe_int(payload.get("bodyTextLength"))
+    return control_count > 0 and body_text_length > 0
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _write_stable_profile_preferences(user_data_dir: Path) -> None:
     default_profile_dir = user_data_dir / "Default"
     default_profile_dir.mkdir(parents=True, exist_ok=True)
@@ -204,6 +299,17 @@ def _write_stable_profile_preferences(user_data_dir: Path) -> None:
             },
         },
     )
+
+
+def _browser_use_agent_max_steps() -> int:
+    raw_value = os.getenv("BROWSER_USE_AGENT_MAX_STEPS", "").strip()
+    if not raw_value:
+        return 8000
+    try:
+        max_steps = int(raw_value)
+    except ValueError:
+        return 8000
+    return max(20, max_steps)
 
 
 def _merge_json_file(path: Path, updates: dict[str, object]) -> None:
