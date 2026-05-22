@@ -20,7 +20,9 @@ from src.job_workspace_ui import (
     order_application_package_artifacts_for_review,
     render_application_fill_plan_edit_actions,
     render_application_package_summary,
+    render_apply_to_position_panel,
     render_cover_letter_artifact_export_controls,
+    render_jobs_page,
 )
 from src.schemas import (
     AIWorkflowTrace,
@@ -34,6 +36,7 @@ from src.schemas import (
     ApplicationRequirements,
     ApplicationScreeningQuestion,
     CandidateProfile,
+    TrackerRecord,
 )
 
 
@@ -239,6 +242,79 @@ class FakeStreamlitContext:
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         return None
+
+
+def test_jobs_page_wraps_apply_to_position_in_bordered_box(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+    job = make_job()
+    tracker_record = TrackerRecord(
+        job_id=job.id,
+        title=job.title,
+        company=job.company,
+        source_url=str(job.source_url),
+        location=job.location,
+        retrieval_mode=job.retrieval_mode,
+    )
+
+    fake_streamlit = SimpleNamespace(
+        title=lambda value: rendered.append(("title", value)),
+        selectbox=lambda label, options, format_func: options[0],
+        container=lambda **kwargs: rendered.append(("container", kwargs))
+        or FakeStreamlitContext(),
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+    monkeypatch.setattr(job_workspace_ui, "load_normalized_job", lambda _base_dir, _job_id: job)
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_job_intake_summary",
+        lambda _job: rendered.append(("panel", "job_intake")),
+    )
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_application_requirements_panel",
+        lambda _base_dir, _job: rendered.append(("panel", "requirements")),
+    )
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_application_package_panel",
+        lambda _base_dir, _job: rendered.append(("panel", "package")),
+    )
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_application_fill_plan_panel",
+        lambda _base_dir, _job: rendered.append(("panel", "fill_plan")),
+    )
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_apply_to_position_panel",
+        lambda _base_dir, _job: rendered.append(("panel", "apply_to_position")),
+    )
+
+    render_jobs_page(Path("."), [tracker_record])
+
+    assert rendered.count(("container", {"border": True})) == 5
+    assert ("panel", "apply_to_position") in rendered
+
+
+def test_apply_to_position_panel_contains_apply_assistance(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+    job = make_job()
+    fake_streamlit = SimpleNamespace(
+        subheader=lambda value: rendered.append(("subheader", value)),
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "render_apply_assistance_panel",
+        lambda _base_dir, _job: rendered.append(("panel", "apply_assistance")),
+    )
+
+    render_apply_to_position_panel(Path("."), job)
+
+    assert rendered == [
+        ("subheader", "Apply to position"),
+        ("panel", "apply_assistance"),
+    ]
 
 
 def test_fill_plan_edit_actions_orders_boxed_sections(monkeypatch) -> None:
