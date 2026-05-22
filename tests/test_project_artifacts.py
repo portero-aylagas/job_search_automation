@@ -10,6 +10,7 @@ def test_core_project_artifacts_exist() -> None:
         "IMPLEMENTATION_PLAN.md",
         "README.md",
         "docs/stories.md",
+        "docs/development_standards.md",
         ".env.example",
     ]
 
@@ -69,3 +70,17 @@ def test_delivery_status_docs_are_consistent() -> None:
     assert "Application package generation and downstream human review are still pending" not in (
         implementation_plan
     )
+
+
+def test_development_standards_document_hygiene_and_skill_boundaries() -> None:
+    standards = Path("docs/development_standards.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "Repository Hygiene Standards" in standards
+    assert "Documentation Standards" in standards
+    assert "Skill Boundary" in standards
+    assert "data/runtime/" in standards
+    assert "data/candidate_profile.json" in standards
+    assert "outputs/" in standards
+    assert "development/support skill" in standards
+    assert "docs/development_standards.md" in readme
