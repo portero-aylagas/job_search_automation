@@ -28,6 +28,8 @@ from src.schemas import (
 )
 
 STARTUP_WAIT_SECONDS = 30.0
+APPLY_AGENT_STARTUP_WAIT_SECONDS = 75.0
+APPLY_AGENT_PAGE_READY_TIMEOUT_SECONDS = 60.0
 STARTUP_POLL_SECONDS = 0.25
 SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
 
@@ -160,7 +162,7 @@ def open_apply_url_with_browser_use_fill_plan(
     *,
     fill_plan: ApplicationFillPlan,
     log_dir: Path | str,
-    startup_wait_seconds: float = STARTUP_WAIT_SECONDS,
+    startup_wait_seconds: float = APPLY_AGENT_STARTUP_WAIT_SECONDS,
     candidate_profile: CandidateProfile | None = None,
     requirements: ApplicationRequirements | None = None,
     package: ApplicationPackage | None = None,
@@ -413,6 +415,13 @@ def _launch_browser_use_runner(
     ]
     if agent_task:
         command.extend(["--agent-task", agent_task])
+        command.extend(
+            [
+                "--require-interactive-page",
+                "--page-ready-timeout-seconds",
+                str(APPLY_AGENT_PAGE_READY_TIMEOUT_SECONDS),
+            ]
+        )
     for file_path in available_file_paths or []:
         command.extend(["--available-file-path", str(file_path)])
 
