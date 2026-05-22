@@ -398,6 +398,10 @@ read-only requirements contract.
   values, reviewed upload paths, and submit guard labels. Any unresolved
   consent, referral, disability, or other blocked field keeps the fill plan in
   draft and prevents the Browser Use run from starting.
+- The Browser Use task order is intentionally simple: fill or confirm reviewed
+  pre-upload fields, process mandatory checkboxes exactly once, then upload all
+  reviewed files last. Uploads are blocked until field and mandatory checkbox
+  rows are complete or explicitly failed.
 - The browser agent does not receive raw candidate profile JSON and remains
   guarded against proceeding to review or submission.
 - Final submission remains out of scope and blocked by explicit agent/task

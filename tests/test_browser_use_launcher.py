@@ -195,11 +195,17 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "reviewed blank values" in agent_task
     assert "Never click checkbox controls listed" in agent_task
     assert "Process every item in mandatory_checkbox_fields" in agent_task
+    assert "mandatory_checkbox_fields exactly once" in agent_task
+    assert "never click it again" in agent_task
     assert "Upload completion is not task completion" in agent_task
     assert "checked mandatory checkboxes" in agent_task
     assert "First, process every item in field_values_before_upload" in agent_task
     assert "optional non-empty fields such as telephone" in agent_task
     assert "Last, and only after all field_values_before_upload" in agent_task
+    assert (
+        "mandatory_checkbox_fields rows are complete or explicitly reported as failed"
+        in agent_task
+    )
     assert "never navigate, reload, or open a new tab" in agent_task
     assert "ATS gate" not in agent_task
     assert "candidate_profile" not in agent_task
@@ -307,8 +313,15 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "Process every item in mandatory_checkbox_fields" in task
     assert "Upload completion is not task completion" in task
     assert "Do not mark a field complete from memory" in task
-    assert "Merely\n  extracting labels is not verification" in task
+    assert "mandatory_checkbox_fields exactly once" in task
+    assert "never click it again" in task
+    assert "verify live field values and checkbox states before any upload" not in task
+    assert "Merely\n  extracting labels is not verification" not in task
     assert "Never start file uploads before every field_values_before_upload row" in task
+    assert (
+        "every mandatory_checkbox_fields\n  row is complete or explicitly reported as failed"
+        in task
+    )
     assert "If upload_file reports an error" in task
     assert "Upload each listed file_path at most one time" in task
     assert "Do not restart the upload list" in task
@@ -431,6 +444,12 @@ def test_build_fill_plan_application_task_keeps_uploads_last() -> None:
     task = build_fill_plan_application_task(make_fill_plan())
 
     assert task.index('"field_values_before_upload"') < task.index('"upload_files_last"')
+    assert task.index("First, process every item in field_values_before_upload") < task.index(
+        "mandatory_checkbox_fields exactly once"
+    )
+    assert task.index("mandatory_checkbox_fields exactly once") < task.index(
+        "Last, and only after all field_values_before_upload"
+    )
     assert task.index("First, process every item in field_values_before_upload") < task.index(
         "Last, and only after all field_values_before_upload"
     )

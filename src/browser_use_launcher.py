@@ -306,16 +306,18 @@ Required action order:
   acted on its matching control or inspected its live value/state.
 - Pay particular attention to optional non-empty fields such as telephone
   numbers; optional does not mean skippable when a reviewed value is present.
-- Second, process every item in mandatory_checkbox_fields. These are reviewed
-  true checkbox confirmations, including required privacy, terms, consent, or
-  acknowledgements.
+- Second, process every item in mandatory_checkbox_fields exactly once. These
+  are reviewed true checkbox confirmations, including required privacy, terms,
+  consent, or acknowledgements.
 - For each mandatory checkbox, inspect the live checked state first. Click only
   when the matching checkbox is currently unchecked; never click a checked
   checkbox because that can toggle it off.
-- Third, verify live field values and checkbox states before any upload. Merely
-  extracting labels is not verification.
-- Last, and only after all field_values_before_upload rows have been handled
-  and verified, upload every file in upload_files_last exactly once.
+- Once a mandatory checkbox is checked or confirmed checked, mark that checkbox
+  complete and never click it again.
+- Last, and only after all field_values_before_upload and
+  mandatory_checkbox_fields rows are complete or explicitly reported as failed,
+  upload every file in upload_files_last exactly once.
+- Stop after all uploads are complete or all blocked actions have been reported.
 
 Mandatory completion checklist:
 - Process every item in mandatory_checkbox_fields. These are reviewed
@@ -351,7 +353,8 @@ Hard safety rules:
   stop and produce the final report. Do not restart the upload list and do not
   upload the first file again.
 - Never start file uploads before every field_values_before_upload row is
-  complete or explicitly reported as failed.
+  complete or explicitly reported as failed and every mandatory_checkbox_fields
+  row is complete or explicitly reported as failed.
 - Never click upload controls to open the operating-system file picker.
 - Never type or paste the CV file path, or any other file path, into any page
   field or file picker.

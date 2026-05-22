@@ -297,6 +297,14 @@ Browser Use receives only the reviewed execution contract: explicit field
 values, reviewed upload paths, and submit guard labels. Raw candidate profile
 JSON is not passed to the browser agent.
 
+The Browser Use apply task keeps the reviewed fill-plan sections in a fixed
+execution order: first fill or confirm `field_values_before_upload`, then handle
+each `mandatory_checkbox_fields` item exactly once, and only then upload every
+file from `upload_files_last`. Mandatory checkboxes are inspected before any
+click; once a checkbox is checked or confirmed checked, the agent must not click
+it again. Uploads start only after field rows and mandatory checkbox rows are
+complete or explicitly reported as failed.
+
 Apply URLs that are the same as the source job page, or that are not valid
 http(s) application destinations, are rejected at validation time and cannot be
 saved as normalized jobs.
@@ -422,6 +430,9 @@ Notes:
   reviewed upload paths, and submit guard labels. Unresolved fill-plan items
   block the flow before Browser Use starts. It stops before any review or
   submission action.
+- The Browser Use task fills reviewed fields first, processes mandatory
+  checkboxes once, then uploads reviewed files last. It does not run a separate
+  second checkbox verification pass before upload.
 - Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
   runtime setup described here.
 ---
