@@ -13,6 +13,7 @@ from src.application_package import (
     apply_manual_artifact_edits,
     build_application_artifact_manifest,
     build_missing_information_defaults,
+    export_cover_letter_artifact,
     generate_application_package,
     generate_application_package_with_llm,
     load_application_package,
@@ -533,6 +534,29 @@ def test_save_application_package_exports_cover_letter_artifact_file(
     assert reloaded.artifacts[0].metadata["generated_file_path"] == str(exported_path)
     assert reloaded.artifacts[0].metadata["generated_file_format"] == "pdf"
     assert reloaded.artifacts[0].metadata["generated_file_mime_type"] == "application/pdf"
+
+
+def test_export_cover_letter_artifact_writes_to_selected_folder(tmp_path: Path) -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team,\n\nReviewed cover letter.",
+            )
+        ],
+    )
+    destination = tmp_path / "selected-downloads"
+
+    exported_path = export_cover_letter_artifact(package, destination)
+
+    assert exported_path == destination / "cover-letter-draft.pdf"
+    assert exported_path.exists()
+    assert exported_path.read_bytes().startswith(b"%PDF")
+    assert package.artifacts[0].metadata["downloaded_file_path"] == str(exported_path)
+    assert package.artifacts[0].metadata["downloaded_file_format"] == "pdf"
 
 
 def test_update_tracker_for_application_package(tmp_path: Path) -> None:

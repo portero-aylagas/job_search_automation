@@ -10,6 +10,7 @@ from src.job_workspace_ui import (
     apply_application_package_review_edits,
     build_application_artifact_review_metadata,
     build_application_package_summary,
+    build_package_review_saved_message,
     build_review_checklist,
     deduplicate_review_items,
     get_application_fill_plan_review_blockers,
@@ -18,6 +19,7 @@ from src.job_workspace_ui import (
     order_application_package_artifacts_for_review,
     render_application_fill_plan_edit_actions,
     render_application_package_summary,
+    render_cover_letter_artifact_export_controls,
 )
 from src.schemas import (
     AIWorkflowTrace,
@@ -451,6 +453,71 @@ def test_application_package_summary_ui_hides_internal_notes(monkeypatch) -> Non
     assert "- Candidate phone is missing." not in rendered
     assert "**Generation Notes**" not in rendered
     assert "- Generated from reviewed requirements." not in rendered
+
+
+def test_package_review_saved_message_lists_exports() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team.",
+                metadata={"generated_file_path": "/tmp/cover-letter-draft.pdf"},
+            )
+        ],
+    )
+
+    message = build_package_review_saved_message(
+        Path("/tmp/application_package.json"),
+        Path("/tmp/application_package.md"),
+        package,
+    )
+
+    assert "Package review changes saved." in message
+    assert "- Package JSON: /tmp/application_package.json" in message
+    assert "- Markdown export: /tmp/application_package.md" in message
+    assert "- Cover letter PDF artifact: /tmp/cover-letter-draft.pdf" in message
+
+
+def test_cover_letter_artifact_export_controls_use_selected_folder(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    rendered: list[tuple[str, object]] = []
+    job = make_job()
+    destination = tmp_path / "chosen-folder"
+    package = ApplicationPackage(
+        job_id=job.id,
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team.",
+            )
+        ],
+    )
+    fake_streamlit = SimpleNamespace(
+        markdown=lambda value: rendered.append(("markdown", value)),
+        text_input=lambda label, value, key: str(destination),
+        button=lambda label, key: True,
+        success=lambda value: rendered.append(("success", value)),
+        error=lambda value: rendered.append(("error", value)),
+        warning=lambda value: rendered.append(("warning", value)),
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+
+    render_cover_letter_artifact_export_controls(tmp_path, job, package)
+
+    exported_path = destination / "cover-letter-draft.pdf"
+    assert exported_path.exists()
+    assert package.artifacts[0].metadata["downloaded_file_path"] == str(exported_path)
+    assert package.artifacts[0].metadata["generated_file_path"] == str(
+        tmp_path / "outputs" / job.id / "artifacts" / "cover-letter-draft.pdf"
+    )
+    assert any(str(exported_path) in str(value) for kind, value in rendered if kind == "success")
 
 
 def test_artifact_review_metadata_includes_context_without_mutating_content() -> None:

@@ -30,6 +30,7 @@ from src.application_fill_plan import (
 )
 from src.application_package import (
     apply_manual_artifact_edits,
+    export_cover_letter_artifact,
     generate_application_package,
     load_application_package,
     save_application_package,
@@ -47,7 +48,7 @@ from src.browser_use_launcher import (
     stop_all_browser_use_processes,
     stop_browser_use_session,
 )
-from src.paths import RUNTIME_DATA_DIR
+from src.paths import RUNTIME_DATA_DIR, application_package_artifacts_dir
 from src.schemas import (
     AIWorkflowTrace,
     ApplicationArtifact,
@@ -930,17 +931,98 @@ def render_application_package_review_form(
             type="primary",
         )
 
+    current_package = package
     if save_edits:
         if not application_package_review_has_content_changes(package, edited_content):
             st.info("No package review changes were made.")
-            return package
-        edited_package = apply_application_package_review_edits(package, edited_content)
-        json_path, markdown_path = save_application_package(base_dir, edited_package, job)
-        update_tracker_for_application_package(base_dir, job.id, json_path)
-        st.success(f"Package review changes saved. Markdown export: {markdown_path}")
-        return edited_package
+        else:
+            current_package = apply_application_package_review_edits(package, edited_content)
+            json_path, markdown_path = save_application_package(base_dir, current_package, job)
+            update_tracker_for_application_package(base_dir, job.id, json_path)
+            st.success(
+                build_package_review_saved_message(
+                    json_path,
+                    markdown_path,
+                    current_package,
+                )
+            )
 
-    return package
+    render_cover_letter_artifact_export_controls(base_dir, job, current_package)
+    return current_package
+
+
+def render_cover_letter_artifact_export_controls(
+    base_dir: Path,
+    job: JobListing,
+    package: ApplicationPackage,
+) -> None:
+    """Render a user-selected folder export action for the cover letter artifact."""
+
+    cover_letter = find_cover_letter_artifact(package)
+    if cover_letter is None or not cover_letter.content.strip():
+        return
+
+    default_destination = application_package_artifacts_dir(base_dir, job.id)
+    st.markdown("**Cover Letter Artifact**")
+    destination_text = st.text_input(
+        "Cover letter destination folder",
+        value=str(default_destination),
+        key=f"cover_letter_artifact_destination_{job.id}",
+    )
+    if not st.button("Export cover letter PDF", key=f"export_cover_letter_artifact_{job.id}"):
+        return
+
+    if not destination_text.strip():
+        st.error("Choose a destination folder before exporting the cover letter.")
+        return
+    destination = Path(destination_text).expanduser()
+
+    try:
+        exported_path = export_cover_letter_artifact(package, destination)
+        json_path, markdown_path = save_application_package(base_dir, package, job)
+        update_tracker_for_application_package(base_dir, job.id, json_path)
+    except OSError as exc:
+        st.error(f"Could not export cover letter artifact: {exc}")
+        return
+
+    if exported_path is None:
+        st.warning("No cover letter artifact is available to export.")
+        return
+    st.success(
+        "Cover letter PDF exported.\n\n"
+        f"- Downloaded artifact: {exported_path}\n"
+        f"- Package JSON updated: {json_path}\n"
+        f"- Markdown export updated: {markdown_path}"
+    )
+
+
+def find_cover_letter_artifact(package: ApplicationPackage) -> ApplicationArtifact | None:
+    """Return the first cover-letter artifact in a package."""
+
+    for artifact in package.artifacts:
+        if is_cover_letter_artifact(artifact):
+            return artifact
+    return None
+
+
+def build_package_review_saved_message(
+    json_path: Path,
+    markdown_path: Path,
+    package: ApplicationPackage,
+) -> str:
+    """Return a save confirmation that names package exports and locations."""
+
+    lines = [
+        "Package review changes saved.",
+        f"- Package JSON: {json_path}",
+        f"- Markdown export: {markdown_path}",
+    ]
+    cover_letter = find_cover_letter_artifact(package)
+    if cover_letter is not None:
+        generated_path = str(cover_letter.metadata.get("generated_file_path") or "").strip()
+        if generated_path:
+            lines.append(f"- Cover letter PDF artifact: {generated_path}")
+    return "\n".join(lines)
 
 
 def render_application_package_summary(package: ApplicationPackage) -> None:

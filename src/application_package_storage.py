@@ -20,11 +20,12 @@ from src.paths import (
     runtime_jobs_index_path,
     runtime_tracker_path,
 )
-from src.schemas import ApplicationPackage, JobListing, TrackerRecord
+from src.schemas import ApplicationArtifact, ApplicationPackage, JobListing, TrackerRecord
 from src.storage import load_model, save_model
 
 __all__ = [
     "APPLICATION_PACKAGE_MARKDOWN_FILENAME",
+    "export_cover_letter_artifact",
     "load_application_package",
     "save_application_package",
     "update_tracker_for_application_package",
@@ -55,16 +56,51 @@ def _save_uploadable_package_artifacts(
 
     artifacts_dir = application_package_artifacts_dir(base_dir, package.job_id)
     for artifact in package.artifacts:
-        if artifact.type != "cover_letter" or not artifact.content.strip():
+        if not _is_cover_letter_artifact(artifact) or not artifact.content.strip():
             continue
-        artifacts_dir.mkdir(parents=True, exist_ok=True)
-        artifact_path = artifacts_dir / f"{_safe_artifact_filename(artifact.id)}.pdf"
-        _write_text_pdf(artifact_path, artifact.label, artifact.content)
-        metadata = dict(artifact.metadata)
-        metadata["generated_file_path"] = str(artifact_path)
-        metadata["generated_file_format"] = "pdf"
-        metadata["generated_file_mime_type"] = "application/pdf"
-        artifact.metadata = metadata
+        _export_artifact_pdf(artifact, artifacts_dir, metadata_prefix="generated")
+
+
+def export_cover_letter_artifact(
+    package: ApplicationPackage,
+    destination_dir: Path | str,
+) -> Path | None:
+    """Export the first cover-letter artifact to a user-selected folder."""
+
+    for artifact in package.artifacts:
+        if not _is_cover_letter_artifact(artifact) or not artifact.content.strip():
+            continue
+        return _export_artifact_pdf(
+            artifact,
+            Path(destination_dir),
+            metadata_prefix="downloaded",
+        )
+    return None
+
+
+def _export_artifact_pdf(
+    artifact: ApplicationArtifact,
+    destination_dir: Path,
+    *,
+    metadata_prefix: str,
+) -> Path:
+    """Write one generated artifact as a PDF and record its path in metadata."""
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    artifact_path = destination_dir / f"{_safe_artifact_filename(artifact.id)}.pdf"
+    _write_text_pdf(artifact_path, artifact.label, artifact.content)
+    metadata = dict(artifact.metadata)
+    metadata[f"{metadata_prefix}_file_path"] = str(artifact_path)
+    metadata[f"{metadata_prefix}_file_format"] = "pdf"
+    metadata[f"{metadata_prefix}_file_mime_type"] = "application/pdf"
+    artifact.metadata = metadata
+    return artifact_path
+
+
+def _is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:
+    artifact_type = artifact.type.casefold()
+    label = artifact.label.casefold()
+    return artifact_type == "cover_letter" or "cover letter" in label
 
 
 def _write_text_pdf(path: Path, title: str, content: str) -> None:

@@ -17,6 +17,7 @@ from src.application_package_quality import (
 )
 from src.application_package_storage import (
     APPLICATION_PACKAGE_MARKDOWN_FILENAME,
+    export_cover_letter_artifact,
     load_application_package,
     save_application_package,
     update_tracker_for_application_package,
@@ -34,6 +35,7 @@ from src.schemas import (
 
 __all__ = [
     "APPLICATION_PACKAGE_MARKDOWN_FILENAME",
+    "export_cover_letter_artifact",
     "load_application_package",
     "render_application_package_markdown",
     "save_application_package",
