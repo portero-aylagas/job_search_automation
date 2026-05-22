@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from src.job_intake import create_job_listing
 from src.job_workspace_ui import (
-    fill_plan_evidence_quality_label,
+    build_review_checklist,
+    deduplicate_review_items,
     get_application_fill_plan_review_blockers,
     get_apply_assistance_blockers,
 )
@@ -10,7 +11,9 @@ from src.schemas import (
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationPackage,
+    ApplicationRequirementFinding,
     ApplicationRequirements,
+    ApplicationScreeningQuestion,
     CandidateProfile,
 )
 
@@ -234,7 +237,88 @@ def test_apply_assistance_blocks_rejected_package() -> None:
     assert "Regenerate or manually edit the rejected application package." in blockers
 
 
-def test_fill_plan_evidence_quality_labels() -> None:
-    assert fill_plan_evidence_quality_label("literal_verified") == "Literal evidence found"
-    assert fill_plan_evidence_quality_label("partial_match") == "Partial evidence found"
-    assert fill_plan_evidence_quality_label("interpreted_only") == "Interpreted only"
+def test_review_checklist_deduplicates_repeated_sensitive_decisions() -> None:
+    job = make_job()
+    requirements = make_requirements(job)
+    requirements.consent_requirements = [
+        ApplicationRequirementFinding(
+            label="Privacy policy acknowledgment required to continue",
+            required=True,
+        )
+    ]
+    requirements.screening_questions = [
+        ApplicationScreeningQuestion(
+            question=(
+                "Haben Sie eine anerkannte Schwerbehinderung oder eine "
+                "Gleichstellung nach § 2 SGB IX?"
+            )
+        )
+    ]
+    package = ApplicationPackage(
+        job_id=job.id,
+        status="needs_review",
+        artifacts=[],
+        missing_information=[
+            "User decision required: Haben Sie eine anerkannte Schwerbehinderung "
+            "oder eine Gleichstellung nach § 2 SGB IX?",
+            "User must review consent requirement: Privacy policy acknowledgment "
+            "required to continue",
+        ],
+        selected_experience_units=[],
+        generation_notes=[],
+    )
+
+    checklist = build_review_checklist(requirements, package, None)
+
+    assert len(checklist) == 2
+    assert any("Privacy policy" in item for item in checklist)
+    assert any("Schwerbehinderung" in item for item in checklist)
+
+
+def test_deduplicate_review_items_groups_referral_variants() -> None:
+    items = deduplicate_review_items(
+        [
+            "User decision required: Empfehlung durch eine/n Mitarbeiter/in",
+            "A recommendation code is mentioned in visible text.",
+            "Empfehlung durch eine/n Mitarbeiter/in",
+        ]
+    )
+
+    assert items == ["Empfehlung durch eine/n Mitarbeiter/in"]
+
+
+def test_review_checklist_skips_items_represented_by_fill_plan_fields() -> None:
+    job = make_job()
+    requirements = make_requirements(job)
+    requirements.screening_questions = [
+        ApplicationScreeningQuestion(
+            question=(
+                "Haben Sie eine anerkannte Schwerbehinderung oder eine "
+                "Gleichstellung nach § 2 SGB IX?"
+            )
+        )
+    ]
+    package = ApplicationPackage(
+        job_id=job.id,
+        status="needs_review",
+        artifacts=[],
+        missing_information=[
+            "User decision required: Haben Sie eine anerkannte Schwerbehinderung "
+            "oder eine Gleichstellung nach § 2 SGB IX?"
+        ],
+        selected_experience_units=[],
+        generation_notes=[],
+    )
+    fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        needs_answer_fields=[
+            ApplicationFillNeedsAnswerField(
+                label="Haben Sie eine anerkannte Schwerbehinderung?",
+                reason="Sensitive user decision.",
+                input_type="checkbox",
+            )
+        ],
+    )
+
+    assert build_review_checklist(requirements, package, fill_plan) == []

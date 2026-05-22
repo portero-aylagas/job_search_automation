@@ -20,7 +20,7 @@ from src.app_workflow import (
 from src.job_intake import create_job_listing, persist_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.schemas import JobListing
-from src.ui_components import render_optional_ai_details
+from src.ui_components import AI_ACTION_COST_HELP, render_optional_ai_details
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,11 @@ def render_job_url_extraction_form() -> tuple[bool, str]:
     with st.form("job_url_form"):
         source_url = st.text_input("Job URL", placeholder="https://company.com/jobs/role")
         st.caption("Extract uses AI to resolve application data.")
-        extract_submitted = st.form_submit_button("Extract Application Data")
+        extract_submitted = st.form_submit_button(
+            "Extract application data with AI",
+            type="primary",
+            help=AI_ACTION_COST_HELP,
+        )
     return extract_submitted, source_url
 
 

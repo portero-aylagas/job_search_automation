@@ -23,7 +23,7 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.schemas import CandidateOptionalDocument, CandidateProfile
-from src.ui_components import render_optional_ai_details
+from src.ui_components import AI_ACTION_COST_HELP, render_optional_ai_details
 
 EMPLOYMENT_TYPE_OPTIONS = [
     ("full_time", "Full-time"),
@@ -218,7 +218,7 @@ def render_cv_upload_section(base_dir: Path, candidate_profile: CandidateProfile
         st.caption(
             "This action uploads the CV to the AI provider and parses it into review fields."
         )
-        if st.button("Parse CV", type="primary"):
+        if st.button("Parse CV with AI", type="primary", help=AI_ACTION_COST_HELP):
             if uploaded_cv is None:
                 st.error("Upload a CV before parsing.")
                 return
@@ -246,7 +246,7 @@ def format_cv_parse_error(saved_path: Path, exc: Exception) -> str:
     return (
         f"CV upload was saved to {saved_path}, but AI parsing failed: {exc}. "
         "Check that the Streamlit process has OPENAI_API_KEY and network access, "
-        "then click Parse CV again."
+        "then click Parse CV with AI again."
     )
 
 
@@ -276,7 +276,11 @@ def render_optional_documents_section(base_dir: Path, candidate_profile: Candida
                 key=f"candidate_profile_optional_documents_upload_{document_type}",
             )
 
-        if st.button("Parse optional documents", type="primary"):
+        if st.button(
+            "Parse optional documents with AI",
+            type="primary",
+            help=AI_ACTION_COST_HELP,
+        ):
             uploaded_document_entries = [
                 (document_type, uploaded_document)
                 for document_type, uploaded_documents in uploaded_documents_by_type.items()
