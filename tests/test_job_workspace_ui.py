@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import src.job_workspace_ui as job_workspace_ui
 from src.job_intake import create_job_listing
 from src.job_workspace_ui import (
     application_package_review_has_content_changes,
@@ -12,6 +15,7 @@ from src.job_workspace_ui import (
     get_apply_assistance_blockers,
     get_job_extraction_trace,
     order_application_package_artifacts_for_review,
+    render_application_package_summary,
 )
 from src.schemas import (
     AIWorkflowTrace,
@@ -364,6 +368,32 @@ def test_application_package_summary_includes_review_context() -> None:
         "selected_experience_units": ["exp-001"],
         "generation_notes": ["Generated from reviewed requirements."],
     }
+
+
+def test_application_package_summary_ui_hides_internal_notes(monkeypatch) -> None:
+    rendered: list[str] = []
+    package = ApplicationPackage(
+        job_id="job-001",
+        status="needs_review",
+        artifacts=[],
+        missing_information=["Candidate phone is missing."],
+        selected_experience_units=["exp-001"],
+        generation_notes=["Generated from reviewed requirements."],
+    )
+    fake_streamlit = SimpleNamespace(
+        markdown=lambda value: rendered.append(value),
+        write=lambda value: rendered.append(value),
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+
+    render_application_package_summary(package)
+
+    assert "**Selected Experience Units**" in rendered
+    assert "- exp-001" in rendered
+    assert "**Missing Information**" not in rendered
+    assert "- Candidate phone is missing." not in rendered
+    assert "**Generation Notes**" not in rendered
+    assert "- Generated from reviewed requirements." not in rendered
 
 
 def test_artifact_review_metadata_includes_context_without_mutating_content() -> None:

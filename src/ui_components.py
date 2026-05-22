@@ -21,26 +21,26 @@ def render_artifact_traceability(metadata: dict[str, object]) -> None:
     if not source_requirements and not source_experience_units:
         return
 
-    st.markdown("**Traceability**")
-    if isinstance(source_requirements, list) and source_requirements:
-        st.caption("Source requirements")
-        for requirement in source_requirements:
-            if not isinstance(requirement, dict):
-                continue
-            label = requirement.get("label") or requirement.get("evidence") or "Requirement"
-            confidence = requirement.get("confidence") or "unknown"
-            st.write(f"- {label} (confidence: {confidence})")
-            if requirement.get("evidence"):
-                st.caption(str(requirement["evidence"]))
+    with st.popover("Traceability", type="tertiary", width="content"):
+        if isinstance(source_requirements, list) and source_requirements:
+            st.caption("Source requirements")
+            for requirement in source_requirements:
+                if not isinstance(requirement, dict):
+                    continue
+                label = requirement.get("label") or requirement.get("evidence") or "Requirement"
+                confidence = requirement.get("confidence") or "unknown"
+                st.write(f"- {label} (confidence: {confidence})")
+                if requirement.get("evidence"):
+                    st.caption(str(requirement["evidence"]))
 
-    if isinstance(source_experience_units, list) and source_experience_units:
-        st.caption("Source experience")
-        for experience in source_experience_units:
-            if not isinstance(experience, dict):
-                continue
-            label = experience.get("title") or experience.get("id") or "Experience"
-            organization = experience.get("organization")
-            st.write(f"- {label}{f' / {organization}' if organization else ''}")
+        if isinstance(source_experience_units, list) and source_experience_units:
+            st.caption("Source experience")
+            for experience in source_experience_units:
+                if not isinstance(experience, dict):
+                    continue
+                label = experience.get("title") or experience.get("id") or "Experience"
+                organization = experience.get("organization")
+                st.write(f"- {label}{f' / {organization}' if organization else ''}")
 
 
 def render_requirement_findings(

@@ -944,22 +944,10 @@ def render_application_package_summary(package: ApplicationPackage) -> None:
     """Render compact generated package status before editable review fields."""
 
     summary = build_application_package_summary(package)
-    missing_information = summary["missing_information"]
-    if isinstance(missing_information, list) and missing_information:
-        st.markdown("**Missing Information**")
-        for item in missing_information:
-            st.write(f"- {item}")
-
     selected_experience_units = summary["selected_experience_units"]
     if isinstance(selected_experience_units, list) and selected_experience_units:
         st.markdown("**Selected Experience Units**")
         for item in selected_experience_units:
-            st.write(f"- {item}")
-
-    generation_notes = summary["generation_notes"]
-    if isinstance(generation_notes, list) and generation_notes:
-        st.markdown("**Generation Notes**")
-        for item in generation_notes:
             st.write(f"- {item}")
 
 

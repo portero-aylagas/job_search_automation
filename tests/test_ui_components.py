@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import src.ui_components as ui_components
 from src.schemas import AIWorkflowTrace
 from src.ui_components import (
     format_ai_usage_summary_bullets,
     format_workflow_trace_bullets,
+    render_artifact_traceability,
 )
 
 
@@ -22,6 +26,60 @@ def make_trace() -> AIWorkflowTrace:
         duration_ms=22200,
         recorded_at="2026-05-22T10:00:00+00:00",
     )
+
+
+class FakePopover:
+    def __init__(self, rendered: list[tuple[str, object]]) -> None:
+        self.rendered = rendered
+
+    def __enter__(self):
+        self.rendered.append(("popover_entered", None))
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.rendered.append(("popover_exited", None))
+
+
+def test_artifact_traceability_renders_in_compact_popover(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+
+    def fake_popover(label: str, **kwargs: object) -> FakePopover:
+        rendered.append(("popover", {"label": label, **kwargs}))
+        return FakePopover(rendered)
+
+    fake_streamlit = SimpleNamespace(
+        popover=fake_popover,
+        caption=lambda value: rendered.append(("caption", value)),
+        write=lambda value: rendered.append(("write", value)),
+    )
+    monkeypatch.setattr(ui_components, "st", fake_streamlit)
+
+    render_artifact_traceability(
+        {
+            "traceability": {
+                "source_requirements": [
+                    {
+                        "label": "Cover letter required",
+                        "confidence": "high",
+                        "evidence": "Please upload a cover letter.",
+                    }
+                ],
+                "source_experience_units": [
+                    {
+                        "title": "Automation Engineer",
+                        "organization": "Example Co",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert rendered[0] == (
+        "popover",
+        {"label": "Traceability", "type": "tertiary", "width": "content"},
+    )
+    assert ("write", "- Cover letter required (confidence: high)") in rendered
+    assert ("write", "- Automation Engineer / Example Co") in rendered
 
 
 def test_ai_usage_summary_formats_as_compact_bullets() -> None:
