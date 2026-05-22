@@ -650,60 +650,61 @@ def render_application_fill_plan_edit_actions(
     ):
         return fill_plan
 
-    with st.expander("Review application field values", expanded=True):
-        with st.form(f"application_fill_plan_edit_form_{fill_plan.job_id}"):
-            st.caption(
-                "Prefilled values are ready to save. Edit only the fields that need "
-                "a correction before Browser Use receives them."
-            )
-            edited_values: dict[str, str] = {}
-            needs_answer_values_by_key: dict[str, str] = {}
-            blocked_values_by_key: dict[str, str] = {}
+    with st.form(f"application_fill_plan_edit_form_{fill_plan.job_id}"):
+        st.caption(
+            "Prefilled values are ready to save. Edit only the fields that need "
+            "a correction before Browser Use receives them."
+        )
+        edited_values: dict[str, str] = {}
+        needs_answer_values_by_key: dict[str, str] = {}
+        blocked_values_by_key: dict[str, str] = {}
 
-            required_existing_fields = [
-                ("field", index, field)
-                for index, field in enumerate(fill_plan.field_values)
-                if field.required
-            ]
-            required_needs_answer_fields = [
-                ("needs", index, field)
-                for index, field in enumerate(fill_plan.needs_answer_fields)
-                if field.required
-            ]
-            required_blocked_fields = [
-                ("blocked", index, field)
-                for index, field in enumerate(fill_plan.blocked_fields)
-                if field.required
-            ]
-            optional_existing_fields = [
-                ("field", index, field)
-                for index, field in enumerate(fill_plan.field_values)
-                if not field.required
-            ]
-            optional_needs_answer_fields = [
-                ("needs", index, field)
-                for index, field in enumerate(fill_plan.needs_answer_fields)
-                if not field.required
-            ]
-            optional_blocked_fields = [
-                ("blocked", index, field)
-                for index, field in enumerate(fill_plan.blocked_fields)
-                if not field.required
-            ]
+        required_existing_fields = [
+            ("field", index, field)
+            for index, field in enumerate(fill_plan.field_values)
+            if field.required
+        ]
+        required_needs_answer_fields = [
+            ("needs", index, field)
+            for index, field in enumerate(fill_plan.needs_answer_fields)
+            if field.required
+        ]
+        required_blocked_fields = [
+            ("blocked", index, field)
+            for index, field in enumerate(fill_plan.blocked_fields)
+            if field.required
+        ]
+        optional_existing_fields = [
+            ("field", index, field)
+            for index, field in enumerate(fill_plan.field_values)
+            if not field.required
+        ]
+        optional_needs_answer_fields = [
+            ("needs", index, field)
+            for index, field in enumerate(fill_plan.needs_answer_fields)
+            if not field.required
+        ]
+        optional_blocked_fields = [
+            ("blocked", index, field)
+            for index, field in enumerate(fill_plan.blocked_fields)
+            if not field.required
+        ]
 
-            required_rows = [
-                *required_existing_fields,
-                *required_needs_answer_fields,
-                *required_blocked_fields,
-            ]
-            optional_rows = [
-                *optional_existing_fields,
-                *optional_needs_answer_fields,
-                *optional_blocked_fields,
-            ]
+        required_rows = [
+            *required_existing_fields,
+            *required_needs_answer_fields,
+            *required_blocked_fields,
+        ]
+        optional_rows = [
+            *optional_existing_fields,
+            *optional_needs_answer_fields,
+            *optional_blocked_fields,
+        ]
 
-            if required_rows:
-                st.markdown("**Required Fields**")
+        with st.container(border=True):
+            st.markdown("**Required Fields**")
+            if not required_rows:
+                st.caption("No required fields.")
             for kind, index, field in required_rows:
                 edit_key = _fill_plan_row_edit_key(kind, field, index)
                 value_key = f"application_fill_plan_{fill_plan.job_id}_{edit_key}"
@@ -722,8 +723,10 @@ def render_application_fill_plan_edit_actions(
                 )
                 _render_fill_plan_edit_reason(field)
 
-            if optional_rows:
-                st.markdown("**Optional Or Unclear Fields**")
+        with st.container(border=True):
+            st.markdown("**Optional or unclear fields**")
+            if not optional_rows:
+                st.caption("No optional or unclear fields.")
             for kind, index, field in optional_rows:
                 edit_key = _fill_plan_row_edit_key(kind, field, index)
                 value_key = f"application_fill_plan_{fill_plan.job_id}_{edit_key}"
@@ -742,19 +745,19 @@ def render_application_fill_plan_edit_actions(
                 )
                 _render_fill_plan_edit_reason(field)
 
-            upload_paths_by_key: dict[str, str] = {}
-            if fill_plan.upload_files:
-                st.markdown("**Uploads Sent To Browser Use**")
-            for index, upload in enumerate(fill_plan.upload_files):
-                edit_key = fill_plan_upload_edit_key(upload, index)
-                path_key = f"application_fill_plan_upload_path_{fill_plan.job_id}_{edit_key}"
-                upload_paths_by_key[edit_key] = st.text_input(
-                    f"{upload.label} file path",
-                    value=upload.file_path,
-                    key=path_key,
-                )
+        upload_paths_by_key: dict[str, str] = {}
+        if fill_plan.upload_files:
+            st.markdown("**Uploads Sent To Browser Use**")
+        for index, upload in enumerate(fill_plan.upload_files):
+            edit_key = fill_plan_upload_edit_key(upload, index)
+            path_key = f"application_fill_plan_upload_path_{fill_plan.job_id}_{edit_key}"
+            upload_paths_by_key[edit_key] = st.text_input(
+                f"{upload.label} file path",
+                value=upload.file_path,
+                key=path_key,
+            )
 
-            save_edits = st.form_submit_button("Save Fill Plan Edits")
+        save_edits = st.form_submit_button("Save Fill Plan Edits")
 
     if not save_edits:
         return fill_plan

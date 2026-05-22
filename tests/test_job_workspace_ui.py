@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import src.job_workspace_ui as job_workspace_ui
@@ -15,11 +16,13 @@ from src.job_workspace_ui import (
     get_apply_assistance_blockers,
     get_job_extraction_trace,
     order_application_package_artifacts_for_review,
+    render_application_fill_plan_edit_actions,
     render_application_package_summary,
 )
 from src.schemas import (
     AIWorkflowTrace,
     ApplicationArtifact,
+    ApplicationFillFieldValue,
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationPackage,
@@ -224,6 +227,60 @@ def test_fill_plan_review_blockers_require_resolved_needs_answer_fields() -> Non
 
     resolved_plan = fill_plan.model_copy(update={"needs_answer_fields": []})
     assert get_application_fill_plan_review_blockers(resolved_plan) == []
+
+
+class FakeStreamlitContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+
+def test_fill_plan_edit_actions_show_required_and_optional_boxes(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+
+    def fake_container(**kwargs: object) -> FakeStreamlitContext:
+        rendered.append(("container", kwargs))
+        return FakeStreamlitContext()
+
+    fake_streamlit = SimpleNamespace(
+        form=lambda _key: FakeStreamlitContext(),
+        container=fake_container,
+        caption=lambda value: rendered.append(("caption", value)),
+        markdown=lambda value: rendered.append(("markdown", value)),
+        text_input=lambda label, value, key: rendered.append(("text_input", label)) or value,
+        form_submit_button=lambda _label: False,
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+    fill_plan = ApplicationFillPlan(
+        job_id="job-001",
+        apply_url="https://example.com/apply",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="First name",
+                value="Taylor",
+                required=True,
+                input_type="text",
+            ),
+            ApplicationFillFieldValue(
+                label="Referral code",
+                value="",
+                required=False,
+                input_type="text",
+            ),
+        ],
+    )
+
+    returned_plan = render_application_fill_plan_edit_actions(Path("."), fill_plan)
+
+    assert returned_plan == fill_plan
+    assert ("container", {"border": True}) in rendered
+    assert rendered.count(("container", {"border": True})) == 2
+    assert ("markdown", "**Required Fields**") in rendered
+    assert ("markdown", "**Optional or unclear fields**") in rendered
+    assert ("text_input", "First name") in rendered
+    assert ("text_input", "Referral code") in rendered
 
 
 def test_apply_assistance_blocks_rejected_package() -> None:
