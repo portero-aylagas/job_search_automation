@@ -194,21 +194,41 @@ def open_apply_url_with_browser_use_fill_plan(
 def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
     """Return the guarded Browser Use task for a reviewed application fill plan."""
 
+    field_values_before_upload = [
+        field
+        for field in fill_plan.field_values
+        if _field_value_is_pre_upload_browser_action(field)
+    ]
+    mandatory_checkbox_fields = [
+        field
+        for field in fill_plan.field_values
+        if _field_value_is_true_checkbox(field)
+        and not _field_value_is_non_actionable_browser_field(field)
+    ]
+    intentionally_blank_fields = [
+        field
+        for field in fill_plan.field_values
+        if _field_value_is_intentionally_blank(field)
+    ]
+    intentionally_untouched_checkbox_fields = [
+        field
+        for field in fill_plan.field_values
+        if _field_value_is_false_checkbox(field)
+    ]
     execution_payload = {
         "review_status": fill_plan.review_status,
-        "field_values": [
-            _fill_plan_payload_item(field) for field in fill_plan.field_values
-        ],
         "field_values_before_upload": [
-            _fill_plan_payload_item(field) for field in fill_plan.field_values
+            _fill_plan_payload_item(field) for field in field_values_before_upload
         ],
         "mandatory_checkbox_fields": [
-            _fill_plan_payload_item(field)
-            for field in fill_plan.field_values
-            if _field_value_is_true_checkbox(field)
+            _fill_plan_payload_item(field) for field in mandatory_checkbox_fields
         ],
-        "upload_files": [
-            _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
+        "intentionally_blank_fields": [
+            _fill_plan_payload_item(field) for field in intentionally_blank_fields
+        ],
+        "intentionally_untouched_checkbox_fields": [
+            _fill_plan_payload_item(field)
+            for field in intentionally_untouched_checkbox_fields
         ],
         "upload_files_last": [
             _fill_plan_payload_item(upload) for upload in fill_plan.upload_files
@@ -226,6 +246,20 @@ reviewed application fill plan.
 
 Reviewed application fill plan:
 {payload}
+
+The JSON is split by action intent:
+- field_values_before_upload contains the only non-checkbox form fields to fill
+  or inspect before upload.
+- mandatory_checkbox_fields contains the only checkbox controls to check or
+  confirm checked.
+- intentionally_blank_fields contains reviewed blank values. Do not type empty
+  strings into these controls and do not clear nearby fields; just leave them
+  untouched and report them as intentionally blank.
+- intentionally_untouched_checkbox_fields contains reviewed false checkbox
+  choices. Do not click, check, or uncheck these controls; leave them untouched
+  and report them as intentionally untouched.
+- upload_files_last contains the only files to upload, and uploads must remain
+  last.
 
 Before filling or uploading:
 - Prefer matching controls by literal_evidence when literal_evidence is
@@ -246,6 +280,12 @@ Before filling or uploading:
   over broad marketing consent when those choices are available.
 - Wait for the page to settle after any redirect or popup dismissal before
   looking for upload controls or fillable fields.
+- If the page is blank before any form action has been performed, wait for it
+  to load. After any successful field entry, checkbox confirmation, or upload,
+  never navigate, reload, or open a new tab for verification because that can
+  wipe form state. Verify in place or report the verification as failed.
+- Do not search for or act on synthetic review labels that are not present in
+  field_values_before_upload or mandatory_checkbox_fields.
 
 Required action order:
 - First, process every item in field_values_before_upload in the order listed.
@@ -258,8 +298,8 @@ Required action order:
 - Pay particular attention to optional non-empty fields such as telephone
   numbers; optional does not mean skippable when a reviewed value is present.
 - Second, process every item in mandatory_checkbox_fields. These are reviewed
-  confirmations from field_values, including required privacy, terms, consent,
-  or ATS acknowledgements.
+  true checkbox confirmations, including required privacy, terms, consent, or
+  acknowledgements.
 - Third, verify live field values and checkbox states before any upload. Merely
   extracting labels is not verification.
 - Last, and only after all field_values_before_upload rows have been handled
@@ -267,26 +307,26 @@ Required action order:
 
 Mandatory completion checklist:
 - Process every item in mandatory_checkbox_fields. These are reviewed
-  confirmations from field_values, including required privacy, terms, consent,
-  or ATS acknowledgements.
+  true checkbox confirmations, including required privacy, terms, consent, or
+  acknowledgements.
 - Check or confirm each matching mandatory checkbox before declaring the task
   complete. If a matching control cannot be found, report it as a failed action
   and do not say all fields are complete.
 - Upload completion is not task completion. Before your final answer, compare
-  field_values_before_upload, mandatory_checkbox_fields, and upload_files_last
-  against the actions you actually performed.
-- In the final answer, separately list checked mandatory checkboxes, uploaded
-  files, failed actions, and intentionally untouched false checkbox fields.
+  field_values_before_upload, mandatory_checkbox_fields, intentionally_blank_fields,
+  intentionally_untouched_checkbox_fields, and upload_files_last against the
+  actions you actually performed.
+- In the final answer, separately list filled fields, checked mandatory
+  checkboxes, intentionally blank fields, intentionally untouched false
+  checkbox fields, uploaded files, and failed actions.
 
 Hard safety rules:
-- Fill only fields listed in field_values.
-- If a listed field has an empty value and required is false, treat it as an
-  intentionally reviewed blank value. Leave that matching control blank or
-  unchecked, and report it as intentionally blank.
-- For checkbox fields, value "true" means check/confirm the matching control
-  and value "false" means leave it unchecked or uncheck it if needed.
-- A sensitive or consent checkbox with value "true" in field_values is a
-  reviewed instruction to check that specific control. It is not optional.
+- Fill only fields listed in field_values_before_upload.
+- Check only checkbox controls listed in mandatory_checkbox_fields.
+- Never click checkbox controls listed in intentionally_untouched_checkbox_fields.
+- Never type into controls listed in intentionally_blank_fields.
+- A sensitive or consent checkbox with value "true" in mandatory_checkbox_fields
+  is a reviewed instruction to check that specific control. It is not optional.
 - For checkbox_group or multiselect fields, split reviewed values on semicolons
   when semicolons are present; otherwise treat the whole value as one exact
   option label.
@@ -300,9 +340,10 @@ Hard safety rules:
 - Never touch fields listed in blocked_fields.
 - Leave sensitive fields such as disability, referral, internal employee status,
   optional group sharing, and optional consent/marketing choices untouched
-  unless they are explicitly listed in field_values.
+  unless they are explicitly listed in mandatory_checkbox_fields with value
+  "true".
 - Do not fill, select, type into, click, or modify any field that is not listed
-  in field_values or upload_files.
+  in field_values_before_upload, mandatory_checkbox_fields, or upload_files_last.
 - Never click, press, or activate a button or link named "Weiter & Pruefen",
   "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
   or any label from submit_guard_labels.
@@ -404,6 +445,37 @@ def _field_value_is_true_checkbox(field: ApplicationFillFieldValue) -> bool:
         "1",
         "checked",
     }
+
+
+def _field_value_is_false_checkbox(field: ApplicationFillFieldValue) -> bool:
+    return field.input_type.casefold() == "checkbox" and field.value.strip().casefold() in {
+        "",
+        "false",
+        "no",
+        "nein",
+        "0",
+        "unchecked",
+    }
+
+
+def _field_value_is_intentionally_blank(field: ApplicationFillFieldValue) -> bool:
+    if field.input_type.casefold() == "checkbox":
+        return False
+    return not field.required and not field.value.strip()
+
+
+def _field_value_is_non_actionable_browser_field(field: ApplicationFillFieldValue) -> bool:
+    return field.label.strip().casefold().startswith("ats gate")
+
+
+def _field_value_is_pre_upload_browser_action(field: ApplicationFillFieldValue) -> bool:
+    if _field_value_is_non_actionable_browser_field(field):
+        return False
+    if field.input_type.casefold() == "checkbox":
+        return False
+    if _field_value_is_intentionally_blank(field):
+        return False
+    return True
 
 
 def _require_http_url(url: str) -> str:
