@@ -50,6 +50,7 @@ application tracking
 - tailored application package generation
 - editable AI-generated material
 - package edit and rejection recovery workflow
+- reviewed Browser Use apply assistance from the Jobs page
 - application tracker
 - JSON-based local storage
 
@@ -68,7 +69,6 @@ The application can later support:
 - public web job search
 - import of structured job data from external tools
 - job proposal and ranking
-- assisted application page opening
 - form-answer suggestions
 
 These are optional input or assistance layers. The core workflow is independent of any single job board or automation provider.
