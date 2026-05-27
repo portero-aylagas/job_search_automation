@@ -1,4 +1,4 @@
-# GDPR Audit Pack - Javier Portero
+# GDPR Audit Pack
 
 ## Scenario
 
