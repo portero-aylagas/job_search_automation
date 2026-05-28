@@ -133,6 +133,9 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     tmp_path: Path,
 ) -> None:
     captured: dict[str, object] = {}
+    cv_path = tmp_path / "candidate" / "cv.pdf"
+    cv_path.parent.mkdir(parents=True)
+    cv_path.write_bytes(b"%PDF cv")
 
     def fake_popen(
         command: list[str],
@@ -153,7 +156,7 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
 
     result = open_apply_url_with_browser_use_fill_plan(
         "https://example.com/apply/automation-engineer",
-        fill_plan=make_fill_plan(),
+        fill_plan=make_fill_plan(str(cv_path)),
         log_dir=tmp_path,
         startup_wait_seconds=0,
     )
@@ -165,7 +168,7 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "--page-ready-timeout-seconds" in command
     assert command[command.index("--page-ready-timeout-seconds") + 1] == "60.0"
     assert "--available-file-path" in command
-    assert command[command.index("--available-file-path") + 1] == "/tmp/candidate/cv.pdf"
+    assert command[command.index("--available-file-path") + 1] == str(cv_path)
     agent_task = command[command.index("--agent-task") + 1]
     assert "reviewed application fill plan" in agent_task
     assert "https://example.com/apply/automation-engineer" not in agent_task
@@ -182,7 +185,7 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert '"value": "Taylor"' in agent_task
     assert '"value": "true"' in agent_task
     assert '"label": "Lebenslauf"' in agent_task
-    assert "/tmp/candidate/cv.pdf" in agent_task
+    assert str(cv_path) in agent_task
     assert "Do not translate the page" in agent_task
     assert "translation prompts" in agent_task
     assert "cookie, privacy, newsletter, chat" in agent_task
@@ -222,6 +225,12 @@ def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
     tmp_path: Path,
 ) -> None:
     captured: dict[str, object] = {}
+    cv_path = tmp_path / "candidate" / "cv.pdf"
+    cover_letter_path = tmp_path / "generated" / "cover_letter.pdf"
+    cv_path.parent.mkdir(parents=True)
+    cover_letter_path.parent.mkdir(parents=True)
+    cv_path.write_bytes(b"%PDF cv")
+    cover_letter_path.write_bytes(b"%PDF cover")
 
     def fake_popen(
         command: list[str],
@@ -240,11 +249,14 @@ def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
     monkeypatch.setattr(subprocess, "run", no_stale_processes)
     monkeypatch.setattr(os, "kill", lambda pid, sig: None)
 
-    fill_plan = make_fill_plan()
+    fill_plan = make_fill_plan(str(cv_path))
+    fill_plan.source_metadata["package_upload_artifacts"] = [
+        {"generated_file_path": str(cover_letter_path), "downloaded_file_path": ""}
+    ]
     fill_plan.upload_files.append(
         ApplicationFillUploadFile(
             label="Cover letter",
-            file_path="/tmp/generated/cover_letter.pdf",
+            file_path=str(cover_letter_path),
             document_type="cover_letter",
             required=True,
             source="manual_review",
@@ -265,14 +277,14 @@ def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
         index for index, value in enumerate(command) if value == "--available-file-path"
     ]
     assert [command[index + 1] for index in upload_flag_indexes] == [
-        "/tmp/candidate/cv.pdf",
-        "/tmp/generated/cover_letter.pdf",
+        str(cv_path),
+        str(cover_letter_path),
     ]
     agent_task = command[command.index("--agent-task") + 1]
     assert '"label": "Lebenslauf"' in agent_task
     assert '"label": "Cover letter"' in agent_task
-    assert '"/tmp/candidate/cv.pdf"' in agent_task
-    assert '"/tmp/generated/cover_letter.pdf"' in agent_task
+    assert json.dumps(str(cv_path)) in agent_task
+    assert json.dumps(str(cover_letter_path)) in agent_task
 
 
 def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> None:
@@ -537,7 +549,7 @@ def test_open_apply_url_blocks_unreviewed_blocked_fields(tmp_path: Path) -> None
         )
 
 
-def test_open_url_with_browser_use_starts_fresh_when_session_exists(
+def test_open_url_with_browser_use_blocks_when_session_exists(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -558,14 +570,14 @@ def test_open_url_with_browser_use_starts_fresh_when_session_exists(
         startup_wait_seconds=0,
     )
 
-    result = open_url_with_browser_use(
-        "https://example.com/jobs/second-role",
-        log_dir=tmp_path,
-        startup_wait_seconds=0,
-    )
+    with pytest.raises(BrowserUseLaunchError, match="already running"):
+        open_url_with_browser_use(
+            "https://example.com/jobs/second-role",
+            log_dir=tmp_path,
+            startup_wait_seconds=0,
+        )
 
-    assert len(launches) == 2
-    assert result.url == "https://example.com/jobs/second-role"
+    assert len(launches) == 1
 
 
 def test_stop_browser_use_session_terminates_process_group(
@@ -652,12 +664,12 @@ def test_stable_profile_preferences_disable_translate(tmp_path: Path) -> None:
     assert '"app_locale": "en-US"' in local_state
 
 
-def test_browser_use_agent_max_steps_defaults_to_8000(
+def test_browser_use_agent_max_steps_defaults_to_120(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("BROWSER_USE_AGENT_MAX_STEPS", raising=False)
 
-    assert _browser_use_agent_max_steps() == 8000
+    assert _browser_use_agent_max_steps() == 120
 
 
 def test_browser_use_agent_max_steps_allows_override(
@@ -679,7 +691,7 @@ def test_browser_use_agent_max_steps_ignores_invalid_override(
 ) -> None:
     monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "not-a-number")
 
-    assert _browser_use_agent_max_steps() == 8000
+    assert _browser_use_agent_max_steps() == 120
 
 
 def test_close_existing_pages_closes_tabs_before_navigation() -> None:
@@ -911,11 +923,18 @@ def test_open_page_with_retries_non_strict_allows_blank_page_for_manual_use() ->
     assert browser.page.goto_calls == []
 
 
-def make_fill_plan() -> ApplicationFillPlan:
+def make_fill_plan(upload_path: str = "/tmp/candidate/cv.pdf") -> ApplicationFillPlan:
     return ApplicationFillPlan(
         job_id="job-123",
         apply_url="https://example.com/apply/automation-engineer",
         review_status="reviewed",
+        source_metadata={
+            "candidate_documents": {
+                "cv": {"file_path": upload_path},
+                "optional_documents": [],
+            },
+            "package_upload_artifacts": [],
+        },
         field_values=[
             ApplicationFillFieldValue(
                 label="Vorname",
@@ -978,7 +997,7 @@ def make_fill_plan() -> ApplicationFillPlan:
         upload_files=[
             ApplicationFillUploadFile(
                 label="Lebenslauf",
-                file_path="/tmp/candidate/cv.pdf",
+                file_path=upload_path,
                 document_type="cv",
                 required=True,
                 source="manual_review",

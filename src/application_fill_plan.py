@@ -438,6 +438,40 @@ def get_application_fill_plan_review_blockers(fill_plan: ApplicationFillPlan) ->
             + "."
         )
 
+    blockers.extend(get_application_fill_plan_upload_path_blockers(fill_plan))
+    return blockers
+
+
+def get_application_fill_plan_upload_path_blockers(
+    fill_plan: ApplicationFillPlan,
+) -> list[str]:
+    """Return blockers for upload files outside reviewed workflow sources."""
+
+    blockers: list[str] = []
+    allowed_paths = _allowed_upload_paths_from_source_metadata(fill_plan.source_metadata)
+    for upload in fill_plan.upload_files:
+        file_path = upload.file_path.strip()
+        if not file_path:
+            continue
+
+        if not allowed_paths:
+            blockers.append(
+                f"Refresh the application fill plan before uploading {upload.label}; "
+                "reviewed source-file metadata is missing."
+            )
+            continue
+
+        if _normalized_file_path(file_path) not in allowed_paths:
+            blockers.append(
+                f"Choose a reviewed source file for {upload.label}; arbitrary local "
+                "file paths cannot be sent to Browser Use."
+            )
+            continue
+
+        if not _upload_file_extension_is_supported(upload):
+            blockers.append(
+                f"Choose a supported upload file type for {upload.label}."
+            )
     return blockers
 
 
@@ -1614,6 +1648,48 @@ def _package_upload_artifact_metadata(artifact: ApplicationArtifact) -> dict[str
         "generated_file_path": str(metadata.get("generated_file_path") or ""),
         "downloaded_file_path": str(metadata.get("downloaded_file_path") or ""),
     }
+
+
+def _allowed_upload_paths_from_source_metadata(
+    source_metadata: dict[str, object],
+) -> set[Path]:
+    allowed_paths: set[Path] = set()
+    candidate_documents = source_metadata.get("candidate_documents")
+    if isinstance(candidate_documents, dict):
+        cv = candidate_documents.get("cv")
+        if isinstance(cv, dict):
+            _add_allowed_upload_path(allowed_paths, cv.get("file_path"))
+        optional_documents = candidate_documents.get("optional_documents")
+        if isinstance(optional_documents, list):
+            for document in optional_documents:
+                if isinstance(document, dict):
+                    _add_allowed_upload_path(allowed_paths, document.get("file_path"))
+
+    package_upload_artifacts = source_metadata.get("package_upload_artifacts")
+    if isinstance(package_upload_artifacts, list):
+        for artifact in package_upload_artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            _add_allowed_upload_path(allowed_paths, artifact.get("generated_file_path"))
+            _add_allowed_upload_path(allowed_paths, artifact.get("downloaded_file_path"))
+    return allowed_paths
+
+
+def _add_allowed_upload_path(allowed_paths: set[Path], value: object) -> None:
+    path_text = str(value or "").strip()
+    if path_text:
+        allowed_paths.add(_normalized_file_path(path_text))
+
+
+def _normalized_file_path(value: str) -> Path:
+    return Path(value).expanduser().resolve(strict=False)
+
+
+def _upload_file_extension_is_supported(upload: ApplicationFillUploadFile) -> bool:
+    extension = Path(upload.file_path).suffix.casefold()
+    if upload.document_type == "cover_letter":
+        return extension == ".pdf"
+    return extension in {".pdf", ".txt", ".md", ".docx"}
 
 
 def _is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:
