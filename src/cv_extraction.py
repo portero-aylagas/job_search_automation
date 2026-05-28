@@ -298,10 +298,10 @@ def save_uploaded_cv(base_dir: Path | str, original_name: str, file_bytes: bytes
         document_label="CV",
     )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    target = cv_upload_path(base_dir, f"{timestamp}-{safe_name}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(file_bytes)
-    return target
+    return _write_unique_upload_file(
+        cv_upload_path(base_dir, f"{timestamp}-{safe_name}"),
+        file_bytes,
+    )
 
 
 def save_uploaded_optional_document(
@@ -319,10 +319,33 @@ def save_uploaded_optional_document(
         document_label="Optional document",
     )
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    target = optional_document_upload_path(base_dir, f"{timestamp}-{safe_name}")
+    return _write_unique_upload_file(
+        optional_document_upload_path(base_dir, f"{timestamp}-{safe_name}"),
+        file_bytes,
+    )
+
+
+def _write_unique_upload_file(target: Path, file_bytes: bytes) -> Path:
+    """Write upload bytes without replacing an existing same-second upload."""
+
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(file_bytes)
-    return target
+    for candidate in _unique_upload_candidates(target):
+        try:
+            with candidate.open("xb") as file:
+                file.write(file_bytes)
+            return candidate
+        except FileExistsError:
+            continue
+    raise RuntimeError(f"Could not choose a unique upload filename for {target.name}.")
+
+
+def _unique_upload_candidates(target: Path) -> list[Path]:
+    candidates = [target]
+    stem = target.stem
+    suffix = target.suffix
+    for index in range(2, 1000):
+        candidates.append(target.with_name(f"{stem}-{index}{suffix}"))
+    return candidates
 
 
 def _validate_cv_path(cv_path: str | Path) -> Path:

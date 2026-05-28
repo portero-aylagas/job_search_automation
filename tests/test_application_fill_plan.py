@@ -925,7 +925,7 @@ def test_mapper_can_skip_duplicate_of_existing_resolved_field() -> None:
     )
 
 
-def test_apply_fill_plan_edits_updates_fields_and_upload_path() -> None:
+def test_apply_fill_plan_edits_updates_fields_and_blocks_unreviewed_upload_path() -> None:
     fill_plan = generate_application_fill_plan(
         make_profile(),
         make_requirements(),
@@ -966,6 +966,11 @@ def test_apply_fill_plan_edits_updates_fields_and_upload_path() -> None:
     assert first_name.source == "manual_review"
     assert edited.upload_files[0].file_path == "/tmp/updated.pdf"
     assert edited.upload_files[0].source == "manual_review"
+    assert (
+        "Choose a reviewed source file for Application attachments / "
+        "Bewerbungsunterlagen; arbitrary local file paths cannot be sent to "
+        "Browser Use."
+    ) in get_application_fill_plan_review_blockers(edited)
 
 
 def test_apply_fill_plan_edits_promotes_needs_answer_to_field_value() -> None:

@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from src.application_fill_plan import (
     get_application_fill_plan_freshness_blockers,
     get_application_fill_plan_review_blockers,
+    get_application_fill_plan_upload_path_blockers,
 )
 from src.schemas import (
     ApplicationFillBlockedField,
@@ -175,6 +176,7 @@ def open_apply_url_with_browser_use_fill_plan(
     review_blockers = get_application_fill_plan_review_blockers(fill_plan)
     if review_blockers:
         raise BrowserUseLaunchError(" ".join(review_blockers))
+    upload_paths = _validated_fill_plan_available_file_paths(fill_plan)
     if candidate_profile is not None and requirements is not None and package is not None:
         freshness_blockers = get_application_fill_plan_freshness_blockers(
             fill_plan,
@@ -189,7 +191,7 @@ def open_apply_url_with_browser_use_fill_plan(
         log_dir=log_dir,
         startup_wait_seconds=startup_wait_seconds,
         agent_task=build_fill_plan_application_task(fill_plan),
-        available_file_paths=_fill_plan_available_file_paths(fill_plan),
+        available_file_paths=upload_paths,
     )
 
 
@@ -391,12 +393,17 @@ def _launch_browser_use_runner(
 ) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
-    stop_all_browser_use_processes(target_log_dir)
     existing_session = get_active_browser_use_session(target_log_dir)
     if existing_session is not None:
         raise BrowserUseLaunchError(
             "A Browser Use session is already running. Stop the active session before "
             "starting a new one."
+        )
+    stale_runners = _find_browser_use_runner_processes()
+    if stale_runners:
+        raise BrowserUseLaunchError(
+            "A Browser Use runner process is already active. Stop browser processes "
+            "from the Jobs page before starting a new one."
         )
     log_path = target_log_dir / _build_log_filename(agent_task=agent_task is not None)
     ready_path = log_path.with_suffix(".ready")
@@ -461,6 +468,25 @@ def _fill_plan_available_file_paths(fill_plan: ApplicationFillPlan) -> list[Path
         for upload in _dedupe_browser_upload_files(fill_plan.upload_files)
         if upload.file_path
     ]
+
+
+def _validated_fill_plan_available_file_paths(fill_plan: ApplicationFillPlan) -> list[Path]:
+    blockers = get_application_fill_plan_upload_path_blockers(fill_plan)
+    if blockers:
+        raise BrowserUseLaunchError(" ".join(blockers))
+
+    upload_paths = _fill_plan_available_file_paths(fill_plan)
+    missing_paths = [
+        str(path)
+        for path in upload_paths
+        if not path.expanduser().is_file()
+    ]
+    if missing_paths:
+        raise BrowserUseLaunchError(
+            "Upload files must exist before Browser Use can start: "
+            + ", ".join(missing_paths)
+        )
+    return upload_paths
 
 
 def _dedupe_browser_action_fields(
