@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -81,6 +82,26 @@ def test_save_uploaded_cv_accepts_supported_file_type(tmp_path: Path) -> None:
 
     assert saved_path.name.endswith("-Taylor-CV.PDF")
     assert saved_path.read_bytes() == b"%PDF test"
+
+
+def test_save_uploaded_cv_does_not_replace_same_second_uploads(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FixedDatetime:
+        @classmethod
+        def now(cls, tz: timezone) -> datetime:
+            return datetime(2026, 5, 28, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(cv_extraction, "datetime", FixedDatetime)
+
+    first_path = save_uploaded_cv(tmp_path, "Taylor CV.pdf", b"first")
+    second_path = save_uploaded_cv(tmp_path, "Taylor CV.pdf", b"second")
+
+    assert first_path != second_path
+    assert first_path.read_bytes() == b"first"
+    assert second_path.read_bytes() == b"second"
+    assert second_path.name.endswith("-Taylor-CV-2.pdf")
 
 
 def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
