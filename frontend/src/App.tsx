@@ -614,18 +614,30 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
 
 function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
   const [applying, setApplying] = useState(false);
+  const [applyMessage, setApplyMessage] = useState<ApiRecord | null>(null);
+  const staleRunnerCount =
+    Math.max(
+      0,
+      Number(workspace.browser_use_runner_count || 0) -
+        (workspace.active_browser_use_session ? 1 : 0)
+    );
 
   async function applyWithAi() {
     setApplying(true);
-    setMessage({ type: "info", text: "Starting Browser Use apply agent..." });
+    setApplyMessage({ type: "info", text: "Starting Browser Use apply agent..." });
     try {
-      await action(
-        `/api/jobs/${workspace.job.id}/apply`,
-        "POST",
-        {},
-        setMessage,
-        reload
-      );
+      const result = await apiRequest<ApiRecord>(`/api/jobs/${workspace.job.id}/apply`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      setApplyMessage({ type: "success", text: result.message || "Started Browser Use apply agent." });
+      setMessage({ type: "success", text: result.message || "Started Browser Use apply agent." });
+      reload();
+    } catch (error) {
+      setApplyMessage({
+        type: "error",
+        text: error instanceof Error ? error.message : String(error)
+      });
     } finally {
       setApplying(false);
     }
@@ -636,7 +648,15 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
       <h2>Apply to position</h2>
       <h3>Apply Assistance</h3>
       <Blockers title="Apply assistance is blocked until these review steps are complete:" blockers={workspace.apply_blockers} />
-      <details><summary>Browser process controls</summary>
+      <StatusMessage type={applyMessage?.type} text={applyMessage?.text} />
+      {staleRunnerCount > 0 && (
+        <StatusMessage
+          type="warning"
+          text={`${staleRunnerCount} Browser Use runner process is active outside the tracked session. Use Kill All Browser Use Processes before applying again.`}
+        />
+      )}
+      <details open={staleRunnerCount > 0}>
+        <summary>Browser process controls</summary>
         {workspace.active_browser_use_session ? <StatusMessage type="info" text={`Browser Use session running: PID ${workspace.active_browser_use_session.pid} for ${workspace.active_browser_use_session.url}`} /> : <p className="muted">Browser Use session status: idle.</p>}
         <div className="actions">
           <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/stop-session`, "POST", {}, setMessage, reload)}>Stop Browser Use Session</button>

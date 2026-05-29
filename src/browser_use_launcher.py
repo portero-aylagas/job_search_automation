@@ -129,6 +129,12 @@ def stop_all_browser_use_processes(log_dir: Path | str) -> int:
     return stopped_count
 
 
+def count_browser_use_runner_processes() -> int:
+    """Return the number of Browser Use runner processes started by this project."""
+
+    return len(_find_browser_use_runner_processes())
+
+
 def open_url_with_browser_use(
     url: str,
     *,

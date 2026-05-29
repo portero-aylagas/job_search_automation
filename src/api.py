@@ -57,6 +57,7 @@ from src.application_requirements import (
 )
 from src.browser_use_launcher import (
     BrowserUseLaunchError,
+    count_browser_use_runner_processes,
     get_active_browser_use_session,
     open_apply_url_with_browser_use_fill_plan,
     stop_all_browser_use_processes,
@@ -462,6 +463,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             "active_browser_use_session": (
                 active_session.__dict__ if active_session is not None else None
             ),
+            "browser_use_runner_count": count_browser_use_runner_processes(),
         }
 
     @post_job_action(app, "/api/jobs/{job_id}/requirements/discover")
