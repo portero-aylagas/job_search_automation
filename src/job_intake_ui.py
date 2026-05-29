@@ -41,7 +41,6 @@ class JobReviewFormState:
     nice_to_have_skills: str
     dynamic_fields: list[dict[str, object]]
     save_submitted: bool
-    clear_submitted: bool
 
 
 def render_job_url_extraction_form() -> tuple[bool, str]:
@@ -187,8 +186,10 @@ def render_job_review_form(
         for message in apply_url_messages["info"]:
             st.info(message)
 
-        save_submitted = st.form_submit_button("Add To Application Workflow")
-        clear_submitted = st.form_submit_button("Start Over")
+        save_submitted = st.form_submit_button(
+            "Add To Application Workflow",
+            type="primary",
+        )
 
     return JobReviewFormState(
         title=title,
@@ -205,7 +206,6 @@ def render_job_review_form(
         nice_to_have_skills=nice_to_have_skills,
         dynamic_fields=dynamic_fields,
         save_submitted=save_submitted,
-        clear_submitted=clear_submitted,
     )
 
 
@@ -299,10 +299,6 @@ def render_job_intake_page(base_dir: Path) -> None:
             apply_resolution.workflow_trace if apply_resolution else None,
         ],
     )
-
-    if form_state.clear_submitted:
-        clear_job_intake_session_state()
-        st.rerun()
 
     if not form_state.save_submitted:
         return

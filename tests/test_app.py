@@ -340,7 +340,6 @@ def test_build_reviewed_job_listing_maps_review_form_state() -> None:
             },
         ],
         save_submitted=True,
-        clear_submitted=False,
     )
     extracted = ExtractedJobData(confidence="high")
     resolution = ApplyUrlResolution(status="resolved", apply_url=apply_url)
