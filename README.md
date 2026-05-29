@@ -10,7 +10,7 @@ candidate profile + job position -> validated application package
 
 The application helps transform candidate data and a specific job position into structured application material such as cover letters, CV tailoring notes, recruiter messages, form answers, and application summaries.
 
-The system is designed to keep the user in control. AI can assist with extraction, analysis, generation, job discovery, and application preparation, but the user validates the important steps.
+The system is designed to keep the user in control. AI can assist with extraction, requirements discovery, generation, future job discovery, and application preparation, but the user validates the important steps.
 
 ---
 
@@ -26,8 +26,6 @@ LLM-assisted extraction and human review
 normalized job listing
     ↓
 application requirements discovery when apply_url is available
-    ↓
-candidate/job match analysis
     ↓
 application package generation
     ↓
@@ -46,6 +44,10 @@ application tracking
 - job normalization
 - working apply-page requirements discovery from `apply_url` through a LangGraph
   inspection/extraction slice
+- historical deterministic candidate/job match analysis backend, disabled from
+  the current known-job apply workflow
+- Agent Karen runtime assistant tab with persisted chat transcripts and audit
+  events
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -56,9 +58,9 @@ application tracking
 
 ## Planned Core Workflow Items
 
-- deterministic candidate/job match analysis
-- explicit package approval and ready-to-apply workflow
-- tracker transitions driven by approved package state
+- broader duplicate handling
+- applied-jobs view and final manual status updates
+- optional web job discovery
 
 ---
 
@@ -115,7 +117,18 @@ job_search_automation/
 │   ├── application_requirements.py
 │   ├── application_fill_plan.py
 │   ├── application_package.py
+│   ├── agent_ui.py
+│   ├── agents/
+│   │   └── karen/
+│   │       ├── agent_card.yaml
+│   │       ├── prompts.yaml
+│   │       ├── policy.py
+│   │       ├── tools.py
+│   │       ├── state.py
+│   │       └── graph.py
 │   └── ...
+├── assets/
+│   └── karen.png
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
@@ -124,10 +137,17 @@ job_search_automation/
 │   ├── runtime/
 │   │   ├── jobs.json
 │   │   ├── tracker.json
+│   │   ├── agent_sessions/
+│   │   │   └── <session_id>/
+│   │   │       ├── chat.jsonl
+│   │   │       ├── events.jsonl
+│   │   │       └── session.json
 │   │   └── jobs/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
 │   │           ├── analysis.json
+│   │           ├── agent_chat.jsonl
+│   │           ├── events.jsonl
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
 │   │           ├── application_fill_plan.json
@@ -155,8 +175,10 @@ stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
 
 AI prompt text is stored in `src/prompts.yaml` and loaded through
-`src/prompt_templates.py`. Live OpenAI calls remain behind `src/llm_client.py`,
-so prompt edits and provider-boundary changes stay reviewable and separate.
+`src/prompt_templates.py`; Karen's runtime assistant prompts live with her
+package in `src/agents/karen/prompts.yaml`. Live OpenAI calls remain behind
+`src/llm_client.py`, so prompt edits and provider-boundary changes stay
+reviewable and separate.
 LLM-facing structured response schemas for CV and job extraction live next to
 their extraction modules and are normalized into the persisted application
 models before anything is stored or shown in the UI.
@@ -173,12 +195,12 @@ Stores structured candidate information:
 - required gender value: `Male`, `Female`, or `Diverse`
 - normalized address fields including street number, city, postal code, country,
   and nationality when available
-- target roles
-- locations
+- optional target roles
+- optional target locations
 - skills
 - languages
 - constraints
-- salary expectation
+- optional salary expectation
 - source documents used
 - optional supporting documents such as references and certificates
 
@@ -245,14 +267,54 @@ upload files, log in, or enter personal data.
 
 ### Job Analysis
 
-Candidate/job comparison:
+Job analysis is not part of the current user-facing known-job apply workflow.
+Existing `analysis.json` files are treated as ignored historical artifacts.
+Backend code can remain for now, but Karen, normal app navigation, package
+generation, and tracker progression do not require match analysis.
+
+Future job discovery or ranking may reintroduce candidate/job comparison:
 
 - match score
+- weighted score components
 - matched skills
 - missing skills
-- strong experience units
+- relevant evidence and strong experience units
 - weak points
+- recommended positioning
 - application strategy
+
+Historical analysis output used `data/runtime/jobs/<job_id>/analysis.json`.
+
+### Karen Runtime Assistant
+
+Karen is the runtime product assistant inside the app. She appears in the
+top-level `Agent Karen` tab, not in a sidebar or persistent cross-page chat.
+The tab shows Karen's portrait from `assets/karen.png`, the selected job,
+workflow timeline, blockers, pending gate, static next-action guidance, and the
+chat transcript. Karen is separate from `AGENTS.md`, which remains
+development-agent guidance.
+
+Karen transcripts are stored in
+`data/runtime/agent_sessions/<session_id>/chat.jsonl`. Job-scoped copies are
+stored in `data/runtime/jobs/<job_id>/agent_chat.jsonl`. Structured workflow
+events are stored as `events.jsonl` in both the session directory and the
+affected job directory.
+
+Karen can explain the app and her role, inspect the current workflow state,
+suggest next steps, route users to the right page, and process safe draft/local
+workflow requests after explicit chat intent through the backend policy layer.
+The current Streamlit Agent Karen tab displays next actions as guidance rather
+than direct workflow buttons. She does not duplicate Job Intake or the detailed
+Jobs review forms.
+
+For a selected saved job with a valid `apply_url`, Karen's apply-oriented next
+step is application requirements discovery. She does not propose match analysis
+or match review actions in the current known-job workflow.
+
+Karen never marks requirements reviewed, approves packages, reviews fill plans,
+launches Browser Use, submits applications, automates login or captcha
+handling, messages recruiters, bypasses review gates, or invents candidate data
+from free-form chat. Final submission is always blocked.
 
 ### Application Package
 
@@ -331,11 +393,12 @@ Application tracking information:
 
 ### Jobs View
 
-The sidebar includes a `Jobs` page. It lists opportunities from the tracker and
+The top navigation includes a `Jobs` page. It lists opportunities from the tracker and
 opens a per-job workspace. The current version shows saved Job Intake data from
 `data/runtime/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
 summary, requirements, responsibilities, nice-to-have skills, and dynamic
-extracted details.
+extracted details. Karen remains available from the separate `Agent Karen` tab
+with the selected job context.
 
 ---
 
@@ -514,10 +577,11 @@ Development is organized in phases:
 
 1. project scaffold
 2. job intake and normalization
-3. deterministic match analysis (pending)
+3. deterministic match analysis (implemented)
 4. application requirements discovery and package generation (implemented)
 5. human review and approval
-6. expand LangGraph workflow orchestration
+6. expand LangGraph workflow orchestration (implemented for the current
+   human-gated workflow)
 7. optional web search
 8. optional assisted application
 

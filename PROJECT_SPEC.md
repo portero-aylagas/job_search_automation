@@ -26,7 +26,7 @@ The user needs a system that can:
 - store reusable experience units
 - ingest a job position from a URL with manual review fallback
 - normalize the job into a consistent schema
-- compare the job against the candidate profile
+- discover application-form requirements for the saved job
 - generate tailored application material
 - keep AI outputs reviewable and editable
 - track the status of each application
@@ -41,11 +41,12 @@ The system should assist, propose, and generate, but the user remains responsibl
 2. User provides a job URL.
 3. App extracts and normalizes job-offer information.
 4. User validates normalized job data.
-5. App analyzes candidate/job match.
-6. User validates analysis.
+5. App discovers application requirements from the valid apply URL.
+6. User validates discovered requirements.
 7. App generates application material.
 8. User reviews, edits, approves, rejects, or regenerates the package.
-9. App saves the final package and updates the tracker.
+9. User reviews a fill plan before Browser Use preparation.
+10. App saves the reviewed package and updates the tracker.
 
 ---
 
@@ -70,8 +71,8 @@ The workflow should not silently jump from one stage to another without validati
 
 Examples:
 
-- normalized job data must be validated before match analysis
-- match analysis must be validated before application generation
+- normalized job data must be validated before application requirements discovery
+- discovered application requirements must be reviewed before package generation
 - generated application material must be reviewed before being marked ready
 - application submission must not be automatic
 
@@ -110,11 +111,10 @@ claude_indeed_export
 The app stores structured candidate information:
 
 - professional summary
-- target roles
-- target locations
+- optional job-search preferences such as target roles and locations
 - skills
 - languages
-- salary expectation
+- optional salary expectation
 - constraints
 - documents used
 
@@ -207,9 +207,16 @@ cannot be verified cleanly.
 
 ### Match Analysis
 
-The app compares the normalized job against the candidate profile and experience units.
+Match analysis is not part of the current user-facing known-job apply workflow.
+Saved `analysis.json` files may remain as historical artifacts, and backend
+match-analysis code may remain for later removal or future discovery work, but
+normal navigation, Karen, requirements discovery, package generation, and
+tracker progression must not depend on it.
 
-The output includes:
+Future job-discovery or ranking scope may compare a normalized job against the
+candidate profile and experience units.
+
+Possible future output includes:
 
 - match score
 - matched skills
@@ -219,7 +226,8 @@ The output includes:
 - recommended positioning
 - application strategy
 
-The score should be deterministic where possible. AI may explain the score, but should not be the only source of scoring logic.
+The score should be deterministic where possible. AI may explain the score, but
+should not be the only source of scoring logic.
 
 ### Application Package Generation
 
@@ -360,12 +368,12 @@ Purpose: create, inspect, and edit structured candidate data.
 Sections:
 
 - profile summary
-- target roles
-- target locations
+- optional target roles
+- optional target locations
 - skills
 - languages
 - constraints
-- salary expectation
+- optional salary expectation
 - uploaded/source documents
 - experience units
 
@@ -485,6 +493,41 @@ Displays:
 - updated date
 - notes
 - application package path
+
+### Karen Runtime Assistant
+
+Purpose: provide a first-class runtime assistant that helps the user operate
+the workflow without becoming a development agent. `AGENTS.md` remains guidance
+for Codex and other development agents only.
+
+Placement:
+
+- top-level `Agent Karen` tab in the main Streamlit navigation
+- no persistent sidebar or cross-page chat surface
+- expanded Karen dashboard and chat in the Agent Karen tab
+
+Capabilities:
+
+- explain the app and Karen's role
+- inspect candidate profile status, selected job state, tracker state,
+  blockers, pending gates, artifacts, and next allowed actions
+- route the user to Candidate Profile, Job Intake, Jobs, Tracker, or the
+  Agent Karen tab
+- process safe draft/local workflow requests only after explicit user intent,
+  starting with requirements discovery for a selected job that has a valid
+  apply URL; the current Streamlit UI shows next actions as static guidance
+  rather than direct action buttons
+
+Boundaries:
+
+- detailed job intake review stays on Job Intake
+- match analysis is not proposed or reviewed by Karen in the current known-job
+  workflow
+- requirements review, package review, fill-plan review, and Browser Use launch
+  stay on Jobs
+- Karen cannot approve gates, launch Browser Use, submit applications, automate
+  login or captchas, message recruiters, bypass review gates, or invent
+  candidate data from free-form chat
 
 ---
 

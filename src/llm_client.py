@@ -82,6 +82,12 @@ APPLICATION_FIELD_MAPPING_PROFILE = LLMCallProfile(
     max_output_tokens=5000,
     timeout_seconds=60,
 )
+KAREN_INTENT_PROFILE = LLMCallProfile(
+    name="karen_intent",
+    temperature=0.0,
+    max_output_tokens=1200,
+    timeout_seconds=30,
+)
 FILE_UPLOAD_TIMEOUT_SECONDS = 60
 FILE_UPLOAD_MAX_RETRIES = 1
 FILE_UPLOAD_BACKOFF_SECONDS = (1.0,)

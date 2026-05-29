@@ -1,5 +1,6 @@
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.job_intake import create_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, RejectedApplyCandidate
@@ -10,6 +11,118 @@ def test_app_module_imports() -> None:
     module = importlib.import_module("app")
 
     assert module is not None
+
+
+def test_main_renders_pages_in_top_tabs_without_sidebar(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+
+    fake_streamlit = SimpleNamespace(
+        set_page_config=lambda **kwargs: rendered.append(("page_config", kwargs)),
+        session_state={},
+    )
+    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(app, "load_app_data", lambda _base_dir: (None, []))
+    monkeypatch.setattr(
+        app,
+        "render_page_tabs",
+        lambda _base_dir, records: rendered.append(("render_tabs", {"records": records})),
+    )
+
+    app.main()
+
+    assert ("render_tabs", {"records": []}) in rendered
+    assert not hasattr(app, "render_karen_sidebar")
+    assert not hasattr(app, "render_karen_sidebar_boxes")
+
+
+def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+
+    def fake_segmented_control(
+        label: str,
+        options: list[str],
+        *,
+        default: str,
+        key: str,
+        label_visibility: str,
+    ) -> str:
+        rendered.append(
+            (
+                "segmented_control",
+                {
+                    "label": label,
+                    "options": options,
+                    "default": default,
+                    "key": key,
+                    "label_visibility": label_visibility,
+                },
+            )
+        )
+        return "Jobs"
+
+    fake_streamlit = SimpleNamespace(
+        segmented_control=fake_segmented_control,
+        session_state={app.SELECTED_PAGE_STATE_KEY: "Candidate Profile"},
+    )
+    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(
+        app,
+        "render_candidate_profile_page",
+        lambda _base_dir: rendered.append(("page", "Candidate Profile")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_job_intake_page",
+        lambda _base_dir: rendered.append(("page", "Job Intake")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_jobs_page",
+        lambda _base_dir, _records: rendered.append(("page", "Jobs")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_tracker_page",
+        lambda _records: rendered.append(("page", "Tracker")),
+    )
+
+    app.render_page_with_karen(Path("."), "Candidate Profile", [])
+
+    assert ("page", "Jobs") in rendered
+    assert ("page", "Candidate Profile") not in rendered
+    assert ("page", "Job Intake") not in rendered
+    assert ("page", "Tracker") not in rendered
+    assert not any(item[0] == "karen" for item in rendered)
+    assert "Agent Karen" in app.PAGE_NAMES
+    assert (
+        "segmented_control",
+        {
+            "label": "Navigate",
+            "options": app.PAGE_NAMES,
+            "default": "Candidate Profile",
+            "key": app.SELECTED_PAGE_STATE_KEY,
+            "label_visibility": "collapsed",
+        },
+    ) in rendered
+    assert not any(item[0] == "columns" for item in rendered)
+    assert not any(item[0] == "tabs" for item in rendered)
+
+
+def test_render_selected_page_renders_agent_karen_tab(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        app,
+        "render_agent_page",
+        lambda _base_dir, _records: rendered.append(("page", "Agent Karen")),
+    )
+
+    app.render_selected_page(Path("."), "Agent Karen", [])
+
+    assert rendered == [("page", "Agent Karen")]
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:
@@ -29,12 +142,6 @@ def test_validate_candidate_profile_reports_missing_required_fields() -> None:
     assert "Postal code" in errors
     assert "Country of residence" in errors
     assert "Nationality" in errors
-    assert "Target roles" in errors
-    assert "Remote preference" in errors
-    assert "Career level" in errors
-    assert "Work authorization" in errors
-    assert "Salary min" in errors
-    assert "Salary max" in errors
 
 
 def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
@@ -76,6 +183,42 @@ def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
     errors = app.validate_candidate_profile(profile)
 
     assert "Salary max must be >= Salary min" in errors
+
+
+def test_validate_candidate_profile_allows_missing_optional_preferences() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+    profile.candidate_profile.candidate_preferences.availability = ""
+    profile.candidate_profile.candidate_preferences.salary_min_eur = None
+    profile.candidate_profile.candidate_preferences.salary_max_eur = None
+    profile.candidate_profile.candidate_preferences.work_authorization = ""
+
+    errors = app.validate_candidate_profile(profile)
+
+    assert errors == []
+
+
+def test_discovery_preference_validation_remains_separate() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+
+    errors = app.validate_candidate_discovery_preferences(profile)
+
+    assert "Target roles" in errors
+    assert "Target locations" in errors
+    assert "Remote preference" in errors
+    assert "Employment type" in errors
+    assert "Career level" in errors
 
 
 def test_get_latest_candidate_profile_uses_current_draft(monkeypatch) -> None:
@@ -478,6 +621,28 @@ def test_package_generation_blockers_require_mandatory_candidate_fields() -> Non
     )
 
     assert any(blocker.startswith("Complete the candidate profile") for blocker in blockers)
+
+
+def test_package_generation_blockers_ignore_missing_optional_preferences() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+    profile.candidate_profile.candidate_preferences.salary_min_eur = None
+    profile.candidate_profile.candidate_preferences.salary_max_eur = None
+    profile.candidate_profile.candidate_preferences.work_authorization = ""
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        profile,
+        job,
+        make_package_requirements(job),
+    )
+
+    assert blockers == []
 
 
 def test_package_generation_blockers_require_application_requirements() -> None:

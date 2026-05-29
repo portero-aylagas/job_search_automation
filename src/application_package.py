@@ -250,8 +250,6 @@ def build_missing_information_defaults(
         missing.append("Candidate nationality is missing.")
     if not profile_data.source_documents.cv.file_path.strip():
         missing.append("Candidate CV file is missing.")
-    if not profile_data.candidate_preferences.target_locations:
-        missing.append("Candidate target locations are missing.")
 
     if requirements is None:
         missing.append("Application requirements have not been discovered for this job.")
