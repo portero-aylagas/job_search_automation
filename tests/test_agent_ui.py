@@ -144,10 +144,18 @@ def test_karen_chat_window_uses_persistent_panel_container_keys(monkeypatch) -> 
     assert {"key": "karen_context_panel", "border": False} in containers
     assert {"key": "karen_chat_body", "border": False} in containers
     assert {"key": "karen_chat_input_bar", "border": False} in containers
-    assert all(
-        "height" not in kwargs
-        for kwargs in containers
-        if kwargs.get("key") == "karen_chat_body"
+    style_blocks = [
+        item[1]["value"]
+        for item in rendered
+        if item[0] == "markdown" and "<style>" in item[1]["value"]
+    ]
+    assert any(
+        "height: calc(100vh - 2rem)" in style
+        and ".st-key-karen_chat_body" in style
+        and "overflow-y: auto" in style
+        and ".st-key-karen_chat_input_bar" in style
+        and "margin-top: auto" in style
+        for style in style_blocks
     )
     assert ("transcript", {"session_id": "karen-session-001", "limit": None}) in rendered
     assert ("chat_input", {"label": "Ask Karen", "key": "karen_chat_karen-session-001"}) in rendered
