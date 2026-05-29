@@ -52,7 +52,6 @@ def render_karen_chat_window(
 ) -> None:
     """Render Karen as the persistent right-side chat window."""
 
-    _inject_karen_chat_layout_styles()
     context = _current_karen_context(
         base_dir,
         current_page=current_page,
@@ -293,61 +292,6 @@ def _render_list(label: str, items: list[str]) -> None:
         return
     for item in items:
         st.write(f"- {item}")
-
-
-def _inject_karen_chat_layout_styles() -> None:
-    st.markdown(
-        """
-<style>
-section[data-testid="stSidebar"] .st-key-karen_panel {
-    height: calc(100vh - 2rem);
-    max-height: calc(100vh - 2rem);
-    min-height: 20rem;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_panel > [data-testid="stElementContainer"],
-section[data-testid="stSidebar"] .st-key-karen_panel > [data-testid="stLayoutWrapper"] {
-    flex: 0 0 auto;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_panel > div,
-section[data-testid="stSidebar"] .st-key-karen_panel [data-testid="stVerticalBlock"] {
-    min-height: 0;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_panel > [data-testid="stLayoutWrapper"]:has(.st-key-karen_chat_body) {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow: hidden;
-    display: flex;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_chat_body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 0.25rem;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_panel > [data-testid="stLayoutWrapper"]:has(.st-key-karen_chat_input_bar) {
-    flex: 0 0 auto;
-    margin-top: auto;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_chat_input_bar {
-    flex: 0 0 auto;
-}
-
-section[data-testid="stSidebar"] .st-key-karen_chat_input_bar textarea {
-    max-height: 8rem;
-}
-</style>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 def _optional_container(**kwargs):

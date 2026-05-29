@@ -91,7 +91,7 @@ def test_per_job_agent_panel_uses_same_backend_scope(monkeypatch) -> None:
     ]
 
 
-def test_karen_chat_window_uses_persistent_panel_container_keys(monkeypatch) -> None:
+def test_karen_chat_window_does_not_inject_sidebar_layout_styles(monkeypatch) -> None:
     rendered: list[tuple[str, object]] = []
 
     def fake_container(**kwargs: object) -> FakeContext:
@@ -149,14 +149,7 @@ def test_karen_chat_window_uses_persistent_panel_container_keys(monkeypatch) -> 
         for item in rendered
         if item[0] == "markdown" and "<style>" in item[1]["value"]
     ]
-    assert any(
-        "height: calc(100vh - 2rem)" in style
-        and ".st-key-karen_chat_body" in style
-        and "overflow-y: auto" in style
-        and ".st-key-karen_chat_input_bar" in style
-        and "margin-top: auto" in style
-        for style in style_blocks
-    )
+    assert style_blocks == []
     assert ("transcript", {"session_id": "karen-session-001", "limit": None}) in rendered
     assert ("chat_input", {"label": "Ask Karen", "key": "karen_chat_karen-session-001"}) in rendered
     assert any(

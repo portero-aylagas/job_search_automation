@@ -8,10 +8,8 @@ import streamlit as st
 
 from src import candidate_profile_ui
 from src.agent_ui import (
-    SELECTED_JOB_STATE_KEY,
     SELECTED_PAGE_STATE_KEY,
     render_agent_page,
-    render_karen_chat_window,
 )
 from src.app_workflow import (
     apply_resolution_details,
@@ -77,7 +75,8 @@ __all__ = [
     "merge_supplemental_extracted_data",
     "render_candidate_profile_page",
     "render_agent_page",
-    "render_karen_chat_window",
+    "render_karen_sidebar",
+    "render_karen_sidebar_boxes",
     "render_jobs_page",
     "required_label",
     "resolved_apply_url",
@@ -193,19 +192,65 @@ def render_top_page_selector() -> str:
 
 
 def render_karen_sidebar(base_dir: Path) -> None:
-    """Render Karen's chat in the left sidebar."""
+    """Render Karen's static left sidebar placeholders."""
 
-    current_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
-    if current_page not in PAGE_NAMES:
-        current_page = "Candidate Profile"
-    selected_job_id = st.session_state.get(SELECTED_JOB_STATE_KEY)
-
+    _ = base_dir
     with st.sidebar:
-        render_karen_chat_window(
-            base_dir,
-            current_page=current_page,
-            selected_job_id=selected_job_id,
-        )
+        render_karen_sidebar_boxes()
+
+
+def render_karen_sidebar_boxes() -> None:
+    """Render the static Karen sidebar boxes with a flexible middle space."""
+
+    st.markdown(
+        """
+<style>
+section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu),
+section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu) > div,
+section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu) [data-testid="stSidebarContent"] {
+    overflow: hidden;
+}
+
+.karen-sidebar-static-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: calc(100dvh - 6rem);
+    max-height: calc(100dvh - 6rem);
+    min-height: 12rem;
+}
+
+.karen-sidebar-static-box {
+    border: 1px solid rgba(49, 51, 63, 0.2);
+    border-radius: 0.375rem;
+    box-sizing: border-box;
+    line-height: 1.5rem;
+    overflow: hidden;
+    padding: 0 0.625rem;
+}
+
+.karen-sidebar-static-box--one-line {
+    align-items: center;
+    display: flex;
+    flex: 0 0 1.5rem;
+}
+
+.karen-sidebar-static-box--middle {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+</style>
+<div class="karen-sidebar-static-menu" aria-label="Karen sidebar">
+    <div class="karen-sidebar-static-box karen-sidebar-static-box--one-line">Karen</div>
+    <div
+        class="karen-sidebar-static-box karen-sidebar-static-box--middle"
+        aria-label="Karen static empty space"
+    ></div>
+    <div class="karen-sidebar-static-box karen-sidebar-static-box--one-line">Ask Karen</div>
+</div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_selected_page(

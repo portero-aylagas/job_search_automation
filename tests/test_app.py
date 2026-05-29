@@ -13,7 +13,7 @@ def test_app_module_imports() -> None:
     assert module is not None
 
 
-def test_main_renders_karen_chat_in_sidebar_and_pages_in_tabs(monkeypatch) -> None:
+def test_main_renders_karen_sidebar_and_pages_in_tabs(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
 
@@ -113,13 +113,6 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
         "render_agent_page",
         lambda _base_dir, _records: rendered.append(("page", "Agent")),
     )
-    monkeypatch.setattr(
-        app,
-        "render_karen_chat_window",
-        lambda _base_dir, current_page, selected_job_id: rendered.append(
-            ("karen", {"page": current_page, "job_id": selected_job_id})
-        ),
-    )
 
     app.render_page_with_karen(Path("."), "Candidate Profile", [])
 
@@ -143,36 +136,50 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     assert not any(item[0] == "tabs" for item in rendered)
 
 
-def test_karen_sidebar_uses_selected_page_and_job_context(monkeypatch) -> None:
+def test_karen_sidebar_renders_dynamic_static_boxes(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
     fake_sidebar = FakeColumn("sidebar", rendered)
+
+    def fake_markdown(value: str, unsafe_allow_html: bool = False) -> None:
+        rendered.append(
+            (
+                "markdown",
+                {"value": value, "unsafe_allow_html": unsafe_allow_html},
+            )
+        )
+
     fake_streamlit = SimpleNamespace(
-        session_state={
-            app.SELECTED_PAGE_STATE_KEY: "Jobs",
-            app.SELECTED_JOB_STATE_KEY: "job-001",
-        },
+        markdown=fake_markdown,
+        session_state={app.SELECTED_PAGE_STATE_KEY: "Jobs"},
         sidebar=fake_sidebar,
     )
     monkeypatch.setattr(app, "st", fake_streamlit)
-    monkeypatch.setattr(
-        app,
-        "render_karen_chat_window",
-        lambda _base_dir, current_page, selected_job_id: rendered.append(
-            (
-                "karen_chat",
-                {"page": current_page, "selected_job_id": selected_job_id},
-            )
-        ),
-    )
 
     app.render_karen_sidebar(Path("."))
 
     assert ("enter", "sidebar") in rendered
-    assert (
-        "karen_chat",
-        {"page": "Jobs", "selected_job_id": "job-001"},
-    ) in rendered
+    assert ("exit", "sidebar") in rendered
+
+    sidebar_markup = next(item[1]["value"] for item in rendered if item[0] == "markdown")
+    sidebar_html = sidebar_markup.split("</style>", maxsplit=1)[1]
+    assert 'section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu)' in sidebar_markup
+    assert '[data-testid="stSidebarContent"]' in sidebar_markup
+    assert "overflow: hidden;" in sidebar_markup
+    assert "height: calc(100dvh - 6rem);" in sidebar_markup
+    assert "max-height: calc(100dvh - 6rem);" in sidebar_markup
+    assert "min-height: 12rem;" in sidebar_markup
+    assert "flex: 0 0 1.5rem;" in sidebar_markup
+    assert "flex: 1 1 auto;" in sidebar_markup
+    assert "min-height: 0;" in sidebar_markup
+    assert "height: 15rem;" not in sidebar_markup
+    assert "Karen</div>" in sidebar_html
+    assert "Ask Karen</div>" in sidebar_html
+    assert sidebar_html.count("karen-sidebar-static-box ") == 3
+    assert "karen-sidebar-static-box--middle" in sidebar_html
+    assert "chat_input" not in sidebar_markup
+    assert "karen_chat_body" not in sidebar_markup
+    assert ("markdown", {"value": sidebar_markup, "unsafe_allow_html": True}) in rendered
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:
