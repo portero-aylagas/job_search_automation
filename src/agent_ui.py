@@ -16,6 +16,7 @@ from src.job_workspace_ui import SELECTED_JOB_STATE_KEY
 from src.schemas import AgentWorkflowState, JobListing, TrackerRecord
 
 AGENT_PAGE_NAME = "Agent Karen"
+KAREN_IMAGE_PATH = Path(__file__).resolve().parent.parent / "assets" / "karen.png"
 KAREN_SESSION_STATE_KEY = "karen_session_id"
 SELECTED_PAGE_STATE_KEY = "selected_page"
 CHAT_BLOCKED_ACTIONS = {
@@ -30,7 +31,7 @@ CHAT_BLOCKED_ACTIONS = {
 def render_agent_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> None:
     """Render Karen's top-level Agent tab with chat behavior."""
 
-    st.title(AGENT_PAGE_NAME)
+    _render_karen_header()
     selected_job_id = _render_job_selector(tracker_records)
     context = _current_karen_context(
         base_dir,
@@ -163,33 +164,19 @@ def render_agent_status(state: AgentWorkflowState, *, compact: bool = False) -> 
 
 
 def render_agent_action_buttons(base_dir: Path, state: AgentWorkflowState) -> None:
-    """Render explicit workflow buttons and route gated reviews to Jobs."""
+    """Render next workflow actions as static guidance."""
 
     if not state.next_allowed_actions:
         return
 
+    _ = base_dir
     st.markdown("**Next Actions**")
     for action in state.next_allowed_actions:
         label = ACTION_LABELS.get(action, action.replace("_", " ").title())
         if action in CHAT_BLOCKED_ACTIONS:
             st.caption(f"{label}: open the Jobs page review panel.")
-            if st.button(
-                "Open Jobs",
-                key=f"karen_route_jobs_{state.session_id}_{action}",
-            ):
-                _set_session_value(SELECTED_PAGE_STATE_KEY, "Jobs")
-                _rerun()
             continue
-
-        button_type = "primary" if action == "continue" else "secondary"
-        if st.button(label, key=f"karen_action_{state.session_id}_{action}", type=button_type):
-            run_agent_workflow(
-                base_dir,
-                session_id=state.session_id,
-                selected_job_id=state.selected_job_id,
-                action=action,
-            )
-            _rerun()
+        st.caption(label)
 
 
 def render_agent_chat(base_dir: Path, state: AgentWorkflowState) -> None:
@@ -278,11 +265,23 @@ def _render_karen_context_summary(context: Any) -> None:
 
 def _render_chat_message(role: str, content: str) -> None:
     if hasattr(st, "chat_message"):
-        with st.chat_message(role):
+        avatar = (
+            str(KAREN_IMAGE_PATH)
+            if role == "assistant" and KAREN_IMAGE_PATH.exists()
+            else None
+        )
+        chat_message_kwargs = {"avatar": avatar} if avatar else {}
+        with st.chat_message(role, **chat_message_kwargs):
             st.write(content)
         return
     st.markdown(f"**{role.title()}**")
     st.write(content)
+
+
+def _render_karen_header() -> None:
+    if KAREN_IMAGE_PATH.exists() and hasattr(st, "image"):
+        st.image(str(KAREN_IMAGE_PATH), width=128)
+    st.title(AGENT_PAGE_NAME)
 
 
 def _normalize_route(route_hint: str) -> str:

@@ -62,6 +62,7 @@ def test_agent_page_renders_dashboard_and_chat_for_selected_job(monkeypatch) -> 
     context = make_context(selected_job_id=job.id)
 
     fake_streamlit = SimpleNamespace(
+        image=lambda image, width: rendered.append(("image", {"image": image, "width": width})),
         title=lambda value: rendered.append(("title", value)),
         selectbox=lambda _label, options, index, format_func: options[index],
         info=lambda value: rendered.append(("info", value)),
@@ -90,6 +91,7 @@ def test_agent_page_renders_dashboard_and_chat_for_selected_job(monkeypatch) -> 
 
     agent_ui.render_agent_page(Path("."), [make_tracker_record(job)])
 
+    assert ("image", {"image": str(agent_ui.KAREN_IMAGE_PATH), "width": 128}) in rendered
     assert ("title", agent_ui.AGENT_PAGE_NAME) in rendered
     assert ("dashboard", {"job_id": job.id}) in rendered
     assert ("chat", {"page": agent_ui.AGENT_PAGE_NAME, "job_id": job.id}) in rendered
@@ -179,3 +181,74 @@ def test_agent_status_renders_gate_blockers_and_timeline(monkeypatch) -> None:
     assert ("warning", "Workflow blockers") in rendered
     assert ("write", "- Review profile.") in rendered
     assert ("write", "- Application Requirements: ready") in rendered
+
+
+def test_assistant_chat_message_uses_karen_avatar(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+
+    def fake_chat_message(role: str, **kwargs: object) -> FakeContext:
+        rendered.append(("chat_message", {"role": role, "kwargs": kwargs}))
+        return FakeContext()
+
+    fake_streamlit = SimpleNamespace(
+        chat_message=fake_chat_message,
+        write=lambda value: rendered.append(("write", value)),
+    )
+    monkeypatch.setattr(agent_ui, "st", fake_streamlit)
+
+    agent_ui._render_chat_message("assistant", "Hello from Karen.")
+
+    assert (
+        "chat_message",
+        {"role": "assistant", "kwargs": {"avatar": str(agent_ui.KAREN_IMAGE_PATH)}},
+    ) in rendered
+    assert ("write", "Hello from Karen.") in rendered
+
+
+def test_gated_next_action_renders_guidance_without_open_jobs_button(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+    fake_streamlit = SimpleNamespace(
+        markdown=lambda value: rendered.append(("markdown", value)),
+        caption=lambda value: rendered.append(("caption", value)),
+        button=lambda *args, **kwargs: rendered.append(
+            ("button", {"args": args, "kwargs": kwargs})
+        ),
+    )
+    monkeypatch.setattr(agent_ui, "st", fake_streamlit)
+    state = AgentWorkflowState(
+        session_id="agent-ui",
+        selected_job_id="job-001",
+        next_allowed_actions=["review_requirements"],
+    )
+
+    agent_ui.render_agent_action_buttons(Path("."), state)
+
+    assert ("markdown", "**Next Actions**") in rendered
+    assert (
+        "caption",
+        "Approve requirements review: open the Jobs page review panel.",
+    ) in rendered
+    assert not any(item[0] == "button" for item in rendered)
+
+
+def test_executable_next_action_renders_without_button(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+    fake_streamlit = SimpleNamespace(
+        markdown=lambda value: rendered.append(("markdown", value)),
+        caption=lambda value: rendered.append(("caption", value)),
+        button=lambda *args, **kwargs: rendered.append(
+            ("button", {"args": args, "kwargs": kwargs})
+        ),
+    )
+    monkeypatch.setattr(agent_ui, "st", fake_streamlit)
+    state = AgentWorkflowState(
+        session_id="agent-ui",
+        selected_job_id="job-001",
+        next_allowed_actions=["continue"],
+    )
+
+    agent_ui.render_agent_action_buttons(Path("."), state)
+
+    assert ("markdown", "**Next Actions**") in rendered
+    assert ("caption", "Continue workflow") in rendered
+    assert not any(item[0] == "button" for item in rendered)

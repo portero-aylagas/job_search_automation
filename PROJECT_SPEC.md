@@ -502,18 +502,21 @@ for Codex and other development agents only.
 
 Placement:
 
-- persistent right-side chat window on Candidate Profile, Job Intake, Jobs,
-  Tracker, and Agent
-- expanded Karen dashboard on the Agent page
+- top-level `Agent Karen` tab in the main Streamlit navigation
+- no persistent sidebar or cross-page chat surface
+- expanded Karen dashboard and chat in the Agent Karen tab
 
 Capabilities:
 
 - explain the app and Karen's role
 - inspect candidate profile status, selected job state, tracker state,
   blockers, pending gates, artifacts, and next allowed actions
-- route the user to Candidate Profile, Job Intake, Jobs, Tracker, or Agent
-- run safe draft/local workflow steps only after explicit user intent, starting
-  with requirements discovery for a selected job that has a valid apply URL
+- route the user to Candidate Profile, Job Intake, Jobs, Tracker, or the
+  Agent Karen tab
+- process safe draft/local workflow requests only after explicit user intent,
+  starting with requirements discovery for a selected job that has a valid
+  apply URL; the current Streamlit UI shows next actions as static guidance
+  rather than direct action buttons
 
 Boundaries:
 

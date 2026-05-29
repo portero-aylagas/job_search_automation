@@ -43,10 +43,11 @@ Do not start new feature phases with web search, browser automation, or external
   `analysis.json` files are ignored by normal navigation, Karen, package
   generation, and tracker progression.
 - Karen is implemented as the runtime product assistant for the current
-  human-gated workflow. She appears as a persistent right-side chat window,
-  exposes an expanded Agent-page dashboard, persists session transcripts and
-  job-scoped copies, writes structured event logs, and stops at requirements,
-  package, fill-plan, and Browser Use launch gates.
+  human-gated workflow. She appears in the top-level `Agent Karen` tab with a
+  portrait asset, chat transcript, selected-job workflow status, static
+  next-action guidance, persisted session transcripts, job-scoped copies, and
+  structured event logs. She stops at requirements, package, fill-plan, and
+  Browser Use launch gates.
 
 ### Not Delivered Yet
 
@@ -107,7 +108,7 @@ tests/
 - sample job listing
 - sample tracker records
 - basic Streamlit app
-- sidebar navigation
+- app navigation
 - Candidate Profile page
 - Tracker page
 
