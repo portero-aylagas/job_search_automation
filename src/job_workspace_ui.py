@@ -7,7 +7,6 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.agent_ui import SELECTED_JOB_STATE_KEY
 from src.app_workflow import (
     get_application_package_blockers,
     load_application_page_snapshot,
@@ -77,6 +76,8 @@ from src.ui_components import (
     render_optional_ai_details,
 )
 
+SELECTED_JOB_STATE_KEY = "selected_job_id"
+
 
 def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> None:
     """Render saved jobs and their per-job workflow panels."""
@@ -118,7 +119,7 @@ def job_option_label(record: TrackerRecord) -> str:
 
 
 def render_jobs_page_selector(sorted_records: list[TrackerRecord]) -> TrackerRecord:
-    """Render the job selector and store the selected job for Karen."""
+    """Render the job selector and store the selected job in session state."""
 
     selected_job_id = _session_state_get(SELECTED_JOB_STATE_KEY)
     selected_index = next(

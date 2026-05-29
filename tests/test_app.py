@@ -13,7 +13,7 @@ def test_app_module_imports() -> None:
     assert module is not None
 
 
-def test_main_renders_karen_sidebar_and_pages_in_tabs(monkeypatch) -> None:
+def test_main_renders_pages_in_top_tabs_without_sidebar(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
 
@@ -25,36 +25,15 @@ def test_main_renders_karen_sidebar_and_pages_in_tabs(monkeypatch) -> None:
     monkeypatch.setattr(app, "load_app_data", lambda _base_dir: (None, []))
     monkeypatch.setattr(
         app,
-        "render_karen_sidebar",
-        lambda _base_dir: rendered.append(("karen_sidebar", None)),
-    )
-    monkeypatch.setattr(
-        app,
         "render_page_tabs",
         lambda _base_dir, records: rendered.append(("render_tabs", {"records": records})),
     )
 
     app.main()
 
-    assert ("karen_sidebar", None) in rendered
     assert ("render_tabs", {"records": []}) in rendered
-    assert not any(item[0] == "sidebar_title" for item in rendered)
-    assert not any(item[0] == "sidebar_markdown" for item in rendered)
-    assert not any(item[0] == "sidebar_text" for item in rendered)
-
-
-class FakeColumn:
-    def __init__(self, label: str, rendered: list[tuple[str, object]]) -> None:
-        self.label = label
-        self.rendered = rendered
-
-    def __enter__(self):
-        self.rendered.append(("enter", self.label))
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.rendered.append(("exit", self.label))
-        return None
+    assert not hasattr(app, "render_karen_sidebar")
+    assert not hasattr(app, "render_karen_sidebar_boxes")
 
 
 def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
@@ -108,11 +87,6 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
         "render_tracker_page",
         lambda _records: rendered.append(("page", "Tracker")),
     )
-    monkeypatch.setattr(
-        app,
-        "render_agent_page",
-        lambda _base_dir, _records: rendered.append(("page", "Agent")),
-    )
 
     app.render_page_with_karen(Path("."), "Candidate Profile", [])
 
@@ -120,8 +94,8 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     assert ("page", "Candidate Profile") not in rendered
     assert ("page", "Job Intake") not in rendered
     assert ("page", "Tracker") not in rendered
-    assert ("page", "Agent") not in rendered
     assert not any(item[0] == "karen" for item in rendered)
+    assert "Agent" not in app.PAGE_NAMES
     assert (
         "segmented_control",
         {
@@ -136,50 +110,19 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     assert not any(item[0] == "tabs" for item in rendered)
 
 
-def test_karen_sidebar_renders_dynamic_static_boxes(monkeypatch) -> None:
+def test_render_selected_page_ignores_removed_agent_page(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
-    fake_sidebar = FakeColumn("sidebar", rendered)
 
-    def fake_markdown(value: str, unsafe_allow_html: bool = False) -> None:
-        rendered.append(
-            (
-                "markdown",
-                {"value": value, "unsafe_allow_html": unsafe_allow_html},
-            )
-        )
-
-    fake_streamlit = SimpleNamespace(
-        markdown=fake_markdown,
-        session_state={app.SELECTED_PAGE_STATE_KEY: "Jobs"},
-        sidebar=fake_sidebar,
+    monkeypatch.setattr(
+        app,
+        "render_tracker_page",
+        lambda _records: rendered.append(("page", "Tracker")),
     )
-    monkeypatch.setattr(app, "st", fake_streamlit)
 
-    app.render_karen_sidebar(Path("."))
+    app.render_selected_page(Path("."), "Agent", [])
 
-    assert ("enter", "sidebar") in rendered
-    assert ("exit", "sidebar") in rendered
-
-    sidebar_markup = next(item[1]["value"] for item in rendered if item[0] == "markdown")
-    sidebar_html = sidebar_markup.split("</style>", maxsplit=1)[1]
-    assert 'section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu)' in sidebar_markup
-    assert '[data-testid="stSidebarContent"]' in sidebar_markup
-    assert "overflow: hidden;" in sidebar_markup
-    assert "height: calc(100dvh - 6rem);" in sidebar_markup
-    assert "max-height: calc(100dvh - 6rem);" in sidebar_markup
-    assert "min-height: 12rem;" in sidebar_markup
-    assert "flex: 0 0 1.5rem;" in sidebar_markup
-    assert "flex: 1 1 auto;" in sidebar_markup
-    assert "min-height: 0;" in sidebar_markup
-    assert "height: 15rem;" not in sidebar_markup
-    assert "Karen</div>" in sidebar_html
-    assert "Ask Karen</div>" in sidebar_html
-    assert sidebar_html.count("karen-sidebar-static-box ") == 3
-    assert "karen-sidebar-static-box--middle" in sidebar_html
-    assert "chat_input" not in sidebar_markup
-    assert "karen_chat_body" not in sidebar_markup
-    assert ("markdown", {"value": sidebar_markup, "unsafe_allow_html": True}) in rendered
+    assert rendered == [("page", "Tracker")]
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:

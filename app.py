@@ -7,10 +7,6 @@ from pathlib import Path
 import streamlit as st
 
 from src import candidate_profile_ui
-from src.agent_ui import (
-    SELECTED_PAGE_STATE_KEY,
-    render_agent_page,
-)
 from src.app_workflow import (
     apply_resolution_details,
     apply_url_review_messages,
@@ -74,9 +70,6 @@ __all__ = [
     "mark_requirements_reviewed",
     "merge_supplemental_extracted_data",
     "render_candidate_profile_page",
-    "render_agent_page",
-    "render_karen_sidebar",
-    "render_karen_sidebar_boxes",
     "render_jobs_page",
     "required_label",
     "resolved_apply_url",
@@ -90,7 +83,8 @@ __all__ = [
 ]
 
 BASE_DIR = Path(__file__).resolve().parent
-PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent"]
+SELECTED_PAGE_STATE_KEY = "selected_page"
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker"]
 
 
 def inject_app_shell_styles() -> None:
@@ -135,8 +129,6 @@ def main() -> None:
 
     st.set_page_config(page_title="Job Search Automation", layout="wide")
     _, tracker_records = load_app_data(BASE_DIR)
-
-    render_karen_sidebar(BASE_DIR)
 
     render_page_tabs(BASE_DIR, tracker_records)
 
@@ -191,68 +183,6 @@ def render_top_page_selector() -> str:
     )
 
 
-def render_karen_sidebar(base_dir: Path) -> None:
-    """Render Karen's static left sidebar placeholders."""
-
-    _ = base_dir
-    with st.sidebar:
-        render_karen_sidebar_boxes()
-
-
-def render_karen_sidebar_boxes() -> None:
-    """Render the static Karen sidebar boxes with a flexible middle space."""
-
-    st.markdown(
-        """
-<style>
-section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu),
-section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu) > div,
-section[data-testid="stSidebar"]:has(.karen-sidebar-static-menu) [data-testid="stSidebarContent"] {
-    overflow: hidden;
-}
-
-.karen-sidebar-static-menu {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    height: calc(100dvh - 6rem);
-    max-height: calc(100dvh - 6rem);
-    min-height: 12rem;
-}
-
-.karen-sidebar-static-box {
-    border: 1px solid rgba(49, 51, 63, 0.2);
-    border-radius: 0.375rem;
-    box-sizing: border-box;
-    line-height: 1.5rem;
-    overflow: hidden;
-    padding: 0 0.625rem;
-}
-
-.karen-sidebar-static-box--one-line {
-    align-items: center;
-    display: flex;
-    flex: 0 0 1.5rem;
-}
-
-.karen-sidebar-static-box--middle {
-    flex: 1 1 auto;
-    min-height: 0;
-}
-</style>
-<div class="karen-sidebar-static-menu" aria-label="Karen sidebar">
-    <div class="karen-sidebar-static-box karen-sidebar-static-box--one-line">Karen</div>
-    <div
-        class="karen-sidebar-static-box karen-sidebar-static-box--middle"
-        aria-label="Karen static empty space"
-    ></div>
-    <div class="karen-sidebar-static-box karen-sidebar-static-box--one-line">Ask Karen</div>
-</div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
 def render_selected_page(
     base_dir: Path,
     page: str,
@@ -264,8 +194,6 @@ def render_selected_page(
         render_candidate_profile_page(base_dir)
     elif page == "Job Intake":
         render_job_intake_page(base_dir)
-    elif page == "Agent":
-        render_agent_page(base_dir, tracker_records)
     elif page == "Jobs":
         render_jobs_page(base_dir, tracker_records)
     else:
