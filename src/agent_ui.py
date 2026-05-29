@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from pathlib import Path
 
 import streamlit as st
@@ -51,20 +52,32 @@ def render_karen_chat_window(
 ) -> None:
     """Render Karen as the persistent right-side chat window."""
 
-    st.subheader("Karen")
     context = _current_karen_context(
         base_dir,
         current_page=current_page,
         selected_job_id=selected_job_id,
     )
-    _render_karen_context_summary(context)
-    render_karen_transcript(base_dir, context.session_id, limit=8)
+    with _optional_container(key="karen_panel", border=True):
+        st.subheader("Karen")
+        with _optional_container(key="karen_context_panel", border=False):
+            _render_karen_context_summary(context)
 
-    if not hasattr(st, "chat_input"):
-        return
+        with _optional_container(key="karen_chat_body", border=False):
+            st.markdown(
+                '<span class="karen-chat-body-anchor"></span>',
+                unsafe_allow_html=True,
+            )
+            render_karen_transcript(base_dir, context.session_id, limit=None)
 
-    st.markdown('<span class="karen-chat-input-anchor"></span>', unsafe_allow_html=True)
-    user_message = st.chat_input("Ask Karen", key=f"karen_chat_{context.session_id}")
+        if not hasattr(st, "chat_input"):
+            return
+
+        with _optional_container(key="karen_chat_input_bar", border=False):
+            st.markdown(
+                '<span class="karen-chat-input-anchor"></span>',
+                unsafe_allow_html=True,
+            )
+            user_message = st.chat_input("Ask Karen", key=f"karen_chat_{context.session_id}")
     if not user_message:
         return
 
@@ -188,10 +201,14 @@ def render_agent_chat(base_dir: Path, state: AgentWorkflowState) -> None:
     render_karen_transcript(base_dir, state.session_id, limit=20)
 
 
-def render_karen_transcript(base_dir: Path, session_id: str, *, limit: int) -> None:
+def render_karen_transcript(base_dir: Path, session_id: str, *, limit: int | None) -> None:
     """Render persisted Karen transcript messages."""
 
-    for message in load_agent_chat_messages(base_dir, session_id)[-limit:]:
+    messages = load_agent_chat_messages(base_dir, session_id)
+    if limit is not None:
+        messages = messages[-limit:]
+
+    for message in messages:
         _render_chat_message(message.role, message.content)
 
 
@@ -275,6 +292,13 @@ def _render_list(label: str, items: list[str]) -> None:
         return
     for item in items:
         st.write(f"- {item}")
+
+
+def _optional_container(**kwargs):
+    container = getattr(st, "container", None)
+    if container is None:
+        return nullcontext()
+    return container(**kwargs)
 
 
 def _get_session_value(key: str, default: object | None = None) -> object | None:

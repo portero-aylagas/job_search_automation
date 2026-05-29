@@ -13,6 +13,36 @@ def test_app_module_imports() -> None:
     assert module is not None
 
 
+def test_main_renders_karen_chat_in_sidebar_and_pages_in_tabs(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+
+    fake_streamlit = SimpleNamespace(
+        set_page_config=lambda **kwargs: rendered.append(("page_config", kwargs)),
+        session_state={},
+    )
+    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(app, "load_app_data", lambda _base_dir: (None, []))
+    monkeypatch.setattr(
+        app,
+        "render_karen_sidebar",
+        lambda _base_dir: rendered.append(("karen_sidebar", None)),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_page_tabs",
+        lambda _base_dir, records: rendered.append(("render_tabs", {"records": records})),
+    )
+
+    app.main()
+
+    assert ("karen_sidebar", None) in rendered
+    assert ("render_tabs", {"records": []}) in rendered
+    assert not any(item[0] == "sidebar_title" for item in rendered)
+    assert not any(item[0] == "sidebar_markdown" for item in rendered)
+    assert not any(item[0] == "sidebar_text" for item in rendered)
+
+
 class FakeColumn:
     def __init__(self, label: str, rendered: list[tuple[str, object]]) -> None:
         self.label = label
@@ -27,25 +57,35 @@ class FakeColumn:
         return None
 
 
-def test_main_pages_render_with_persistent_karen_column(monkeypatch) -> None:
+def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
 
-    fake_streamlit = SimpleNamespace(
-        columns=lambda _sizes, gap: [
-            FakeColumn("main", rendered),
-            FakeColumn("karen", rendered),
-        ],
-        markdown=lambda value, unsafe_allow_html=False: rendered.append(
+    def fake_segmented_control(
+        label: str,
+        options: list[str],
+        *,
+        default: str,
+        key: str,
+        label_visibility: str,
+    ) -> str:
+        rendered.append(
             (
-                "markdown",
+                "segmented_control",
                 {
-                    "value": value,
-                    "unsafe_allow_html": unsafe_allow_html,
+                    "label": label,
+                    "options": options,
+                    "default": default,
+                    "key": key,
+                    "label_visibility": label_visibility,
                 },
             )
-        ),
-        session_state={"selected_job_id": "job-001"},
+        )
+        return "Jobs"
+
+    fake_streamlit = SimpleNamespace(
+        segmented_control=fake_segmented_control,
+        session_state={app.SELECTED_PAGE_STATE_KEY: "Candidate Profile"},
     )
     monkeypatch.setattr(app, "st", fake_streamlit)
     monkeypatch.setattr(
@@ -81,20 +121,58 @@ def test_main_pages_render_with_persistent_karen_column(monkeypatch) -> None:
         ),
     )
 
-    for page in app.PAGE_NAMES:
-        rendered.clear()
-        app.render_page_with_karen(Path("."), page, [])
+    app.render_page_with_karen(Path("."), "Candidate Profile", [])
 
-        assert ("page", page) in rendered
-        assert ("karen", {"page": page, "job_id": "job-001"}) in rendered
-        assert any(
-            item[0] == "markdown" and "karen-app-shell-anchor" in item[1]["value"]
-            for item in rendered
-        )
-        assert any(
-            item[0] == "markdown" and "stChatInput" in item[1]["value"]
-            for item in rendered
-        )
+    assert ("page", "Jobs") in rendered
+    assert ("page", "Candidate Profile") not in rendered
+    assert ("page", "Job Intake") not in rendered
+    assert ("page", "Tracker") not in rendered
+    assert ("page", "Agent") not in rendered
+    assert not any(item[0] == "karen" for item in rendered)
+    assert (
+        "segmented_control",
+        {
+            "label": "Navigate",
+            "options": app.PAGE_NAMES,
+            "default": "Candidate Profile",
+            "key": app.SELECTED_PAGE_STATE_KEY,
+            "label_visibility": "collapsed",
+        },
+    ) in rendered
+    assert not any(item[0] == "columns" for item in rendered)
+    assert not any(item[0] == "tabs" for item in rendered)
+
+
+def test_karen_sidebar_uses_selected_page_and_job_context(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+    fake_sidebar = FakeColumn("sidebar", rendered)
+    fake_streamlit = SimpleNamespace(
+        session_state={
+            app.SELECTED_PAGE_STATE_KEY: "Jobs",
+            app.SELECTED_JOB_STATE_KEY: "job-001",
+        },
+        sidebar=fake_sidebar,
+    )
+    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(
+        app,
+        "render_karen_chat_window",
+        lambda _base_dir, current_page, selected_job_id: rendered.append(
+            (
+                "karen_chat",
+                {"page": current_page, "selected_job_id": selected_job_id},
+            )
+        ),
+    )
+
+    app.render_karen_sidebar(Path("."))
+
+    assert ("enter", "sidebar") in rendered
+    assert (
+        "karen_chat",
+        {"page": "Jobs", "selected_job_id": "job-001"},
+    ) in rendered
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:

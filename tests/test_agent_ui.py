@@ -91,6 +91,76 @@ def test_per_job_agent_panel_uses_same_backend_scope(monkeypatch) -> None:
     ]
 
 
+def test_karen_chat_window_uses_persistent_panel_container_keys(monkeypatch) -> None:
+    rendered: list[tuple[str, object]] = []
+
+    def fake_container(**kwargs: object) -> FakeContext:
+        rendered.append(("container", kwargs))
+        return FakeContext()
+
+    def fake_chat_input(label: str, key: str) -> None:
+        rendered.append(("chat_input", {"label": label, "key": key}))
+        return None
+
+    fake_streamlit = SimpleNamespace(
+        container=fake_container,
+        subheader=lambda value: rendered.append(("subheader", value)),
+        markdown=lambda value, unsafe_allow_html=False: rendered.append(
+            (
+                "markdown",
+                {"value": value, "unsafe_allow_html": unsafe_allow_html},
+            )
+        ),
+        chat_input=fake_chat_input,
+    )
+    context = SimpleNamespace(session_id="karen-session-001")
+    monkeypatch.setattr(agent_ui, "st", fake_streamlit)
+    monkeypatch.setattr(
+        agent_ui,
+        "_current_karen_context",
+        lambda _base_dir, current_page, selected_job_id: context,
+    )
+    monkeypatch.setattr(
+        agent_ui,
+        "_render_karen_context_summary",
+        lambda _context: rendered.append(("context", context.session_id)),
+    )
+    monkeypatch.setattr(
+        agent_ui,
+        "render_karen_transcript",
+        lambda _base_dir, session_id, limit: rendered.append(
+            ("transcript", {"session_id": session_id, "limit": limit})
+        ),
+    )
+
+    agent_ui.render_karen_chat_window(
+        Path("."),
+        current_page="Jobs",
+        selected_job_id="job-001",
+    )
+
+    containers = [item[1] for item in rendered if item[0] == "container"]
+    assert {"key": "karen_panel", "border": True} in containers
+    assert {"key": "karen_context_panel", "border": False} in containers
+    assert {"key": "karen_chat_body", "border": False} in containers
+    assert {"key": "karen_chat_input_bar", "border": False} in containers
+    assert all(
+        "height" not in kwargs
+        for kwargs in containers
+        if kwargs.get("key") == "karen_chat_body"
+    )
+    assert ("transcript", {"session_id": "karen-session-001", "limit": None}) in rendered
+    assert ("chat_input", {"label": "Ask Karen", "key": "karen_chat_karen-session-001"}) in rendered
+    assert any(
+        item[0] == "markdown" and "karen-chat-body-anchor" in item[1]["value"]
+        for item in rendered
+    )
+    assert any(
+        item[0] == "markdown" and "karen-chat-input-anchor" in item[1]["value"]
+        for item in rendered
+    )
+
+
 def test_agent_status_renders_gate_blockers_and_timeline(monkeypatch) -> None:
     rendered: list[tuple[str, object]] = []
     fake_streamlit = SimpleNamespace(

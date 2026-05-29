@@ -95,53 +95,7 @@ PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent"]
 
 
 def inject_app_shell_styles() -> None:
-    """Apply viewport layout styles for the main page and Karen chat."""
-
-    if not hasattr(st, "markdown"):
-        return
-
-    st.markdown(
-        """
-<style>
-div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
-  > div[data-testid="stHorizontalBlock"] {
-    align-items: stretch;
-}
-
-div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
-  > div[data-testid="stHorizontalBlock"]
-  > div:nth-of-type(1)
-  > div[data-testid="stVerticalBlock"] {
-    max-height: calc(100vh - 7rem);
-    overflow-y: auto;
-    padding-right: 0.75rem;
-}
-
-div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
-  > div[data-testid="stHorizontalBlock"]
-  > div:nth-of-type(2)
-  > div[data-testid="stVerticalBlock"] {
-    position: sticky;
-    top: 4.75rem;
-    max-height: calc(100vh - 6rem);
-    overflow-y: auto;
-    padding-bottom: 1rem;
-}
-
-div[data-testid="stVerticalBlock"]:has(.karen-chat-input-anchor)
-  div[data-testid="stChatInput"] {
-    position: sticky;
-    bottom: 0;
-    z-index: 20;
-    background: var(--background-color);
-    border-top: 1px solid rgba(49, 51, 63, 0.18);
-    padding-top: 0.5rem;
-}
-</style>
-<span class="karen-app-shell-anchor"></span>
-""",
-        unsafe_allow_html=True,
-    )
+    """Keep compatibility for older callers that import the style hook."""
 
 
 def get_candidate_profile_draft(base_dir: Path) -> dict:
@@ -183,22 +137,9 @@ def main() -> None:
     st.set_page_config(page_title="Job Search Automation", layout="wide")
     _, tracker_records = load_app_data(BASE_DIR)
 
-    st.sidebar.title("Job Search Automation")
-    if SELECTED_PAGE_STATE_KEY not in st.session_state:
-        st.session_state[SELECTED_PAGE_STATE_KEY] = "Candidate Profile"
-    selected_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
-    if selected_page not in PAGE_NAMES:
-        selected_page = "Candidate Profile"
-        st.session_state[SELECTED_PAGE_STATE_KEY] = selected_page
-    selected_index = PAGE_NAMES.index(selected_page)
-    page = st.sidebar.radio(
-        "Navigate",
-        PAGE_NAMES,
-        index=selected_index,
-        key=SELECTED_PAGE_STATE_KEY,
-    )
+    render_karen_sidebar(BASE_DIR)
 
-    render_page_with_karen(BASE_DIR, page, tracker_records)
+    render_page_tabs(BASE_DIR, tracker_records)
 
 
 def render_page_with_karen(
@@ -206,30 +147,84 @@ def render_page_with_karen(
     page: str,
     tracker_records: list[TrackerRecord],
 ) -> None:
-    """Render one main app page with Karen in the persistent right column."""
+    """Render the page tabs.
 
-    inject_app_shell_styles()
-    main_column, karen_column = st.columns([0.68, 0.32], gap="large")
+    The page argument is kept for compatibility with older callers.
+    """
 
-    with main_column:
-        if page == "Candidate Profile":
-            render_candidate_profile_page(base_dir)
-        elif page == "Job Intake":
-            render_job_intake_page(base_dir)
-        elif page == "Agent":
-            render_agent_page(base_dir, tracker_records)
-        elif page == "Jobs":
-            render_jobs_page(base_dir, tracker_records)
-        else:
-            render_tracker_page(tracker_records)
+    render_page_tabs(base_dir, tracker_records)
 
-    with karen_column:
-        selected_job_id = st.session_state.get(SELECTED_JOB_STATE_KEY)
+
+def render_page_tabs(
+    base_dir: Path,
+    tracker_records: list[TrackerRecord],
+) -> None:
+    """Render a tab-like top selector and only the selected workflow page."""
+
+    page = render_top_page_selector()
+    render_selected_page(base_dir, page, tracker_records)
+
+
+def render_top_page_selector() -> str:
+    """Render the main page selector as a tab-like control."""
+
+    selected_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
+    if selected_page not in PAGE_NAMES:
+        selected_page = "Candidate Profile"
+
+    if hasattr(st, "segmented_control"):
+        page = st.segmented_control(
+            "Navigate",
+            PAGE_NAMES,
+            default=selected_page,
+            key=SELECTED_PAGE_STATE_KEY,
+            label_visibility="collapsed",
+        )
+        return page or selected_page
+
+    return st.radio(
+        "Navigate",
+        PAGE_NAMES,
+        horizontal=True,
+        index=PAGE_NAMES.index(selected_page),
+        key=SELECTED_PAGE_STATE_KEY,
+        label_visibility="collapsed",
+    )
+
+
+def render_karen_sidebar(base_dir: Path) -> None:
+    """Render Karen's chat in the left sidebar."""
+
+    current_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
+    if current_page not in PAGE_NAMES:
+        current_page = "Candidate Profile"
+    selected_job_id = st.session_state.get(SELECTED_JOB_STATE_KEY)
+
+    with st.sidebar:
         render_karen_chat_window(
             base_dir,
-            current_page=page,
+            current_page=current_page,
             selected_job_id=selected_job_id,
         )
+
+
+def render_selected_page(
+    base_dir: Path,
+    page: str,
+    tracker_records: list[TrackerRecord],
+) -> None:
+    """Render the selected workflow page."""
+
+    if page == "Candidate Profile":
+        render_candidate_profile_page(base_dir)
+    elif page == "Job Intake":
+        render_job_intake_page(base_dir)
+    elif page == "Agent":
+        render_agent_page(base_dir, tracker_records)
+    elif page == "Jobs":
+        render_jobs_page(base_dir, tracker_records)
+    else:
+        render_tracker_page(tracker_records)
 
 
 if __name__ == "__main__":
