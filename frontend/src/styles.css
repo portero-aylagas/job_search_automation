@@ -211,6 +211,19 @@ summary {
   margin: 1rem 0;
 }
 
+.karen-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.karen-header img {
+  width: 128px;
+  height: 126px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
 .chat-message {
   border-radius: 8px;
   padding: 0.75rem;

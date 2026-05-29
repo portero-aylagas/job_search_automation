@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
+import karenImage from "../../assets/karen.png";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"];
 const careerLevel = [
@@ -33,6 +34,16 @@ const genderOptions = ["Male", "Female", "Diverse"];
 
 function App() {
   const [page, setPage] = useState("Candidate Profile");
+
+  useEffect(() => {
+    let favicon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.rel = "icon";
+      document.head.appendChild(favicon);
+    }
+    favicon.href = karenImage;
+  }, []);
 
   return (
     <div className="app-shell">
@@ -679,7 +690,10 @@ function AgentKarenPage() {
   const state = agent?.state || {};
   return (
     <>
-      <h1>Agent Karen</h1>
+      <div className="karen-header">
+        <img src={karenImage} width="128" height="126" alt="Agent Karen" />
+        <h1>Agent Karen</h1>
+      </div>
       <StatusMessage type={status?.type} text={status?.text} />
       {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
       {!!records.length && <label>Job<select value={selectedJobId} onChange={(event) => { setSelectedJobId(event.target.value); loadAgent(event.target.value, sessionId); }}>{records.map((record) => <option key={record.job_id} value={record.job_id}>{record.company} / {record.title}</option>)}</select></label>}
