@@ -157,6 +157,10 @@ function CandidateProfilePage() {
     await saveProfileDraft("/api/candidate-profile/save", profile, setProfile, setMessage);
   }
 
+  if (message?.type === "error" && (!profile || !extracted || !preferences || !sourceDocuments)) {
+    return <StatusMessage type="error" text={message.text} />;
+  }
+
   if (!profile || !extracted || !preferences || !sourceDocuments) {
     return <StatusMessage type="info" text="Loading candidate profile..." />;
   }

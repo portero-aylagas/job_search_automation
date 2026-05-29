@@ -1,20 +1,36 @@
 export type ApiRecord = Record<string, any>;
 
+const DEFAULT_DEV_API_BASE = "http://127.0.0.1:8001";
+
+function apiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+  if (configured) {
+    return configured;
+  }
+  return import.meta.env.DEV ? DEFAULT_DEV_API_BASE : "";
+}
+
 export async function apiRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${apiBaseUrl()}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {})
     }
   });
-  const payload = await response.json().catch(() => ({}));
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : {};
   if (!response.ok) {
     const detail = payload.detail || "Request failed.";
     throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  if (!contentType.includes("application/json")) {
+    throw new Error("API returned a non-JSON response. Check that the FastAPI server is running on 127.0.0.1:8001.");
   }
   return payload as T;
 }

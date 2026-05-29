@@ -1,6 +1,10 @@
 # Job Search Automation
 
-Job Search Automation is a Python application for a controlled human-in-the-loop job application workflow.
+Job Search Automation is a controlled human-in-the-loop job application workflow.
+The current UI is a React + TypeScript + Vite frontend backed by a FastAPI
+adapter over the existing Python workflow code. The original Streamlit UI is
+kept as a legacy/parity reference while the React UI becomes the primary
+runtime surface.
 
 The core feature is:
 
@@ -38,6 +42,8 @@ application tracking
 
 ## Delivered Features
 
+- React + TypeScript + Vite UI with a FastAPI adapter over the existing Python
+  workflow functions
 - candidate profile management
 - reusable experience units
 - URL-only job intake with LLM-assisted extraction and manual review
@@ -47,7 +53,7 @@ application tracking
 - historical deterministic candidate/job match analysis backend, disabled from
   the current known-job apply workflow
 - Agent Karen runtime assistant tab with persisted chat transcripts and audit
-  events
+  events, using `assets/karen.png` in the page and browser tab icon
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -102,9 +108,19 @@ job_search_automation/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── requirements.txt
+├── package.json
+├── vite.config.ts
+├── index.html
 ├── app.py
+├── frontend/
+│   └── src/
+│       ├── App.tsx
+│       ├── api.ts
+│       ├── main.tsx
+│       └── styles.css
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
@@ -168,7 +184,15 @@ job_search_automation/
 └── skills/
 ```
 
-The `skills/` directory contains development-support skills used during implementation and project improvement. It is not part of the runtime application unless explicitly integrated.
+The `skills/` directory contains development-support skills used during
+implementation and project improvement. It is not part of the runtime
+application unless explicitly integrated.
+
+The React UI in `frontend/src/` is intentionally a workflow-parity port of the
+Streamlit app, not a product redesign. It preserves the top navigation pages:
+`Candidate Profile`, `Job Intake`, `Jobs`, `Tracker`, and `Agent Karen`.
+AI-triggering buttons keep the visible `with AI` labels. Structured review
+forms remain structured review forms rather than raw JSON editors.
 
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
@@ -502,8 +526,35 @@ Notes:
 
 ## Run
 
+### React + FastAPI UI
+
+Start the FastAPI backend in one terminal:
+
 ```bash
-streamlit run app.py
+PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+```
+
+Start the Vite frontend in another terminal:
+
+```bash
+npm run frontend:dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+During Vite development, the frontend calls `http://127.0.0.1:8001` by default.
+Override this with `VITE_API_BASE_URL` if the API runs elsewhere. A fresh local
+state is valid: when `data/candidate_profile.json` and `data/runtime/` are
+missing, the API returns an empty draft candidate profile.
+
+### Legacy Streamlit UI
+
+```bash
+PATH="$PWD/.conda/bin:$PATH" streamlit run app.py
 ```
 
 ---
@@ -515,8 +566,15 @@ make verify
 ```
 
 `make verify` runs Ruff linting, including public docstring checks for
-application code, Python compile checks, and the pytest suite. The command is
-local and does not require live API keys.
+application code, Python compile checks, the pytest suite, frontend typecheck,
+and frontend production build. The command is local and does not require live
+API keys.
+
+To reset local private/runtime state while keeping checked-in templates:
+
+```bash
+make clean-local-state
+```
 
 ---
 

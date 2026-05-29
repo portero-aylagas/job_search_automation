@@ -48,11 +48,21 @@ Do not start new feature phases with web search, browser automation, or external
   next-action guidance, persisted session transcripts, job-scoped copies, and
   structured event logs. She stops at requirements, package, fill-plan, and
   Browser Use launch gates.
+- The primary UI has been migrated from Streamlit to React + TypeScript + Vite
+  with a thin FastAPI adapter over the existing Python workflow functions. The
+  first React version is a parity port: it preserves top-level navigation,
+  button labels, structured review forms, review gates, and Browser Use launch
+  semantics.
+- The React UI uses `assets/karen.png` for Karen's page portrait and browser
+  tab icon. Fresh local state is supported through the API returning an empty
+  draft candidate profile when private runtime files have been cleaned.
 
 ### Not Delivered Yet
 
 - Public web job discovery is still pending.
 - Broader duplicate handling and a proper applied-jobs view are still pending.
+- One-command local startup for FastAPI + Vite is still pending.
+- A production hosting decision for the React build is still pending.
 - Complex nested CV editors, multiple CV versions, excluded roles, excluded
   companies, profile scoring, passport/ID upload, and job matching from the
   Candidate Profile page remain out of scope.
