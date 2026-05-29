@@ -623,6 +623,8 @@ request, and unsupported-model failures fail immediately.
 
 ## Current Follow-ups
 
+- #100: add one-command React/FastAPI startup and decide the production hosting
+  path for the React build.
 - #35: validate Apply URL reachability and job-identity preservation before downstream workflow steps.
 - #36: validate AI-extracted content against the source to reduce hallucinated or unsupported fields, including rejected apply-link candidates.
 - #37: add duplicate management and a proper applied-jobs view.

@@ -93,8 +93,8 @@ None approved or implemented.
 
 ## Pending Follow-Up Tasks
 
-- Add a one-command local startup path for the FastAPI backend and Vite
+- #100: Add a one-command local startup path for the FastAPI backend and Vite
   frontend.
-- Decide and implement the production hosting path for the React build:
+- #100: Decide and implement the production hosting path for the React build:
   FastAPI-served static assets, separate frontend hosting, or another explicit
   deployment shape.
