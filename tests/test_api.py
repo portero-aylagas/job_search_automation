@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 
 from src.api import create_app
-from src.schemas import CandidateProfile
+from src.application_fill_plan import save_application_fill_plan
+from src.job_intake import create_job_listing, persist_job_listing
+from src.schemas import ApplicationFillPlan, CandidateProfile
 
 
 def test_pages_route_preserves_top_level_navigation(tmp_path) -> None:
@@ -119,6 +123,50 @@ def test_package_reject_action_is_not_exposed(tmp_path) -> None:
     ))
 
     assert response.status_code == 404
+
+
+def test_apply_route_launches_browser_without_streamlit_startup_wait(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    job = create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
+        description="Build automation workflows.",
+    )
+    persist_job_listing(tmp_path, job)
+    save_application_fill_plan(
+        tmp_path,
+        ApplicationFillPlan(
+            job_id=job.id,
+            apply_url=str(job.apply_url),
+            review_status="reviewed",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_blockers(*args: object, **kwargs: object) -> list[str]:
+        return []
+
+    def fake_launcher(*args: object, **kwargs: object) -> SimpleNamespace:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(
+            url=str(job.apply_url),
+            pid=12345,
+            log_path=Path(tmp_path) / "browser-use.log",
+        )
+
+    monkeypatch.setattr("src.api.get_apply_assistance_blockers", fake_blockers)
+    monkeypatch.setattr("src.api.open_apply_url_with_browser_use_fill_plan", fake_launcher)
+
+    response = asyncio.run(api_request(tmp_path, "POST", f"/api/jobs/{job.id}/apply"))
+
+    assert response.status_code == 200
+    assert response.json()["pid"] == 12345
+    assert captured["kwargs"]["startup_wait_seconds"] == 0.0
 
 
 async def api_request(

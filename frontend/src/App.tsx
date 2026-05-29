@@ -613,6 +613,24 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
 }
 
 function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
+  const [applying, setApplying] = useState(false);
+
+  async function applyWithAi() {
+    setApplying(true);
+    setMessage({ type: "info", text: "Starting Browser Use apply agent..." });
+    try {
+      await action(
+        `/api/jobs/${workspace.job.id}/apply`,
+        "POST",
+        {},
+        setMessage,
+        reload
+      );
+    } finally {
+      setApplying(false);
+    }
+  }
+
   return (
     <section className="panel">
       <h2>Apply to position</h2>
@@ -626,7 +644,15 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
         </div>
       </details>
       <p className="muted">This action opens the reviewed apply URL and asks Browser Use to execute the reviewed application fill plan.</p>
-      <div className="actions"><button className="primary" disabled={!!workspace.apply_blockers?.length} onClick={() => action(`/api/jobs/${workspace.job.id}/apply`, "POST", {}, setMessage, reload)}>Apply to job with AI</button></div>
+      <div className="actions">
+        <button
+          className="primary"
+          disabled={!!workspace.apply_blockers?.length || applying}
+          onClick={applyWithAi}
+        >
+          Apply to job with AI
+        </button>
+      </div>
     </section>
   );
 }

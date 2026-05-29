@@ -93,7 +93,4 @@ None approved or implemented.
 
 ## Pending Follow-Up Tasks
 
-- `Apply to job with AI`: the Browser Use job browser is not reliably opening
-  from the React UI when the apply action is clicked.
-- `Agent Karen`: the React UI does not currently render the existing
-  `assets/karen.png` portrait asset.
+None currently recorded.

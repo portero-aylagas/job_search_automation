@@ -98,6 +98,7 @@ from src.schemas import (
 
 PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"]
 BASE_DIR = Path(__file__).resolve().parent.parent
+API_BROWSER_USE_STARTUP_WAIT_SECONDS = 0.0
 
 
 class FilePayload(BaseModel):
@@ -679,6 +680,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
                 str(job.apply_url),
                 fill_plan=fill_plan,
                 log_dir=browser_use_log_dir,
+                startup_wait_seconds=API_BROWSER_USE_STARTUP_WAIT_SECONDS,
                 candidate_profile=candidate_profile,
                 requirements=requirements,
                 package=package,
