@@ -14,7 +14,6 @@ from src.app_workflow import (
     load_candidate_profile,
     load_experience_units,
     load_normalized_job,
-    mark_requirements_reviewed,
 )
 from src.application_fill_plan import (
     apply_fill_plan_edits,
@@ -58,8 +57,11 @@ from src.schemas import (
     ApplicationFillFieldValue,
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
+    ApplicationFormField,
     ApplicationPackage,
+    ApplicationRequirementFinding,
     ApplicationRequirements,
+    ApplicationScreeningQuestion,
     CandidateProfile,
     JobListing,
     TrackerRecord,
@@ -70,11 +72,8 @@ from src.ui_components import (
     render_additional_details,
     render_artifact_traceability,
     render_field,
-    render_form_fields,
     render_list,
     render_optional_ai_details,
-    render_requirement_findings,
-    render_screening_questions,
 )
 
 
@@ -392,8 +391,10 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
 
     st.caption("This action fetches the apply page and uses AI to interpret requirements.")
     if st.button(
-        "Discover requirements from apply URL with AI",
-        type="primary",
+        "Discover requirements from apply URL with AI"
+        if requirements is None
+        else "Refresh requirements from apply URL with AI",
+        type="primary" if requirements is None else "secondary",
         help=AI_ACTION_COST_HELP,
     ):
         try:
@@ -411,14 +412,13 @@ def render_application_requirements_panel(base_dir: Path, job: JobListing) -> No
         st.info("No application requirements have been discovered yet.")
         return
 
-    render_application_requirements(requirements)
+    requirements = render_application_requirements_review_form(base_dir, requirements)
     render_optional_ai_details(
         "application requirements",
         [("Requirements Extraction Trace", requirements.workflow_trace)],
         summary_label="Requirements AI Usage Summary",
         summary_traces=[requirements.workflow_trace],
     )
-    render_requirements_review_actions(base_dir, requirements)
 
 
 def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
@@ -440,9 +440,11 @@ def render_application_package_panel(base_dir: Path, job: JobListing) -> None:
 
     st.caption("This action uses AI to draft application materials from reviewed data.")
     if st.button(
-        "Generate application package with AI",
+        "Generate application package with AI"
+        if package is None
+        else "Regenerate application package with AI",
         disabled=bool(package_blockers),
-        type="primary",
+        type="primary" if package is None else "secondary",
         help=AI_ACTION_COST_HELP,
     ):
         if package_blockers:
@@ -591,9 +593,9 @@ def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
             st.write(f"- {blocker}")
 
     if st.button(
-        "Generate or refresh fill plan with AI",
+        "Generate fill plan with AI" if fill_plan is None else "Refresh fill plan with AI",
         disabled=bool(generation_blockers),
-        type="primary",
+        type="primary" if fill_plan is None else "secondary",
         help=AI_ACTION_COST_HELP,
     ):
         if requirements is None or package is None:
@@ -619,20 +621,7 @@ def render_application_fill_plan_panel(base_dir: Path, job: JobListing) -> None:
         st.info("No application fill plan has been generated yet.")
         return
 
-    fill_plan = render_application_fill_plan_edit_actions(base_dir, fill_plan)
-    review_blockers = get_application_fill_plan_review_blockers(fill_plan)
-    if fill_plan.review_status != "reviewed":
-        if review_blockers:
-            st.warning("Resolve all fill-plan review blockers before marking the plan reviewed.")
-        if st.button("Mark Fill Plan Reviewed", disabled=bool(review_blockers)):
-            try:
-                reviewed_fill_plan = mark_application_fill_plan_reviewed(fill_plan)
-            except ValueError as exc:
-                st.error(str(exc))
-                return
-            save_application_fill_plan(base_dir, reviewed_fill_plan)
-            st.success("Application fill plan was marked as reviewed.")
-            st.rerun()
+    render_application_fill_plan_edit_actions(base_dir, fill_plan)
 
 
 def get_fill_plan_generation_blockers(
@@ -653,6 +642,8 @@ def get_fill_plan_generation_blockers(
         blockers.append("Generate the application package.")
     elif package.status == "rejected":
         blockers.append("Regenerate or manually edit the rejected application package.")
+    elif package.status != "approved":
+        blockers.append("Save the application package review.")
 
     return blockers
 
@@ -779,9 +770,9 @@ def render_application_fill_plan_edit_actions(
                 )
                 _render_fill_plan_edit_reason(field)
 
-        save_edits = st.form_submit_button("Save Fill Plan Edits", type="primary")
+        save_review = st.form_submit_button("Save fill plan review", type="primary")
 
-    if not save_edits:
+    if not save_review:
         return fill_plan
 
     edited_fill_plan = apply_fill_plan_edits(
@@ -791,10 +782,19 @@ def render_application_fill_plan_edit_actions(
         needs_answer_values_by_key=needs_answer_values_by_key,
         blocked_values_by_key=blocked_values_by_key,
     )
-    save_application_fill_plan(base_dir, edited_fill_plan)
-    st.success("Fill plan edits saved. Review status reset to draft.")
+    try:
+        reviewed_fill_plan = mark_application_fill_plan_reviewed(edited_fill_plan)
+    except ValueError as exc:
+        save_application_fill_plan(base_dir, edited_fill_plan)
+        st.error(str(exc))
+        st.warning("Fill plan edits were saved, but the plan is not reviewed yet.")
+        st.rerun()
+        return edited_fill_plan
+
+    save_application_fill_plan(base_dir, reviewed_fill_plan)
+    st.success("Fill plan review saved.")
     st.rerun()
-    return edited_fill_plan
+    return reviewed_fill_plan
 
 
 def _fill_plan_row_edit_key(
@@ -948,16 +948,26 @@ def render_application_package_review_form(
                 render_artifact_traceability(artifact.metadata)
 
         save_edits = st.form_submit_button(
-            "Save package review changes",
+            "Save package review",
             type="primary",
         )
 
     current_package = package
     if save_edits:
         if not application_package_review_has_content_changes(package, edited_content):
-            st.info("No package review changes were made.")
+            current_package = mark_application_package_reviewed(package)
+            json_path, markdown_path = save_application_package(base_dir, current_package, job)
+            update_tracker_for_application_package(base_dir, job.id, json_path)
+            st.success(
+                build_package_review_saved_message(
+                    json_path,
+                    markdown_path,
+                    current_package,
+                )
+            )
         else:
             current_package = apply_application_package_review_edits(package, edited_content)
+            current_package = mark_application_package_reviewed(current_package)
             json_path, markdown_path = save_application_package(base_dir, current_package, job)
             update_tracker_for_application_package(base_dir, job.id, json_path)
             st.success(
@@ -1145,44 +1155,413 @@ def apply_application_package_review_edits(
     return edited_package
 
 
-def render_application_requirements(requirements: ApplicationRequirements) -> None:
-    """Render interpreted application requirements with compact defaults."""
+def mark_application_package_reviewed(package: ApplicationPackage) -> ApplicationPackage:
+    """Return a package marked as reviewed by the user."""
+
+    reviewed_package = package.model_copy(deep=True)
+    reviewed_package.status = "approved"
+    for artifact in reviewed_package.artifacts:
+        artifact.status = "approved"
+    return reviewed_package
+
+
+def render_application_requirements_review_form(
+    base_dir: Path,
+    requirements: ApplicationRequirements,
+) -> ApplicationRequirements:
+    """Render editable application requirements and save them as reviewed."""
 
     if requirements.blocked_reason:
         st.warning(requirements.blocked_reason)
-
     render_application_requirements_compact(requirements)
 
-    with st.expander("Requirements evidence and form details", expanded=False):
-        render_requirement_findings("Required Documents", requirements.required_documents)
-        render_requirement_findings("Upload Expectations", requirements.upload_expectations)
-        render_form_fields("Profile Fields Requested", requirements.profile_fields)
-        render_screening_questions("Screening Questions", requirements.screening_questions)
-        render_form_fields("Custom Form Fields", requirements.custom_form_fields)
-
-        if requirements.motivation_letter:
-            render_requirement_findings(
-                "Motivation / Cover Letter",
-                [requirements.motivation_letter],
-            )
-
-        render_requirement_findings("Consent Requirements", requirements.consent_requirements)
-        render_requirement_findings(
-            "Privacy, Login, and ATS Gates",
-            requirements.privacy_login_ats_gates,
+    with st.form(f"application_requirements_review_form_{requirements.job_id}"):
+        st.caption(
+            "Review and edit what the AI found on the apply page. Saving marks "
+            "these requirements as reviewed."
         )
-        render_requirement_findings("Deadlines", requirements.deadlines)
-        render_requirement_findings("Contact / Fallback Info", requirements.contact_or_fallback)
+        job_preserving = st.checkbox(
+            "Apply page matches this selected job",
+            value=requirements.job_preserving,
+        )
+        confidence_options = ["low", "medium", "high"]
+        confidence = st.selectbox(
+            "Overall confidence",
+            options=confidence_options,
+            index=confidence_options.index(requirements.confidence),
+        )
+        blocked_reason = st.text_area(
+            "Blocked reason",
+            value=requirements.blocked_reason or "",
+            height=80,
+        )
+        required_documents = st.text_area(
+            "Required documents",
+            value=format_requirement_findings_for_edit(requirements.required_documents),
+            height=100,
+        )
+        upload_expectations = st.text_area(
+            "Upload expectations",
+            value=format_requirement_findings_for_edit(requirements.upload_expectations),
+            height=100,
+        )
+        motivation_label = st.text_input(
+            "Motivation / cover letter requirement",
+            value=requirements.motivation_letter.label
+            if requirements.motivation_letter is not None
+            else "",
+        )
+        motivation_required = st.checkbox(
+            "Motivation / cover letter is required",
+            value=requirements.motivation_letter.required
+            if requirements.motivation_letter is not None
+            else False,
+        )
+        profile_fields = st.text_area(
+            "Profile fields requested",
+            value=format_application_form_fields_for_edit(requirements.profile_fields),
+            height=120,
+        )
+        screening_questions = st.text_area(
+            "Screening questions",
+            value=format_screening_questions_for_edit(requirements.screening_questions),
+            height=120,
+        )
+        custom_form_fields = st.text_area(
+            "Custom form fields",
+            value=format_application_form_fields_for_edit(requirements.custom_form_fields),
+            height=120,
+        )
+        consent_requirements = st.text_area(
+            "Consent requirements",
+            value=format_requirement_findings_for_edit(requirements.consent_requirements),
+            height=100,
+        )
+        privacy_login_ats_gates = st.text_area(
+            "Privacy, login, and ATS gates",
+            value=format_requirement_findings_for_edit(requirements.privacy_login_ats_gates),
+            height=100,
+        )
+        deadlines = st.text_area(
+            "Deadlines",
+            value=format_requirement_findings_for_edit(requirements.deadlines),
+            height=80,
+        )
+        contact_or_fallback = st.text_area(
+            "Contact / fallback info",
+            value=format_requirement_findings_for_edit(requirements.contact_or_fallback),
+            height=80,
+        )
+        missing_or_uncertain = st.text_area(
+            "Missing or uncertain",
+            value=format_lines_for_edit(requirements.missing_or_uncertain),
+            height=100,
+        )
+        save_review = st.form_submit_button("Save requirements review", type="primary")
 
-        if requirements.missing_or_uncertain:
-            st.markdown("**Missing Or Uncertain**")
-            for item in requirements.missing_or_uncertain:
-                st.write(f"- {item}")
+    with st.expander("Requirements evidence", expanded=False):
+        render_application_requirements_evidence(requirements)
 
-        if requirements.source_evidence:
-            st.markdown("**Source Evidence**")
-            for evidence in requirements.source_evidence:
-                st.write(f"- {evidence}")
+    if not save_review:
+        return requirements
+
+    reviewed_requirements = apply_application_requirements_review_edits(
+        requirements,
+        job_preserving=job_preserving,
+        confidence=confidence,
+        blocked_reason=blocked_reason,
+        required_documents_text=required_documents,
+        upload_expectations_text=upload_expectations,
+        motivation_label=motivation_label,
+        motivation_required=motivation_required,
+        profile_fields_text=profile_fields,
+        screening_questions_text=screening_questions,
+        custom_form_fields_text=custom_form_fields,
+        consent_requirements_text=consent_requirements,
+        privacy_login_ats_gates_text=privacy_login_ats_gates,
+        deadlines_text=deadlines,
+        contact_or_fallback_text=contact_or_fallback,
+        missing_or_uncertain_text=missing_or_uncertain,
+    )
+    save_application_requirements(base_dir, reviewed_requirements)
+    if reviewed_requirements.review_status == "reviewed":
+        st.success("Requirements review saved.")
+    else:
+        st.warning(
+            "Requirements were saved, but they are not reviewed because the apply "
+            "page is marked as not matching this selected job."
+        )
+    st.rerun()
+    return reviewed_requirements
+
+
+def apply_application_requirements_review_edits(
+    requirements: ApplicationRequirements,
+    *,
+    job_preserving: bool,
+    confidence: str,
+    blocked_reason: str,
+    required_documents_text: str,
+    upload_expectations_text: str,
+    motivation_label: str,
+    motivation_required: bool,
+    profile_fields_text: str,
+    screening_questions_text: str,
+    custom_form_fields_text: str,
+    consent_requirements_text: str,
+    privacy_login_ats_gates_text: str,
+    deadlines_text: str,
+    contact_or_fallback_text: str,
+    missing_or_uncertain_text: str,
+) -> ApplicationRequirements:
+    """Apply editable requirement review fields to a requirements object."""
+
+    edited = requirements.model_copy(deep=True)
+    edited.job_preserving = job_preserving
+    edited.status = "discovered" if job_preserving else "blocked"
+    edited.review_status = "reviewed" if job_preserving else "draft"
+    edited.confidence = confidence  # type: ignore[assignment]
+    edited.blocked_reason = blocked_reason.strip() or None
+    edited.required_documents = parse_requirement_findings_from_edit(
+        required_documents_text,
+        requirements.required_documents,
+    )
+    edited.upload_expectations = parse_requirement_findings_from_edit(
+        upload_expectations_text,
+        requirements.upload_expectations,
+    )
+    edited.profile_fields = parse_application_form_fields_from_edit(
+        profile_fields_text,
+        requirements.profile_fields,
+    )
+    edited.screening_questions = parse_screening_questions_from_edit(
+        screening_questions_text,
+        requirements.screening_questions,
+    )
+    edited.custom_form_fields = parse_application_form_fields_from_edit(
+        custom_form_fields_text,
+        requirements.custom_form_fields,
+    )
+    edited.motivation_letter = build_motivation_requirement(
+        motivation_label,
+        motivation_required,
+        requirements.motivation_letter,
+    )
+    edited.consent_requirements = parse_requirement_findings_from_edit(
+        consent_requirements_text,
+        requirements.consent_requirements,
+    )
+    edited.privacy_login_ats_gates = parse_requirement_findings_from_edit(
+        privacy_login_ats_gates_text,
+        requirements.privacy_login_ats_gates,
+    )
+    edited.deadlines = parse_requirement_findings_from_edit(
+        deadlines_text,
+        requirements.deadlines,
+    )
+    edited.contact_or_fallback = parse_requirement_findings_from_edit(
+        contact_or_fallback_text,
+        requirements.contact_or_fallback,
+    )
+    edited.missing_or_uncertain = lines_from_requirement_edit(missing_or_uncertain_text)
+    return ApplicationRequirements.model_validate(edited.model_dump(mode="json"))
+
+
+def render_application_requirements_evidence(requirements: ApplicationRequirements) -> None:
+    """Render lower-priority requirements evidence without duplicating review fields."""
+
+    if requirements.source_evidence:
+        st.markdown("**Source Evidence**")
+        for evidence in requirements.source_evidence:
+            st.write(f"- {evidence}")
+
+
+def format_lines_for_edit(items: list[str]) -> str:
+    """Return plain editable bullet lines."""
+
+    return "\n".join(f"- {item}" for item in items if item.strip())
+
+
+def lines_from_requirement_edit(value: str) -> list[str]:
+    """Parse editable bullet lines."""
+
+    return [line.strip("-*• \t") for line in value.splitlines() if line.strip("-*• \t")]
+
+
+def format_requirement_findings_for_edit(
+    findings: list[ApplicationRequirementFinding],
+) -> str:
+    """Return requirement findings as editable bullet lines."""
+
+    lines = []
+    for finding in findings:
+        required = "required" if finding.required else "optional"
+        lines.append(f"- [{required}] {finding.label}")
+    return "\n".join(lines)
+
+
+def parse_requirement_findings_from_edit(
+    value: str,
+    existing_findings: list[ApplicationRequirementFinding],
+) -> list[ApplicationRequirementFinding]:
+    """Parse editable requirement finding lines while preserving existing metadata."""
+
+    findings: list[ApplicationRequirementFinding] = []
+    for index, line in enumerate(lines_from_requirement_edit(value)):
+        label, required = parse_required_prefix(line)
+        if not label:
+            continue
+        existing = existing_findings[index] if index < len(existing_findings) else None
+        findings.append(
+            ApplicationRequirementFinding(
+                label=label,
+                required=required if required is not None else bool(existing and existing.required),
+                evidence=existing.evidence if existing else "",
+                confidence=existing.confidence if existing else "medium",
+                constraints=list(existing.constraints) if existing else [],
+            )
+        )
+    return findings
+
+
+def format_screening_questions_for_edit(
+    questions: list[ApplicationScreeningQuestion],
+) -> str:
+    """Return screening questions as editable bullet lines."""
+
+    lines = []
+    for question in questions:
+        required = "required" if question.required else "optional"
+        input_type = question.input_type or "text"
+        lines.append(f"- [{required}] {question.question} | {input_type}")
+    return "\n".join(lines)
+
+
+def parse_screening_questions_from_edit(
+    value: str,
+    existing_questions: list[ApplicationScreeningQuestion],
+) -> list[ApplicationScreeningQuestion]:
+    """Parse editable screening question lines."""
+
+    questions: list[ApplicationScreeningQuestion] = []
+    for index, line in enumerate(lines_from_requirement_edit(value)):
+        question_text, input_type = split_edit_line(line)
+        question, required = parse_required_prefix(question_text)
+        if not question:
+            continue
+        existing = existing_questions[index] if index < len(existing_questions) else None
+        questions.append(
+            ApplicationScreeningQuestion(
+                question=question,
+                required=required if required is not None else bool(existing and existing.required),
+                input_type=input_type or (existing.input_type if existing else ""),
+                evidence=existing.evidence if existing else "",
+                confidence=existing.confidence if existing else "medium",
+            )
+        )
+    return questions
+
+
+def format_application_form_fields_for_edit(fields: list[ApplicationFormField]) -> str:
+    """Return form fields as editable bullet lines."""
+
+    lines = []
+    for field in fields:
+        required = "required" if field.required else "optional"
+        input_type = field.input_type or "text"
+        options = "; ".join(field.options)
+        suffix = f" | {input_type}"
+        if options:
+            suffix += f" | {options}"
+        lines.append(f"- [{required}] {field.label}{suffix}")
+    return "\n".join(lines)
+
+
+def parse_application_form_fields_from_edit(
+    value: str,
+    existing_fields: list[ApplicationFormField],
+) -> list[ApplicationFormField]:
+    """Parse editable application form field lines."""
+
+    fields: list[ApplicationFormField] = []
+    for index, line in enumerate(lines_from_requirement_edit(value)):
+        label_text, input_type, options_text = split_form_field_edit_line(line)
+        label, required = parse_required_prefix(label_text)
+        if not label:
+            continue
+        existing = existing_fields[index] if index < len(existing_fields) else None
+        fields.append(
+            ApplicationFormField(
+                name=existing.name if existing else "",
+                label=label,
+                required=required if required is not None else bool(existing and existing.required),
+                input_type=input_type or (existing.input_type if existing else ""),
+                options=parse_options(options_text)
+                if options_text
+                else (list(existing.options) if existing else []),
+                evidence=existing.evidence if existing else "",
+                confidence=existing.confidence if existing else "medium",
+            )
+        )
+    return fields
+
+
+def build_motivation_requirement(
+    label: str,
+    required: bool,
+    existing: ApplicationRequirementFinding | None,
+) -> ApplicationRequirementFinding | None:
+    """Return an edited motivation requirement when one is present."""
+
+    clean_label = label.strip()
+    if not clean_label:
+        return None
+    return ApplicationRequirementFinding(
+        label=clean_label,
+        required=required,
+        evidence=existing.evidence if existing else "",
+        confidence=existing.confidence if existing else "medium",
+        constraints=list(existing.constraints) if existing else [],
+    )
+
+
+def parse_required_prefix(line: str) -> tuple[str, bool | None]:
+    """Parse an optional [required] or [optional] marker from an edit line."""
+
+    clean_line = line.strip()
+    lowered = clean_line.casefold()
+    if lowered.startswith("[required]"):
+        return clean_line[len("[required]") :].strip(), True
+    if lowered.startswith("[optional]"):
+        return clean_line[len("[optional]") :].strip(), False
+    return clean_line, None
+
+
+def split_edit_line(line: str) -> tuple[str, str]:
+    """Split a simple editable row into label and type."""
+
+    parts = [part.strip() for part in line.split("|", maxsplit=1)]
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], parts[1]
+
+
+def split_form_field_edit_line(line: str) -> tuple[str, str, str]:
+    """Split a form-field edit row into label, input type, and options text."""
+
+    parts = [part.strip() for part in line.split("|", maxsplit=2)]
+    if len(parts) == 1:
+        return parts[0], "", ""
+    if len(parts) == 2:
+        return parts[0], parts[1], ""
+    return parts[0], parts[1], parts[2]
+
+
+def parse_options(value: str) -> list[str]:
+    """Parse semicolon or comma separated option labels."""
+
+    separator = ";" if ";" in value else ","
+    return [option.strip() for option in value.split(separator) if option.strip()]
 
 
 def render_application_requirements_compact(requirements: ApplicationRequirements) -> None:
@@ -1228,6 +1607,8 @@ def get_apply_assistance_blockers(
         blockers.append("Generate the application package before applying.")
     elif package.status == "rejected":
         blockers.append("Regenerate or manually edit the rejected application package.")
+    elif package.status != "approved":
+        blockers.append("Save the application package review before applying.")
 
     if fill_plan is None:
         blockers.append("Generate the application fill plan before applying.")
@@ -1252,19 +1633,3 @@ def get_apply_assistance_blockers(
             )
 
     return blockers
-
-
-def render_requirements_review_actions(
-    base_dir: Path,
-    requirements: ApplicationRequirements,
-) -> None:
-    """Render the action that marks discovered requirements as reviewed."""
-
-    if requirements.status != "discovered" or requirements.review_status == "reviewed":
-        return
-
-    if st.button("Mark Requirements Reviewed"):
-        reviewed_requirements = mark_requirements_reviewed(requirements)
-        save_application_requirements(base_dir, reviewed_requirements)
-        st.success("Requirements were marked as reviewed.")
-        st.rerun()

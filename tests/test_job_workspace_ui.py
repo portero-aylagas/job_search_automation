@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import src.job_workspace_ui as job_workspace_ui
 from src.application_fill_plan import (
     generate_application_fill_plan,
@@ -13,6 +15,7 @@ from src.job_workspace_ui import (
     application_artifact_review_key,
     application_package_review_has_content_changes,
     apply_application_package_review_edits,
+    apply_application_requirements_review_edits,
     build_application_artifact_review_metadata,
     build_application_package_summary,
     build_package_review_saved_message,
@@ -20,7 +23,9 @@ from src.job_workspace_ui import (
     deduplicate_review_items,
     get_application_fill_plan_review_blockers,
     get_apply_assistance_blockers,
+    get_fill_plan_generation_blockers,
     get_job_extraction_trace,
+    mark_application_package_reviewed,
     order_application_package_artifacts_for_review,
     render_application_fill_plan_edit_actions,
     render_application_package_summary,
@@ -35,6 +40,7 @@ from src.schemas import (
     ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationFillUploadFile,
+    ApplicationFormField,
     ApplicationPackage,
     ApplicationRequirementFinding,
     ApplicationRequirements,
@@ -142,7 +148,7 @@ def test_apply_assistance_has_no_blockers_with_reviewed_data() -> None:
     requirements = make_requirements(job)
     package = ApplicationPackage(
         job_id=job.id,
-        status="draft",
+        status="approved",
         artifacts=[],
         missing_information=[],
         selected_experience_units=[],
@@ -164,7 +170,7 @@ def test_apply_assistance_blocks_missing_or_unreviewed_fill_plan() -> None:
     requirements = make_requirements(job)
     package = ApplicationPackage(
         job_id=job.id,
-        status="draft",
+        status="approved",
         artifacts=[],
         missing_information=[],
         selected_experience_units=[],
@@ -186,12 +192,51 @@ def test_apply_assistance_blocks_missing_or_unreviewed_fill_plan() -> None:
     assert "Review the application fill plan before applying." in blockers
 
 
-def test_apply_assistance_blocks_unresolved_needs_answer_fields() -> None:
+def test_apply_assistance_blocks_unreviewed_package() -> None:
     job = make_job()
     requirements = make_requirements(job)
     package = ApplicationPackage(
         job_id=job.id,
         status="draft",
+        artifacts=[],
+        missing_information=[],
+        selected_experience_units=[],
+        generation_notes=[],
+    )
+    fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        review_status="reviewed",
+    )
+
+    blockers = get_apply_assistance_blockers(job, requirements, package, fill_plan)
+
+    assert "Save the application package review before applying." in blockers
+
+
+def test_fill_plan_generation_blocks_unreviewed_package() -> None:
+    job = make_job()
+    requirements = make_requirements(job)
+    package = ApplicationPackage(
+        job_id=job.id,
+        status="draft",
+        artifacts=[],
+        missing_information=[],
+        selected_experience_units=[],
+        generation_notes=[],
+    )
+
+    blockers = get_fill_plan_generation_blockers(requirements, package)
+
+    assert blockers == ["Save the application package review."]
+
+
+def test_apply_assistance_blocks_unresolved_needs_answer_fields() -> None:
+    job = make_job()
+    requirements = make_requirements(job)
+    package = ApplicationPackage(
+        job_id=job.id,
+        status="approved",
         artifacts=[],
         missing_information=[],
         selected_experience_units=[],
@@ -228,6 +273,7 @@ def test_apply_assistance_blocks_stale_reviewed_fill_plan_until_refresh() -> Non
     )
     package = ApplicationPackage(
         job_id=job.id,
+        status="approved",
         artifacts=[
             ApplicationArtifact(
                 id="cover-letter-draft",
@@ -292,6 +338,109 @@ def test_fill_plan_review_blockers_require_resolved_needs_answer_fields() -> Non
 
     resolved_plan = fill_plan.model_copy(update={"needs_answer_fields": []})
     assert get_application_fill_plan_review_blockers(resolved_plan) == []
+
+
+def test_application_requirements_review_edits_mark_requirements_reviewed() -> None:
+    job = make_job()
+    requirements = make_requirements(job, review_status="draft")
+    requirements.required_documents = [
+        ApplicationRequirementFinding(label="CV", required=True, confidence="high")
+    ]
+    requirements.profile_fields = [
+        ApplicationFormField(label="Email", required=True, input_type="email")
+    ]
+    requirements.screening_questions = [
+        ApplicationScreeningQuestion(
+            question="Are you authorized to work in Germany?",
+            required=True,
+            input_type="select",
+        )
+    ]
+
+    reviewed = apply_application_requirements_review_edits(
+        requirements,
+        job_preserving=True,
+        confidence="high",
+        blocked_reason="",
+        required_documents_text="- [required] CV or resume",
+        upload_expectations_text="",
+        motivation_label="Cover letter",
+        motivation_required=False,
+        profile_fields_text="- [required] Email address | email",
+        screening_questions_text="- [required] Work authorization | select",
+        custom_form_fields_text="- [optional] Portfolio URL | url",
+        consent_requirements_text="- [required] Privacy consent",
+        privacy_login_ats_gates_text="",
+        deadlines_text="",
+        contact_or_fallback_text="",
+        missing_or_uncertain_text="- Confirm earliest start date",
+    )
+
+    assert reviewed.review_status == "reviewed"
+    assert reviewed.status == "discovered"
+    assert reviewed.job_preserving is True
+    assert reviewed.required_documents[0].label == "CV or resume"
+    assert reviewed.required_documents[0].required is True
+    assert reviewed.profile_fields[0].label == "Email address"
+    assert reviewed.profile_fields[0].input_type == "email"
+    assert reviewed.screening_questions[0].question == "Work authorization"
+    assert reviewed.custom_form_fields[0].label == "Portfolio URL"
+    assert reviewed.custom_form_fields[0].required is False
+    assert reviewed.motivation_letter is not None
+    assert reviewed.motivation_letter.label == "Cover letter"
+    assert reviewed.consent_requirements[0].label == "Privacy consent"
+    assert reviewed.missing_or_uncertain == ["Confirm earliest start date"]
+
+
+def test_application_requirements_review_edits_keep_unmatched_page_unreviewed() -> None:
+    job = make_job()
+    requirements = make_requirements(job, review_status="draft")
+
+    reviewed = apply_application_requirements_review_edits(
+        requirements,
+        job_preserving=False,
+        confidence="low",
+        blocked_reason="Apply page does not match this job.",
+        required_documents_text="",
+        upload_expectations_text="",
+        motivation_label="",
+        motivation_required=False,
+        profile_fields_text="",
+        screening_questions_text="",
+        custom_form_fields_text="",
+        consent_requirements_text="",
+        privacy_login_ats_gates_text="",
+        deadlines_text="",
+        contact_or_fallback_text="",
+        missing_or_uncertain_text="",
+    )
+
+    assert reviewed.status == "blocked"
+    assert reviewed.review_status == "draft"
+    assert reviewed.job_preserving is False
+    assert reviewed.blocked_reason == "Apply page does not match this job."
+
+
+def test_mark_application_package_reviewed_approves_package_and_artifacts() -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        status="needs_review",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                status="needs_review",
+                content="Dear hiring team.",
+            )
+        ],
+    )
+
+    reviewed = mark_application_package_reviewed(package)
+
+    assert reviewed.status == "approved"
+    assert reviewed.artifacts[0].status == "approved"
+    assert package.status == "needs_review"
 
 
 class FakeStreamlitContext:
@@ -445,8 +594,55 @@ def test_fill_plan_edit_actions_orders_boxed_sections(monkeypatch) -> None:
     assert ("text_input", "Referral code") in rendered
     assert (
         "form_submit_button",
-        {"label": "Save Fill Plan Edits", "type": "primary"},
+        {"label": "Save fill plan review", "type": "primary"},
     ) in rendered
+
+
+def test_fill_plan_edit_actions_save_and_mark_reviewed(monkeypatch) -> None:
+    saved_plans: list[ApplicationFillPlan] = []
+
+    def fake_form_submit_button(_label: str, **_kwargs: object) -> bool:
+        return True
+
+    def fake_rerun() -> None:
+        raise RuntimeError("rerun")
+
+    fake_streamlit = SimpleNamespace(
+        form=lambda _key: FakeStreamlitContext(),
+        container=lambda **_kwargs: FakeStreamlitContext(),
+        expander=lambda _label, expanded: FakeStreamlitContext(),
+        caption=lambda _value: None,
+        markdown=lambda _value: None,
+        text_input=lambda _label, value, key: value,
+        form_submit_button=fake_form_submit_button,
+        success=lambda _value: None,
+        error=lambda _value: None,
+        warning=lambda _value: None,
+        rerun=fake_rerun,
+    )
+    monkeypatch.setattr(job_workspace_ui, "st", fake_streamlit)
+    monkeypatch.setattr(
+        job_workspace_ui,
+        "save_application_fill_plan",
+        lambda _base_dir, plan: saved_plans.append(plan),
+    )
+    fill_plan = ApplicationFillPlan(
+        job_id="job-001",
+        apply_url="https://example.com/apply",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="First name",
+                value="Taylor",
+                required=True,
+                input_type="text",
+            )
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="rerun"):
+        render_application_fill_plan_edit_actions(Path("."), fill_plan)
+
+    assert saved_plans[0].review_status == "reviewed"
 
 
 def test_apply_assistance_blocks_rejected_package() -> None:

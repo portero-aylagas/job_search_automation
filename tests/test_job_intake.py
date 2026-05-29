@@ -2,17 +2,64 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import src.job_intake_ui as job_intake_ui
 from src.job_intake import (
     choose_valid_apply_url,
     create_job_listing,
     persist_job_listing,
     validate_apply_url,
 )
+from src.llm_job_extraction import ExtractedJobData
 from src.schemas import JobListing, TrackerRecord
 from src.storage import load_model
+
+
+class FakeStreamlitContext:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        return None
+
+
+def test_job_review_form_has_single_primary_save_action(monkeypatch) -> None:
+    submitted_buttons: list[dict[str, object]] = []
+
+    def fake_form_submit_button(label: str, **kwargs: object) -> bool:
+        submitted_buttons.append({"label": label, **kwargs})
+        return False
+
+    fake_streamlit = SimpleNamespace(
+        form=lambda _key: FakeStreamlitContext(),
+        columns=lambda _count: [FakeStreamlitContext(), FakeStreamlitContext()],
+        text_input=lambda _label, value="", **_kwargs: value,
+        text_area=lambda _label, value="", **_kwargs: value,
+        markdown=lambda _value: None,
+        caption=lambda _value: None,
+        warning=lambda _value: None,
+        error=lambda _value: None,
+        info=lambda _value: None,
+        form_submit_button=fake_form_submit_button,
+    )
+    monkeypatch.setattr(job_intake_ui, "st", fake_streamlit)
+
+    job_intake_ui.render_job_review_form(
+        ExtractedJobData(
+            title="Automation Engineer",
+            company="Example Co",
+            description="Build automation workflows.",
+        ),
+        "https://example.com/jobs/automation-engineer",
+        "https://example.com/apply/automation-engineer",
+    )
+
+    assert submitted_buttons == [
+        {"label": "Add To Application Workflow", "type": "primary"}
+    ]
 
 
 def test_persist_job_listing_creates_job_folder_and_normalized_json(tmp_path: Path) -> None:
