@@ -1,5 +1,6 @@
 import importlib
 from pathlib import Path
+from types import SimpleNamespace
 
 from src.job_intake import create_job_listing
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData, RejectedApplyCandidate
@@ -10,6 +11,90 @@ def test_app_module_imports() -> None:
     module = importlib.import_module("app")
 
     assert module is not None
+
+
+class FakeColumn:
+    def __init__(self, label: str, rendered: list[tuple[str, object]]) -> None:
+        self.label = label
+        self.rendered = rendered
+
+    def __enter__(self):
+        self.rendered.append(("enter", self.label))
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.rendered.append(("exit", self.label))
+        return None
+
+
+def test_main_pages_render_with_persistent_karen_column(monkeypatch) -> None:
+    app = importlib.import_module("app")
+    rendered: list[tuple[str, object]] = []
+
+    fake_streamlit = SimpleNamespace(
+        columns=lambda _sizes, gap: [
+            FakeColumn("main", rendered),
+            FakeColumn("karen", rendered),
+        ],
+        markdown=lambda value, unsafe_allow_html=False: rendered.append(
+            (
+                "markdown",
+                {
+                    "value": value,
+                    "unsafe_allow_html": unsafe_allow_html,
+                },
+            )
+        ),
+        session_state={"selected_job_id": "job-001"},
+    )
+    monkeypatch.setattr(app, "st", fake_streamlit)
+    monkeypatch.setattr(
+        app,
+        "render_candidate_profile_page",
+        lambda _base_dir: rendered.append(("page", "Candidate Profile")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_job_intake_page",
+        lambda _base_dir: rendered.append(("page", "Job Intake")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_jobs_page",
+        lambda _base_dir, _records: rendered.append(("page", "Jobs")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_tracker_page",
+        lambda _records: rendered.append(("page", "Tracker")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_agent_page",
+        lambda _base_dir, _records: rendered.append(("page", "Agent")),
+    )
+    monkeypatch.setattr(
+        app,
+        "render_karen_chat_window",
+        lambda _base_dir, current_page, selected_job_id: rendered.append(
+            ("karen", {"page": current_page, "job_id": selected_job_id})
+        ),
+    )
+
+    for page in app.PAGE_NAMES:
+        rendered.clear()
+        app.render_page_with_karen(Path("."), page, [])
+
+        assert ("page", page) in rendered
+        assert ("karen", {"page": page, "job_id": "job-001"}) in rendered
+        assert any(
+            item[0] == "markdown" and "karen-app-shell-anchor" in item[1]["value"]
+            for item in rendered
+        )
+        assert any(
+            item[0] == "markdown" and "stChatInput" in item[1]["value"]
+            for item in rendered
+        )
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:
@@ -29,12 +114,6 @@ def test_validate_candidate_profile_reports_missing_required_fields() -> None:
     assert "Postal code" in errors
     assert "Country of residence" in errors
     assert "Nationality" in errors
-    assert "Target roles" in errors
-    assert "Remote preference" in errors
-    assert "Career level" in errors
-    assert "Work authorization" in errors
-    assert "Salary min" in errors
-    assert "Salary max" in errors
 
 
 def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
@@ -76,6 +155,42 @@ def test_validate_candidate_profile_rejects_inverted_salary_range() -> None:
     errors = app.validate_candidate_profile(profile)
 
     assert "Salary max must be >= Salary min" in errors
+
+
+def test_validate_candidate_profile_allows_missing_optional_preferences() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+    profile.candidate_profile.candidate_preferences.availability = ""
+    profile.candidate_profile.candidate_preferences.salary_min_eur = None
+    profile.candidate_profile.candidate_preferences.salary_max_eur = None
+    profile.candidate_profile.candidate_preferences.work_authorization = ""
+
+    errors = app.validate_candidate_profile(profile)
+
+    assert errors == []
+
+
+def test_discovery_preference_validation_remains_separate() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+
+    errors = app.validate_candidate_discovery_preferences(profile)
+
+    assert "Target roles" in errors
+    assert "Target locations" in errors
+    assert "Remote preference" in errors
+    assert "Employment type" in errors
+    assert "Career level" in errors
 
 
 def test_get_latest_candidate_profile_uses_current_draft(monkeypatch) -> None:
@@ -478,6 +593,28 @@ def test_package_generation_blockers_require_mandatory_candidate_fields() -> Non
     )
 
     assert any(blocker.startswith("Complete the candidate profile") for blocker in blockers)
+
+
+def test_package_generation_blockers_ignore_missing_optional_preferences() -> None:
+    app = importlib.import_module("app")
+    profile = make_complete_candidate_profile()
+    profile.candidate_profile.candidate_preferences.target_roles = []
+    profile.candidate_profile.candidate_preferences.target_locations = []
+    profile.candidate_profile.candidate_preferences.remote_preference = []
+    profile.candidate_profile.candidate_preferences.employment_type = []
+    profile.candidate_profile.candidate_preferences.seniority_level = []
+    profile.candidate_profile.candidate_preferences.salary_min_eur = None
+    profile.candidate_profile.candidate_preferences.salary_max_eur = None
+    profile.candidate_profile.candidate_preferences.work_authorization = ""
+    job = make_package_job()
+
+    blockers = app.get_application_package_blockers(
+        profile,
+        job,
+        make_package_requirements(job),
+    )
+
+    assert blockers == []
 
 
 def test_package_generation_blockers_require_application_requirements() -> None:

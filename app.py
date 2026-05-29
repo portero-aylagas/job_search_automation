@@ -7,6 +7,12 @@ from pathlib import Path
 import streamlit as st
 
 from src import candidate_profile_ui
+from src.agent_ui import (
+    SELECTED_JOB_STATE_KEY,
+    SELECTED_PAGE_STATE_KEY,
+    render_agent_page,
+    render_karen_chat_window,
+)
 from src.app_workflow import (
     apply_resolution_details,
     apply_url_review_messages,
@@ -20,7 +26,9 @@ from src.app_workflow import (
 )
 from src.candidate_profile import (
     merge_supplemental_extracted_data,
+    validate_candidate_discovery_preferences,
     validate_candidate_profile,
+    validate_known_job_candidate_profile,
 )
 from src.candidate_profile_ui import (
     CAREER_LEVEL_HELP,
@@ -68,17 +76,72 @@ __all__ = [
     "mark_requirements_reviewed",
     "merge_supplemental_extracted_data",
     "render_candidate_profile_page",
+    "render_agent_page",
+    "render_karen_chat_window",
     "render_jobs_page",
     "required_label",
     "resolved_apply_url",
     "save_candidate_profile",
     "set_candidate_profile_draft",
+    "validate_candidate_discovery_preferences",
     "validate_candidate_profile",
+    "validate_known_job_candidate_profile",
     "validate_reviewed_apply_url",
     "work_authorization_index",
 ]
 
 BASE_DIR = Path(__file__).resolve().parent
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent"]
+
+
+def inject_app_shell_styles() -> None:
+    """Apply viewport layout styles for the main page and Karen chat."""
+
+    if not hasattr(st, "markdown"):
+        return
+
+    st.markdown(
+        """
+<style>
+div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
+  > div[data-testid="stHorizontalBlock"] {
+    align-items: stretch;
+}
+
+div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
+  > div[data-testid="stHorizontalBlock"]
+  > div:nth-of-type(1)
+  > div[data-testid="stVerticalBlock"] {
+    max-height: calc(100vh - 7rem);
+    overflow-y: auto;
+    padding-right: 0.75rem;
+}
+
+div[data-testid="stVerticalBlock"]:has(.karen-app-shell-anchor)
+  > div[data-testid="stHorizontalBlock"]
+  > div:nth-of-type(2)
+  > div[data-testid="stVerticalBlock"] {
+    position: sticky;
+    top: 4.75rem;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    padding-bottom: 1rem;
+}
+
+div[data-testid="stVerticalBlock"]:has(.karen-chat-input-anchor)
+  div[data-testid="stChatInput"] {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    background: var(--background-color);
+    border-top: 1px solid rgba(49, 51, 63, 0.18);
+    padding-top: 0.5rem;
+}
+</style>
+<span class="karen-app-shell-anchor"></span>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def get_candidate_profile_draft(base_dir: Path) -> dict:
@@ -121,16 +184,52 @@ def main() -> None:
     _, tracker_records = load_app_data(BASE_DIR)
 
     st.sidebar.title("Job Search Automation")
-    page = st.sidebar.radio("Navigate", ["Candidate Profile", "Job Intake", "Jobs", "Tracker"])
+    if SELECTED_PAGE_STATE_KEY not in st.session_state:
+        st.session_state[SELECTED_PAGE_STATE_KEY] = "Candidate Profile"
+    selected_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
+    if selected_page not in PAGE_NAMES:
+        selected_page = "Candidate Profile"
+        st.session_state[SELECTED_PAGE_STATE_KEY] = selected_page
+    selected_index = PAGE_NAMES.index(selected_page)
+    page = st.sidebar.radio(
+        "Navigate",
+        PAGE_NAMES,
+        index=selected_index,
+        key=SELECTED_PAGE_STATE_KEY,
+    )
 
-    if page == "Candidate Profile":
-        render_candidate_profile_page(BASE_DIR)
-    elif page == "Job Intake":
-        render_job_intake_page(BASE_DIR)
-    elif page == "Jobs":
-        render_jobs_page(BASE_DIR, tracker_records)
-    else:
-        render_tracker_page(tracker_records)
+    render_page_with_karen(BASE_DIR, page, tracker_records)
+
+
+def render_page_with_karen(
+    base_dir: Path,
+    page: str,
+    tracker_records: list[TrackerRecord],
+) -> None:
+    """Render one main app page with Karen in the persistent right column."""
+
+    inject_app_shell_styles()
+    main_column, karen_column = st.columns([0.68, 0.32], gap="large")
+
+    with main_column:
+        if page == "Candidate Profile":
+            render_candidate_profile_page(base_dir)
+        elif page == "Job Intake":
+            render_job_intake_page(base_dir)
+        elif page == "Agent":
+            render_agent_page(base_dir, tracker_records)
+        elif page == "Jobs":
+            render_jobs_page(base_dir, tracker_records)
+        else:
+            render_tracker_page(tracker_records)
+
+    with karen_column:
+        selected_job_id = st.session_state.get(SELECTED_JOB_STATE_KEY)
+        render_karen_chat_window(
+            base_dir,
+            current_page=page,
+            selected_job_id=selected_job_id,
+        )
 
 
 if __name__ == "__main__":

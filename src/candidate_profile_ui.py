@@ -121,6 +121,15 @@ def gender_index(value: str | None) -> int | None:
     return None
 
 
+def optional_int_from_text(value: str) -> int | None:
+    """Return an optional integer from a text input value."""
+
+    normalized = value.strip().replace(".", "").replace(",", "")
+    if not normalized:
+        return None
+    return int(normalized)
+
+
 def review_text_from_items(items: list[str]) -> str:
     """Return extracted CV items as a readable editable bullet list."""
 
@@ -179,7 +188,7 @@ def render_candidate_profile_page(base_dir: Path) -> None:
     st.title("Candidate Profile")
     st.write(
         "Upload your CV and certifications once, review the extracted data, and "
-        "fill in the missing job-search preferences."
+        "optionally add job-search preferences for future discovery."
     )
 
     success_message = st.session_state.pop("candidate_profile_success", None)
@@ -529,22 +538,26 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
     """Render manual candidate preference inputs and update the draft."""
 
     with st.container(border=True):
-        st.subheader("4. Manual candidate preferences")
+        st.subheader("4. Optional job-search preferences")
+        st.caption(
+            "These fields can help future discovery and ranking, but they are not "
+            "required to save a profile or prepare a known job application."
+        )
         profile_data = candidate_profile.candidate_profile
         preferences = profile_data.candidate_preferences
 
         with st.form("candidate_profile_preferences_form"):
             target_roles = st.text_area(
-                required_label("Target roles"),
+                "Target roles",
                 value="\n".join(preferences.target_roles),
                 height=100,
             )
             target_locations = st.text_area(
-                required_label("Target locations"),
+                "Target locations",
                 value="\n".join(preferences.target_locations),
                 height=100,
             )
-            st.markdown("**Remote preference** *")
+            st.markdown("**Remote preference**")
             selected_remote_preferences: list[str] = []
             remote_preference_values = set(preferences.remote_preference)
             remote_columns = st.columns(2)
@@ -558,7 +571,7 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
                     ):
                         selected_remote_preferences.append(value)
 
-            st.markdown("**Employment type** *")
+            st.markdown("**Employment type**")
             selected_employment_types: list[str] = []
             employment_type_values = set(preferences.employment_type)
             type_columns = st.columns(2)
@@ -572,7 +585,7 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
                     ):
                         selected_employment_types.append(value)
 
-            st.markdown("**Career level** *")
+            st.markdown("**Career level**")
             selected_seniority_levels: list[str] = []
             seniority_level_values = set(preferences.seniority_level)
             seniority_columns = st.columns(2)
@@ -588,11 +601,11 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
                         selected_seniority_levels.append(value)
 
             availability = st.text_input(
-                required_label("Availability"),
+                "Availability",
                 value=preferences.availability,
             )
             work_authorization = st.radio(
-                required_label("Work authorization"),
+                "Work authorization",
                 options=[value for value, _ in WORK_AUTHORIZATION_OPTIONS],
                 format_func=dict(WORK_AUTHORIZATION_OPTIONS).get,
                 index=work_authorization_index(preferences.work_authorization),
@@ -601,19 +614,23 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
             )
             salary_left, salary_right = st.columns(2)
             with salary_left:
-                salary_min_eur = st.number_input(
-                    required_label("Salary min (EUR / year)"),
-                    min_value=0,
-                    step=1000,
-                    value=preferences.salary_min_eur or 50000,
+                salary_min_eur = st.text_input(
+                    "Salary min (EUR / year)",
+                    value=(
+                        ""
+                        if preferences.salary_min_eur is None
+                        else str(preferences.salary_min_eur)
+                    ),
                     key="candidate_profile_salary_min_eur",
                 )
             with salary_right:
-                salary_max_eur = st.number_input(
-                    required_label("Salary max (EUR / year)"),
-                    min_value=0,
-                    step=1000,
-                    value=preferences.salary_max_eur or 100000,
+                salary_max_eur = st.text_input(
+                    "Salary max (EUR / year)",
+                    value=(
+                        ""
+                        if preferences.salary_max_eur is None
+                        else str(preferences.salary_max_eur)
+                    ),
                     key="candidate_profile_salary_max_eur",
                 )
             save_preferences = st.form_submit_button(
@@ -641,12 +658,16 @@ def render_candidate_preferences_section(candidate_profile: CandidateProfile) ->
             selected_seniority_levels
         )
         updated_profile.candidate_profile.candidate_preferences.availability = availability.strip()
-        updated_profile.candidate_profile.candidate_preferences.salary_min_eur = int(
-            salary_min_eur
-        )
-        updated_profile.candidate_profile.candidate_preferences.salary_max_eur = int(
-            salary_max_eur
-        )
+        try:
+            updated_profile.candidate_profile.candidate_preferences.salary_min_eur = (
+                optional_int_from_text(salary_min_eur)
+            )
+            updated_profile.candidate_profile.candidate_preferences.salary_max_eur = (
+                optional_int_from_text(salary_max_eur)
+            )
+        except ValueError:
+            st.error("Salary values must be whole numbers.")
+            return
         updated_profile.candidate_profile.candidate_preferences.work_authorization = (
             work_authorization or ""
         )

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.agent_ui import SELECTED_JOB_STATE_KEY
 from src.app_workflow import (
     get_application_package_blockers,
     load_application_page_snapshot,
@@ -89,11 +90,7 @@ def render_jobs_page(base_dir: Path, tracker_records: list[TrackerRecord]) -> No
         tracker_records,
         key=lambda record: (record.company.lower(), record.title.lower(), record.job_id),
     )
-    selected_record = st.selectbox(
-        "Job",
-        sorted_records,
-        format_func=job_option_label,
-    )
+    selected_record = render_jobs_page_selector(sorted_records)
     job_listing = load_normalized_job(base_dir, selected_record.job_id)
 
     if job_listing is None:
@@ -118,6 +115,35 @@ def job_option_label(record: TrackerRecord) -> str:
     """Return the display label for a job selector option."""
 
     return f"{record.company} / {record.title}"
+
+
+def render_jobs_page_selector(sorted_records: list[TrackerRecord]) -> TrackerRecord:
+    """Render the job selector and store the selected job for Karen."""
+
+    selected_job_id = _session_state_get(SELECTED_JOB_STATE_KEY)
+    selected_index = next(
+        (
+            index
+            for index, record in enumerate(sorted_records)
+            if record.job_id == selected_job_id
+        ),
+        0,
+    )
+    try:
+        selected_record = st.selectbox(
+            "Job",
+            sorted_records,
+            index=selected_index,
+            format_func=job_option_label,
+        )
+    except TypeError:
+        selected_record = st.selectbox(
+            "Job",
+            sorted_records,
+            format_func=job_option_label,
+        )
+    _session_state_set(SELECTED_JOB_STATE_KEY, selected_record.job_id)
+    return selected_record
 
 
 def format_match_score(record: TrackerRecord) -> str:
@@ -1633,3 +1659,16 @@ def get_apply_assistance_blockers(
             )
 
     return blockers
+
+
+def _session_state_get(key: str, default: object | None = None) -> object | None:
+    session_state = getattr(st, "session_state", None)
+    if session_state is None:
+        return default
+    return session_state.get(key, default)
+
+
+def _session_state_set(key: str, value: object) -> None:
+    session_state = getattr(st, "session_state", None)
+    if session_state is not None:
+        session_state[key] = value

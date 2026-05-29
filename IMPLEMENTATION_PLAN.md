@@ -38,12 +38,20 @@ Do not start new feature phases with web search, browser automation, or external
 - Application package generation is implemented with manifest-driven artifacts,
   requirement traceability, package quality checks, JSON persistence, Markdown
   export, and manual edit/reject recovery actions.
+- Deterministic match analysis exists as historical backend code, but it is
+  removed from the active user-facing known-job apply workflow. Existing
+  `analysis.json` files are ignored by normal navigation, Karen, package
+  generation, and tracker progression.
+- Karen is implemented as the runtime product assistant for the current
+  human-gated workflow. She appears as a persistent right-side chat window,
+  exposes an expanded Agent-page dashboard, persists session transcripts and
+  job-scoped copies, writes structured event logs, and stops at requirements,
+  package, fill-plan, and Browser Use launch gates.
 
 ### Not Delivered Yet
 
-- Deterministic match analysis is still pending.
-- Explicit package approval, ready-to-apply status, and downstream final review
-  workflow are still pending.
+- Public web job discovery is still pending.
+- Broader duplicate handling and a proper applied-jobs view are still pending.
 - Complex nested CV editors, multiple CV versions, excluded roles, excluded
   companies, profile scoring, passport/ID upload, and job matching from the
   Candidate Profile page remain out of scope.
@@ -52,9 +60,10 @@ Do not start new feature phases with web search, browser automation, or external
 
 - Candidate professional data now comes from `cv_extracted`, populated by CV
   extraction and editable by the user.
-- Manual candidate preferences are limited to fields not reliably present in a
-  CV: target roles, target locations, remote preference, employment type, career
-  level, availability, annual EUR salary range, and EU work authorization.
+- Manual candidate preferences are optional job-search metadata and are not
+  required for known-job applications: target roles, target locations, remote
+  preference, employment type, career level, availability, annual EUR salary
+  range, and EU work authorization.
 - `remote_preference` no longer includes `no_preference`; users select all
   concrete modes when they are open to all.
 - `employment_type` is separate from career level and contains only work
@@ -130,8 +139,8 @@ streamlit run app.py
 
 ### Goal
 
-Let the user create a candidate profile from a CV plus only the missing
-job-search preferences that are not reliably extractable from the CV.
+Let the user create a candidate profile from a CV, with optional job-search
+preferences that are not required for known-job applications.
 
 ### Implemented
 
@@ -158,7 +167,7 @@ job-search preferences that are not reliably extractable from the CV.
   is migrated into reviewed gender
 - optional supporting documents are parsed through the same review workflow and
   merged into the reviewable candidate profile state
-- manual candidate preferences:
+- optional manual candidate preferences:
   - target roles
   - target locations
   - remote preference
@@ -184,12 +193,12 @@ data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
 - CV extraction is triggered through the agent layer, not by UI regex parsing
 - extracted CV data is visible and editable before saving
 - reviewed identity data must include gender before the profile can be saved
-- user can fill only missing job-search preferences manually
-- employment type is a checkbox list with at least one selected value
+- user can fill job-search preferences manually, but they are optional
+- employment type is an optional checkbox list
 - career level is a checkbox list with hover help for each option
-- work authorization is a mutually exclusive EU radio choice
-- salary is a yearly EUR min/max range and max must be greater than or equal to
-  min
+- work authorization is an optional mutually exclusive EU radio choice
+- salary is an optional yearly EUR min/max range and max must be greater than
+  or equal to min when both values are present
 - final save validates all required fields and writes one candidate profile JSON
 - local personal profile artifacts are not committed to git
 - optional supporting documents can be saved and merged into the reviewable
@@ -259,9 +268,11 @@ data/runtime/jobs.json
 
 ### Goal
 
-Compare a job against the candidate profile using simple deterministic logic.
+Disabled from the current known-job workflow. Existing backend code and saved
+`analysis.json` files may remain temporarily, but match analysis is no longer a
+gate before requirements discovery or package generation.
 
-### Implement
+### Future/Disabled Scope
 
 - skill overlap detection
 - role/title match
@@ -291,11 +302,11 @@ data/jobs/<job_id>/analysis.json
 
 ### Acceptance Criteria
 
-- user can select a job
-- app calculates match analysis
-- analysis is displayed
-- analysis is saved
-- tracker status can move to `analyzed`
+- current app navigation does not require match analysis
+- Karen does not propose `analyze_match`, `review_match`, or `reject_match`
+- package generation can proceed from reviewed requirements without reviewed
+  match analysis
+- existing saved `analysis.json` files remain compatible historical artifacts
 
 ---
 
@@ -336,8 +347,8 @@ units + job data guided by those requirements.
 - application package save/load
 - apply URL validation that rejects source-page URLs, non-http(s) targets, and
   other invalid application destinations before jobs are saved
-- package generation gate that requires a complete candidate profile, parsed
-  CV, parsed job description, and discovered job-preserving application
+- package generation gate that requires a complete known-job candidate profile,
+  parsed CV, parsed job description, and reviewed job-preserving application
   requirements before generating application material
 
 ### Generated Outputs
@@ -366,7 +377,7 @@ read-only requirements contract.
 
 ### Acceptance Criteria
 
-- user can select an analyzed job
+- user can select a saved reviewed job with a valid `apply_url`
 - app can record application requirements when an apply URL is available
 - unreachable, missing, email-only, same-page, or generic career-page apply URLs
   block requirements discovery
@@ -472,8 +483,6 @@ Expand the existing graph pattern into the full workflow state machine.
   - receive_job_input
   - normalize_job
   - human_validate_job
-  - analyze_match
-  - human_validate_analysis
   - inspect_application_page_agent
   - extract_application_requirements
   - generate_application_package
@@ -495,8 +504,6 @@ START
   -> receive_job_input
   -> normalize_job
   -> human_validate_job
-  -> analyze_match
-  -> human_validate_analysis
   -> inspect_application_page_agent
   -> extract_application_requirements
   -> generate_application_package

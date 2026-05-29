@@ -8,7 +8,14 @@ from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
-from src.paths import DATA_DIR, OUTPUTS_DIR, RUNTIME_DATA_DIR, RUNTIME_JOBS_DIR, TEMPLATE_JOBS_DIR
+from src.paths import (
+    AGENT_SESSIONS_DIR,
+    DATA_DIR,
+    OUTPUTS_DIR,
+    RUNTIME_DATA_DIR,
+    RUNTIME_JOBS_DIR,
+    TEMPLATE_JOBS_DIR,
+)
 
 
 class JsonStorageError(ValueError):
@@ -31,6 +38,7 @@ def ensure_data_dirs(base_dir: Path | str = ".") -> None:
         TEMPLATE_JOBS_DIR,
         RUNTIME_DATA_DIR,
         RUNTIME_JOBS_DIR,
+        AGENT_SESSIONS_DIR,
         OUTPUTS_DIR,
     ):
         (root / relative_path).mkdir(parents=True, exist_ok=True)
@@ -105,3 +113,47 @@ def load_model(path: Path | str, model_type: Any, default: Any | None = None) ->
     if payload is default:
         return default
     return TypeAdapter(model_type).validate_python(payload)
+
+
+def append_jsonl(path: Path | str, data: Any) -> None:
+    """Append one JSON-serializable record to a JSON Lines file.
+
+    Args:
+        path: Destination JSONL file path.
+        data: JSON-serializable payload to append.
+    """
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=True)
+        file.write("\n")
+
+
+def load_jsonl(path: Path | str) -> list[Any]:
+    """Load all valid JSON Lines records from a file.
+
+    Args:
+        path: Source JSONL file path.
+
+    Raises:
+        JsonStorageError: If any existing line contains malformed JSON.
+    """
+
+    target = Path(path)
+    if not target.exists():
+        return []
+
+    records: list[Any] = []
+    with target.open("r", encoding="utf-8") as file:
+        for line_number, line in enumerate(file, start=1):
+            stripped_line = line.strip()
+            if not stripped_line:
+                continue
+            try:
+                records.append(json.loads(stripped_line))
+            except json.JSONDecodeError as exc:
+                raise JsonStorageError(
+                    f"Invalid JSONL in {target}: line {line_number}: {exc.msg}"
+                ) from exc
+    return records

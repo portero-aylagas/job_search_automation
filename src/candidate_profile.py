@@ -18,10 +18,20 @@ UPLOAD_TIMESTAMP_PREFIX_PATTERN = re.compile(r"^\d{14}-(?=.)")
 
 
 def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
-    """Return user-facing labels for missing or inconsistent profile fields.
+    """Return known-job application blockers for a candidate profile.
 
     Args:
         candidate_profile: Candidate profile draft or saved profile to validate.
+    """
+
+    return validate_known_job_candidate_profile(candidate_profile)
+
+
+def validate_known_job_candidate_profile(candidate_profile: CandidateProfile) -> list[str]:
+    """Return profile fields required for applying to a known saved job.
+
+    Job-search preferences are optional metadata in the known-job workflow. They
+    are validated only for internal consistency when present.
     """
 
     profile = candidate_profile.candidate_profile
@@ -56,22 +66,6 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
         errors.append("Country of residence")
     if not identity.nationality.strip():
         errors.append("Nationality")
-    if not profile.candidate_preferences.target_roles:
-        errors.append("Target roles")
-    if not profile.candidate_preferences.target_locations:
-        errors.append("Target locations")
-    if not profile.candidate_preferences.remote_preference:
-        errors.append("Remote preference")
-    if not profile.candidate_preferences.employment_type:
-        errors.append("Employment type")
-    if not profile.candidate_preferences.seniority_level:
-        errors.append("Career level")
-    if not profile.candidate_preferences.availability.strip():
-        errors.append("Availability")
-    if profile.candidate_preferences.salary_min_eur is None:
-        errors.append("Salary min")
-    if profile.candidate_preferences.salary_max_eur is None:
-        errors.append("Salary max")
     if (
         profile.candidate_preferences.salary_min_eur is not None
         and profile.candidate_preferences.salary_max_eur is not None
@@ -81,9 +75,41 @@ def validate_candidate_profile(candidate_profile: CandidateProfile) -> list[str]
         )
     ):
         errors.append("Salary max must be >= Salary min")
-    if not str(profile.candidate_preferences.work_authorization).strip():
-        errors.append("Work authorization")
 
+    return errors
+
+
+def validate_candidate_discovery_preferences(
+    candidate_profile: CandidateProfile,
+) -> list[str]:
+    """Return optional future job-discovery preference validation errors."""
+
+    preferences = candidate_profile.candidate_profile.candidate_preferences
+    errors: list[str] = []
+    if not preferences.target_roles:
+        errors.append("Target roles")
+    if not preferences.target_locations:
+        errors.append("Target locations")
+    if not preferences.remote_preference:
+        errors.append("Remote preference")
+    if not preferences.employment_type:
+        errors.append("Employment type")
+    if not preferences.seniority_level:
+        errors.append("Career level")
+    if not preferences.availability.strip():
+        errors.append("Availability")
+    if preferences.salary_min_eur is None:
+        errors.append("Salary min")
+    if preferences.salary_max_eur is None:
+        errors.append("Salary max")
+    if (
+        preferences.salary_min_eur is not None
+        and preferences.salary_max_eur is not None
+        and preferences.salary_max_eur < preferences.salary_min_eur
+    ):
+        errors.append("Salary max must be >= Salary min")
+    if not str(preferences.work_authorization).strip():
+        errors.append("Work authorization")
     return errors
 
 

@@ -76,9 +76,12 @@ def test_delivery_status_docs_are_consistent() -> None:
 
     assert "## Delivered Features" in readme
     assert "deterministic candidate/job match analysis" in readme
-    assert "deterministic match analysis (pending)" in readme
+    assert "disabled from" in readme
+    assert "Karen runtime assistant" in readme
     assert "Application package generation is implemented" in implementation_plan
-    assert "Deterministic match analysis is still pending." in implementation_plan
+    assert "Deterministic match analysis exists as historical backend code" in (
+        implementation_plan
+    )
     assert "Application package generation and downstream human review are still pending" not in (
         implementation_plan
     )
