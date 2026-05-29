@@ -23,7 +23,8 @@ from src.application_fill_plan import load_application_fill_plan
 from src.application_package import load_application_package
 from src.candidate_profile import validate_candidate_profile
 
-PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent")
+AGENT_PAGE_NAME = "Agent Karen"
+PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME, "Agent")
 
 
 @dataclass(frozen=True)
@@ -143,8 +144,8 @@ ROUTE_TOOLS = {
     "go_to_agent": KarenToolDefinition(
         name="go_to_agent",
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
-        description="Route to the expanded Karen dashboard.",
-        route_page="Agent",
+        description="Route to Karen's Agent tab.",
+        route_page=AGENT_PAGE_NAME,
     ),
 }
 
@@ -261,7 +262,7 @@ def execute_karen_tool(
             tool_name=tool_name,
             status="needs_job",
             message=(
-                "Select a job on the Jobs page or Agent page before asking Karen "
+                "Select a job on the Jobs page or Agent Karen tab before asking Karen "
                 "to run a job-scoped workflow action."
             ),
             route_hint="Jobs",
@@ -415,7 +416,7 @@ def _recent_transcript_summary(messages: list[object]) -> str:
 
 def _selected_job_summary(base_dir: Path | str, job_id: str | None) -> str:
     if not job_id:
-        return "No job is selected. Select one on the Jobs page or Agent page."
+        return "No job is selected. Select one on the Jobs page or Agent Karen tab."
 
     job = load_normalized_job(base_dir, job_id)
     if job is None:

@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from src import candidate_profile_ui
+from src.agent_ui import AGENT_PAGE_NAME, render_agent_page
 from src.app_workflow import (
     apply_resolution_details,
     apply_url_review_messages,
@@ -70,6 +71,7 @@ __all__ = [
     "mark_requirements_reviewed",
     "merge_supplemental_extracted_data",
     "render_candidate_profile_page",
+    "render_agent_page",
     "render_jobs_page",
     "required_label",
     "resolved_apply_url",
@@ -84,7 +86,7 @@ __all__ = [
 
 BASE_DIR = Path(__file__).resolve().parent
 SELECTED_PAGE_STATE_KEY = "selected_page"
-PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker"]
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME]
 
 
 def inject_app_shell_styles() -> None:
@@ -160,8 +162,12 @@ def render_top_page_selector() -> str:
     """Render the main page selector as a tab-like control."""
 
     selected_page = st.session_state.get(SELECTED_PAGE_STATE_KEY, "Candidate Profile")
+    if selected_page == "Agent":
+        selected_page = AGENT_PAGE_NAME
+        st.session_state[SELECTED_PAGE_STATE_KEY] = selected_page
     if selected_page not in PAGE_NAMES:
         selected_page = "Candidate Profile"
+        st.session_state[SELECTED_PAGE_STATE_KEY] = selected_page
 
     if hasattr(st, "segmented_control"):
         page = st.segmented_control(
@@ -196,6 +202,8 @@ def render_selected_page(
         render_job_intake_page(base_dir)
     elif page == "Jobs":
         render_jobs_page(base_dir, tracker_records)
+    elif page in {AGENT_PAGE_NAME, "Agent"}:
+        render_agent_page(base_dir, tracker_records)
     else:
         render_tracker_page(tracker_records)
 

@@ -95,7 +95,7 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     assert ("page", "Job Intake") not in rendered
     assert ("page", "Tracker") not in rendered
     assert not any(item[0] == "karen" for item in rendered)
-    assert "Agent" not in app.PAGE_NAMES
+    assert "Agent Karen" in app.PAGE_NAMES
     assert (
         "segmented_control",
         {
@@ -110,19 +110,19 @@ def test_main_renders_selected_page_from_top_tab_selector(monkeypatch) -> None:
     assert not any(item[0] == "tabs" for item in rendered)
 
 
-def test_render_selected_page_ignores_removed_agent_page(monkeypatch) -> None:
+def test_render_selected_page_renders_agent_karen_tab(monkeypatch) -> None:
     app = importlib.import_module("app")
     rendered: list[tuple[str, object]] = []
 
     monkeypatch.setattr(
         app,
-        "render_tracker_page",
-        lambda _records: rendered.append(("page", "Tracker")),
+        "render_agent_page",
+        lambda _base_dir, _records: rendered.append(("page", "Agent Karen")),
     )
 
-    app.render_selected_page(Path("."), "Agent", [])
+    app.render_selected_page(Path("."), "Agent Karen", [])
 
-    assert rendered == [("page", "Tracker")]
+    assert rendered == [("page", "Agent Karen")]
 
 
 def test_validate_candidate_profile_reports_missing_required_fields() -> None:
