@@ -24,6 +24,7 @@ dist/
 
 # Frontend dependencies and build cache
 node_modules/
+.vite/
 
 # Test and coverage outputs
 .pytest_cache/
