@@ -1,0 +1,247 @@
+:root {
+  color: #1d2433;
+  background: #f5f7fa;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #b8c1d1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #182131;
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+}
+
+button.primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #ffffff;
+}
+
+button.secondary {
+  background: #eef3fb;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid #c8d0dc;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 0.55rem 0.65rem;
+}
+
+textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+label {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid #d8dee8;
+  background: #ffffff;
+  padding: 0.75rem clamp(1rem, 4vw, 2rem);
+}
+
+.tab-button {
+  border-color: transparent;
+}
+
+.tab-button.active {
+  background: #172033;
+  color: #ffffff;
+}
+
+.page {
+  width: min(1240px, 100%);
+  margin: 0 auto;
+  padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
+}
+
+.panel {
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.message {
+  border-radius: 6px;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+
+.success {
+  background: #e8f6ee;
+  color: #15562d;
+}
+
+.error {
+  background: #fdebec;
+  color: #8d1c24;
+}
+
+.warning {
+  background: #fff7df;
+  color: #6f5300;
+}
+
+.info {
+  background: #eaf3ff;
+  color: #194b7d;
+}
+
+.muted {
+  color: #647085;
+  font-size: 0.92rem;
+}
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 1rem;
+}
+
+.check-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 500;
+}
+
+.check-row input {
+  width: auto;
+}
+
+.field-value {
+  margin: 0.2rem 0 0.8rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+th,
+td {
+  border-bottom: 1px solid #d8dee8;
+  padding: 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+details {
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #fbfcfe;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.chat-log {
+  display: grid;
+  gap: 0.7rem;
+  margin: 1rem 0;
+}
+
+.karen-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.karen-header img {
+  width: 128px;
+  height: 126px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.chat-message {
+  border-radius: 8px;
+  padding: 0.75rem;
+  background: #f0f3f8;
+}
+
+.chat-message.user {
+  background: #eaf3ff;
+}
+
+@media (max-width: 760px) {
+  .top-nav {
+    overflow-x: auto;
+  }
+
+  .grid,
+  .grid.three,
+  .check-grid {
+    grid-template-columns: 1fr;
+  }
+}

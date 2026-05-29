@@ -22,6 +22,9 @@ dist/
 .eggs/
 *.egg
 
+# Frontend dependencies and build cache
+node_modules/
+
 # Test and coverage outputs
 .pytest_cache/
 .coverage

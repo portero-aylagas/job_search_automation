@@ -23,3 +23,8 @@ if find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null |
 else
     echo "No tests found; skipping pytest."
 fi
+
+if [ -f package.json ]; then
+    npm run frontend:typecheck
+    npm run frontend:build
+fi
