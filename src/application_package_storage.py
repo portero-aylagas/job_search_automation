@@ -59,7 +59,12 @@ def _save_uploadable_package_artifacts(
     for artifact in package.artifacts:
         if not _is_cover_letter_artifact(artifact) or not artifact.content.strip():
             continue
-        _export_artifact_pdf(artifact, artifacts_dir, metadata_prefix="generated")
+        _export_artifact_pdf(
+            artifact,
+            artifacts_dir,
+            metadata_prefix="generated",
+            overwrite=True,
+        )
 
 
 def export_cover_letter_artifact(
@@ -75,6 +80,7 @@ def export_cover_letter_artifact(
             artifact,
             Path(destination_dir),
             metadata_prefix="downloaded",
+            overwrite=False,
         )
     return None
 
@@ -84,11 +90,14 @@ def _export_artifact_pdf(
     destination_dir: Path,
     *,
     metadata_prefix: str,
+    overwrite: bool,
 ) -> Path:
     """Write one generated artifact as a PDF and record its path in metadata."""
 
     destination_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = destination_dir / COVER_LETTER_ARTIFACT_FILENAME
+    if not overwrite:
+        artifact_path = _available_artifact_path(artifact_path)
     _write_text_pdf(artifact_path, _cover_letter_pdf_content(artifact))
     metadata = dict(artifact.metadata)
     metadata[f"{metadata_prefix}_file_path"] = str(artifact_path)
@@ -96,6 +105,20 @@ def _export_artifact_pdf(
     metadata[f"{metadata_prefix}_file_mime_type"] = "application/pdf"
     artifact.metadata = metadata
     return artifact_path
+
+
+def _available_artifact_path(path: Path) -> Path:
+    """Return a non-existing artifact path by adding a numeric suffix if needed."""
+
+    if not path.exists():
+        return path
+
+    for suffix in range(2, 10_000):
+        candidate = path.with_name(f"{path.stem}-{suffix}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+
+    raise FileExistsError(f"No available filename found for {path}.")
 
 
 def _is_cover_letter_artifact(artifact: ApplicationArtifact) -> bool:

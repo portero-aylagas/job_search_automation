@@ -57,6 +57,19 @@ def test_env_example_documents_required_ai_settings() -> None:
     assert "OPENAI_MODEL=gpt-5.4" in env_example
 
 
+def test_requirements_are_bounded_and_include_direct_pdf_dependency() -> None:
+    requirements = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
+    dependency_lines = [
+        line.strip()
+        for line in requirements
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    assert dependency_lines
+    assert all(">=" in line and "<" in line for line in dependency_lines)
+    assert any(line.startswith("reportlab>=") for line in dependency_lines)
+
+
 def test_delivery_status_docs_are_consistent() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     implementation_plan = Path("IMPLEMENTATION_PLAN.md").read_text(encoding="utf-8")

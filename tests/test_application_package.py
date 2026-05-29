@@ -558,6 +558,31 @@ def test_export_cover_letter_artifact_writes_to_selected_folder(tmp_path: Path) 
     assert package.artifacts[0].metadata["downloaded_file_format"] == "pdf"
 
 
+def test_export_cover_letter_artifact_versions_existing_download(tmp_path: Path) -> None:
+    package = ApplicationPackage(
+        job_id="job-001",
+        artifacts=[
+            ApplicationArtifact(
+                id="cover-letter-draft",
+                type="cover_letter",
+                label="Cover Letter Draft",
+                content="Dear hiring team,\n\nReviewed cover letter.",
+            )
+        ],
+    )
+    destination = tmp_path / "selected-downloads"
+    existing_path = destination / "cover_letter.pdf"
+    existing_path.parent.mkdir(parents=True)
+    existing_path.write_text("existing user file", encoding="utf-8")
+
+    exported_path = export_cover_letter_artifact(package, destination)
+
+    assert exported_path == destination / "cover_letter-2.pdf"
+    assert existing_path.read_text(encoding="utf-8") == "existing user file"
+    assert exported_path.exists()
+    assert package.artifacts[0].metadata["downloaded_file_path"] == str(exported_path)
+
+
 def test_cover_letter_pdf_export_does_not_inject_artifact_heading(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
