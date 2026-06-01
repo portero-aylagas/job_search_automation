@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { apiRequest } from "./api";
+import type { ApiRecord } from "./api";
 
 type MockResponse = {
   status?: number;
@@ -154,10 +155,13 @@ describe("App workflow pages", () => {
 
     expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask Karen")).toBeInTheDocument();
+    expect(screen.getByText("No messages yet.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Requirements Review");
     await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "What next?");
     await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
 
     await waitFor(() => expect(agentLoads).toBeGreaterThanOrEqual(2));
+    expect(screen.getByPlaceholderText("Ask Karen")).toHaveValue("");
     expect(chatBodies).toEqual([
       {
         message: "What next?",
@@ -165,6 +169,182 @@ describe("App workflow pages", () => {
         session_id: "session-1",
       },
     ]);
+  });
+
+  it("sends Karen quick prompts without changing typed composer text", async () => {
+    const chatBodies: unknown[] = [];
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return { body: { context: { selected_job_id: "job-1", session_id: "session-1" } } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Ask Karen");
+    await userEvent.type(composer, "Draft question");
+    await userEvent.click(screen.getByRole("button", { name: "What should I do next?" }));
+
+    await waitFor(() => expect(chatBodies).toHaveLength(1));
+    expect(chatBodies[0]).toMatchObject({ message: "What should I do next?" });
+    expect(composer).toHaveValue("Draft question");
+  });
+
+  it("prevents duplicate Karen sends while one request is active", async () => {
+    const chatBodies: unknown[] = [];
+    let resolveChat: (value: MockResponse) => void = () => undefined;
+    const pendingChat = new Promise<MockResponse>((resolve) => {
+      resolveChat = resolve;
+    });
+    mockFetch(async (url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return pendingChat;
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Ask Karen");
+    await userEvent.type(composer, "Only once");
+    const form = composer.closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form!);
+    fireEvent.submit(form!);
+
+    await waitFor(() => expect(chatBodies).toHaveLength(1));
+    expect(screen.getByRole("button", { name: "Ask Karen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ask Karen" })).toHaveAttribute("aria-busy", "true");
+    resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
+  });
+
+  it("renders Karen messages with speakers, timestamps, actions, and preserved line breaks", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [
+            {
+              role: "user",
+              content: "Status?",
+              timestamp: "2026-06-02T10:15:00.000Z"
+            },
+            {
+              role: "assistant",
+              content: "Line one\nLine two",
+              timestamp: "2026-06-02T10:16:00.000Z",
+              actions: ["review_requirements"]
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("You")).toBeInTheDocument();
+    expect(screen.getByText("Karen")).toBeInTheDocument();
+    expect(screen.getByText("Status?")).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.textContent === "Line one\nLine two")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message actions")).toHaveTextContent("Review requirements");
+  });
+
+  it("scrolls the Karen transcript to new messages", async () => {
+    const scrollTo = vi.fn();
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [
+            {
+              role: "assistant",
+              content: "Latest reply",
+              timestamp: "2026-06-02T10:20:00.000Z"
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    await screen.findByText("Latest reply");
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "smooth" });
+    if (originalScrollTo) {
+      Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+    } else {
+      delete HTMLElement.prototype.scrollTo;
+    }
+  });
+
+  it("submits Karen composer with Enter and keeps Shift+Enter as a newline", async () => {
+    const chatBodies: unknown[] = [];
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return { body: { context: { selected_job_id: "job-1", session_id: "session-1" } } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    const composer = await screen.findByPlaceholderText("Ask Karen");
+    await userEvent.type(composer, "Line one{Shift>}{Enter}{/Shift}Line two");
+    expect(composer).toHaveValue("Line one\nLine two");
+    fireEvent.keyDown(composer, { key: "Enter" });
+
+    await waitFor(() => expect(chatBodies).toHaveLength(1));
+    expect(chatBodies[0]).toMatchObject({ message: "Line one\nLine two" });
   });
 
   it("keeps one Karen chat panel available while switching pages", async () => {
@@ -205,16 +385,16 @@ describe("App workflow pages", () => {
     expect(resizeHandle).toHaveAttribute("aria-valuenow", "400");
     expect(localStorage.getItem("karenPanelWidth")).toBe("400");
     expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText("Review requirements")).toBeInTheDocument();
+    expect(screen.getAllByText("Review requirements").length).toBeGreaterThan(0);
   });
 });
 
-function mockFetch(handler: (url: string, init?: RequestInit) => MockResponse) {
+function mockFetch(handler: (url: string, init?: RequestInit) => MockResponse | Promise<MockResponse>) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      const result = handler(url, init);
+      const result = await handler(url, init);
       const status = result.status ?? 200;
       const contentType = result.contentType ?? "application/json";
       const body = result.body ?? {};
@@ -392,7 +572,7 @@ function readyWorkspace() {
   };
 }
 
-function agentState(loadCount: number) {
+function agentState(loadCount: number, messages: ApiRecord[] = []) {
   return {
     context: { selected_job_id: "job-1", session_id: "session-1" },
     state: {
@@ -404,7 +584,7 @@ function agentState(loadCount: number) {
       pending_gate: "requirements_review",
       artifacts_present: { requirements: loadCount > 1 }
     },
-    messages: [],
+    messages,
     action_labels: { review_requirements: "Review requirements" }
   };
 }
