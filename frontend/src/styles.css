@@ -90,10 +90,29 @@ label {
   color: #ffffff;
 }
 
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, var(--karen-panel-width, 380px), 560px);
+  gap: 1rem;
+  width: 100%;
+  margin: 0;
+  padding: 1.25rem 0 3rem clamp(1rem, 4vw, 2rem);
+  align-items: start;
+}
+
 .page {
-  width: min(1240px, 100%);
-  margin: 0 auto;
-  padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
+  min-width: 0;
+}
+
+.karen-chat-panel {
+  position: sticky;
+  top: 5rem;
+  max-height: calc(100vh - 6.25rem);
+  overflow: auto;
+  border: 1px solid #d8dee8;
+  border-radius: 8px 0 0 8px;
+  background: #ffffff;
+  padding: 1rem;
 }
 
 .panel {
@@ -211,6 +230,46 @@ summary {
   margin: 1rem 0;
 }
 
+.karen-panel-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.karen-panel-header h2 {
+  margin: 0;
+}
+
+.karen-panel-header p {
+  margin: 0.2rem 0 0;
+}
+
+.karen-panel-header img {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.karen-chat-form {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.width-control {
+  margin-bottom: 1rem;
+}
+
+.width-control input {
+  padding: 0;
+}
+
+.width-control span {
+  justify-self: end;
+}
+
 .karen-header {
   display: flex;
   gap: 1rem;
@@ -237,6 +296,17 @@ summary {
 @media (max-width: 760px) {
   .top-nav {
     overflow-x: auto;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+    padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
+  }
+
+  .karen-chat-panel {
+    position: static;
+    max-height: none;
+    border-radius: 8px;
   }
 
   .grid,

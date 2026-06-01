@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -13,6 +13,7 @@ type MockResponse = {
 describe("apiRequest", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("returns JSON success payloads", async () => {
@@ -37,6 +38,7 @@ describe("apiRequest", () => {
 describe("App workflow pages", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
   it("loads Candidate Profile fields and surfaces API save errors", async () => {
@@ -127,7 +129,7 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled();
   });
 
-  it("loads Agent Karen context, sends chat payloads, and reloads state", async () => {
+  it("loads persistent Karen chat, sends chat payloads, and reloads state", async () => {
     const chatBodies: unknown[] = [];
     let agentLoads = 0;
     mockFetch((url, init) => {
@@ -149,9 +151,9 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
-    await userEvent.click(screen.getByRole("button", { name: "Agent Karen" }));
 
-    expect(await screen.findByText("Review requirements")).toBeInTheDocument();
+    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask Karen")).toBeInTheDocument();
     await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "What next?");
     await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
 
@@ -163,6 +165,46 @@ describe("App workflow pages", () => {
         session_id: "session-1",
       },
     ]);
+  });
+
+  it("keeps one Karen chat panel available while switching pages", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      if (url.endsWith("/api/tracker")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
+    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Agent Karen" }));
+
+    expect(screen.getAllByPlaceholderText("Ask Karen")).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Ask Karen" })).toHaveLength(1);
+    const widthControl = screen.getByLabelText("Panel width");
+    expect(widthControl).toHaveValue("380");
+    fireEvent.change(widthControl, { target: { value: "460" } });
+    expect(widthControl).toHaveValue("460");
+    expect(localStorage.getItem("karenPanelWidth")).toBe("460");
+    expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
+    expect(screen.getByText("Review requirements")).toBeInTheDocument();
   });
 });
 

@@ -36,11 +36,13 @@ The React UI preserves the Streamlit navigation and workflow semantics:
 - `Tracker`
 - `Agent Karen`
 
-Karen remains a top-level `Agent Karen` page. She is not a persistent sidebar.
-Buttons that invoke AI keep visible `with AI` labels. Review gates remain
-explicit and human-controlled. Dynamic job fields, application requirements,
-package artifacts, and fill plans remain structured editable forms rather than
-raw JSON editors.
+Karen chat remains mounted as an app-level side panel across all top-level
+pages. The top-level `Agent Karen` page remains as a dashboard for selected-job
+workflow status, blockers, timeline, and next-action guidance. Buttons that
+invoke AI keep visible `with AI` labels. Review gates remain explicit and
+human-controlled. Dynamic job fields, application requirements, package
+artifacts, and fill plans remain structured editable forms rather than raw JSON
+editors.
 
 The parity checklist for the migration lives in `docs/ui_migration_parity.md`.
 
@@ -58,10 +60,10 @@ Karen's runtime code lives under `src/agents/karen/`:
 - `state.py` defines her state models.
 - `graph.py` runs each chat turn.
 
-The UI uses `assets/karen.png` for Karen's portrait and the browser tab icon.
-Chat transcripts are stored under `data/runtime/agent_sessions/<session_id>/`.
-Job-scoped copies and workflow events are stored under
-`data/runtime/jobs/<job_id>/`.
+The UI uses `assets/karen.png` for Karen's side-panel portrait, dashboard
+portrait, and browser tab icon. Chat transcripts are stored under
+`data/runtime/agent_sessions/<session_id>/`. Job-scoped copies and workflow
+events are stored under `data/runtime/jobs/<job_id>/`.
 
 Karen can explain the app, inspect workflow state, identify blockers, suggest
 next steps, and route the user to the right top-level page. She does not bypass

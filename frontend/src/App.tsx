@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useMemo, useState } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
@@ -31,9 +31,20 @@ const workAuthorization = [
   ["eu_sponsorship_required", "EU sponsorship required"]
 ];
 const genderOptions = ["Male", "Female", "Diverse"];
+const karenPanelWidthKey = "karenPanelWidth";
+const karenPanelWidthMin = 320;
+const karenPanelWidthMax = 560;
+const karenPanelWidthDefault = 380;
 
 function App() {
   const [page, setPage] = useState("Candidate Profile");
+  const [karenRecords, setKarenRecords] = useState<ApiRecord[]>([]);
+  const [selectedKarenJobId, setSelectedKarenJobId] = useState("");
+  const [agent, setAgent] = useState<ApiRecord | null>(null);
+  const [karenMessage, setKarenMessage] = useState("");
+  const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
+  const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
+  const sessionId = agent?.context?.session_id;
 
   useEffect(() => {
     let favicon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
@@ -44,6 +55,61 @@ function App() {
     }
     favicon.href = karenImage;
   }, []);
+
+  function loadAgent(jobId = selectedKarenJobId, nextSessionId = sessionId) {
+    const query = new URLSearchParams();
+    if (jobId) query.set("selected_job_id", jobId);
+    if (nextSessionId) query.set("session_id", nextSessionId);
+    apiRequest<ApiRecord>(`/api/agent?${query.toString()}`)
+      .then(setAgent)
+      .catch((error) => setKarenStatus({ type: "error", text: error.message }));
+  }
+
+  function loadKarenJobs(preferredJobId = selectedKarenJobId, nextSessionId = sessionId) {
+    apiRequest<ApiRecord>("/api/jobs")
+      .then((payload) => {
+        const records = payload.records || [];
+        const nextJobId = records.some((record: ApiRecord) => record.job_id === preferredJobId)
+          ? preferredJobId
+          : records[0]?.job_id || "";
+        setKarenRecords(records);
+        setSelectedKarenJobId(nextJobId);
+        loadAgent(nextJobId, nextSessionId);
+      })
+      .catch((error) => setKarenStatus({ type: "error", text: error.message }));
+  }
+
+  useEffect(() => {
+    loadKarenJobs("", "");
+  }, []);
+
+  async function sendKarenChat(event: FormEvent) {
+    event.preventDefault();
+    if (!karenMessage.trim()) return;
+    await runBusy(() => undefined, setKarenStatus, async () => {
+      const result = await apiRequest<ApiRecord>("/api/agent/chat", {
+        method: "POST",
+        body: JSON.stringify({
+          message: karenMessage,
+          selected_job_id: selectedKarenJobId,
+          session_id: sessionId
+        })
+      });
+      setKarenMessage("");
+      loadAgent(result.context?.selected_job_id || selectedKarenJobId, result.context?.session_id);
+    });
+  }
+
+  function selectKarenJob(jobId: string) {
+    setSelectedKarenJobId(jobId);
+    loadAgent(jobId, sessionId);
+  }
+
+  function updateKarenPanelWidth(width: number) {
+    const nextWidth = clampNumber(width, karenPanelWidthMin, karenPanelWidthMax);
+    setKarenPanelWidth(nextWidth);
+    localStorage.setItem(karenPanelWidthKey, String(nextWidth));
+  }
 
   return (
     <div className="app-shell">
@@ -58,13 +124,44 @@ function App() {
           </button>
         ))}
       </nav>
-      <main className="page">
-        {page === "Candidate Profile" && <CandidateProfilePage />}
-        {page === "Job Intake" && <JobIntakePage onSaved={() => setPage("Jobs")} />}
-        {page === "Jobs" && <JobsPage />}
-        {page === "Tracker" && <TrackerPage />}
-        {page === "Agent Karen" && <AgentKarenPage />}
-      </main>
+      <div
+        className="workspace-layout"
+        style={{ "--karen-panel-width": `${karenPanelWidth}px` } as CSSProperties}
+      >
+        <main className="page">
+          {page === "Candidate Profile" && <CandidateProfilePage />}
+          {page === "Job Intake" && (
+            <JobIntakePage
+              onSaved={(jobId) => {
+                loadKarenJobs(jobId);
+                setPage("Jobs");
+              }}
+            />
+          )}
+          {page === "Jobs" && <JobsPage />}
+          {page === "Tracker" && <TrackerPage />}
+          {page === "Agent Karen" && (
+            <AgentKarenPage
+              agent={agent}
+              records={karenRecords}
+              selectedJobId={selectedKarenJobId}
+              status={karenStatus}
+            />
+          )}
+        </main>
+        <KarenChatPanel
+          agent={agent}
+          records={karenRecords}
+          selectedJobId={selectedKarenJobId}
+          message={karenMessage}
+          status={karenStatus}
+          width={karenPanelWidth}
+          onMessageChange={setKarenMessage}
+          onSelectJob={selectKarenJob}
+          onWidthChange={updateKarenPanelWidth}
+          onSendChat={sendKarenChat}
+        />
+      </div>
     </div>
   );
 }
@@ -277,7 +374,7 @@ function CandidateProfilePage() {
   );
 }
 
-function JobIntakePage({ onSaved }: { onSaved: () => void }) {
+function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [extraction, setExtraction] = useState<ApiRecord | null>(null);
   const [form, setForm] = useState<ApiRecord>({});
@@ -333,7 +430,7 @@ function JobIntakePage({ onSaved }: { onSaved: () => void }) {
       });
       setMessage({ type: "success", text: result.message });
       setExtraction(null);
-      onSaved();
+      onSaved(result.job?.job_id || result.job?.id || "");
     });
   }
 
@@ -698,46 +795,19 @@ function TrackerPage() {
   );
 }
 
-function AgentKarenPage() {
-  const [records, setRecords] = useState<ApiRecord[]>([]);
-  const [selectedJobId, setSelectedJobId] = useState("");
-  const [agent, setAgent] = useState<ApiRecord | null>(null);
-  const [message, setMessage] = useState("");
-  const [status, setStatus] = useState<ApiRecord | null>(null);
-  const sessionId = agent?.context?.session_id;
-
-  function loadAgent(jobId = selectedJobId, nextSessionId = sessionId) {
-    const query = new URLSearchParams();
-    if (jobId) query.set("selected_job_id", jobId);
-    if (nextSessionId) query.set("session_id", nextSessionId);
-    apiRequest<ApiRecord>(`/api/agent?${query.toString()}`)
-      .then(setAgent)
-      .catch((error) => setStatus({ type: "error", text: error.message }));
-  }
-
-  useEffect(() => {
-    apiRequest<ApiRecord>("/api/jobs").then((payload) => {
-      setRecords(payload.records || []);
-      const firstJob = payload.records?.[0]?.job_id || "";
-      setSelectedJobId(firstJob);
-      loadAgent(firstJob, "");
-    });
-  }, []);
-
-  async function sendChat(event: FormEvent) {
-    event.preventDefault();
-    if (!message.trim()) return;
-    await runBusy(() => undefined, setStatus, async () => {
-      const result = await apiRequest<ApiRecord>("/api/agent/chat", {
-        method: "POST",
-        body: JSON.stringify({ message, selected_job_id: selectedJobId, session_id: sessionId })
-      });
-      setMessage("");
-      loadAgent(result.context?.selected_job_id || selectedJobId, result.context?.session_id);
-    });
-  }
-
+function AgentKarenPage({
+  agent,
+  records,
+  selectedJobId,
+  status
+}: {
+  agent: ApiRecord | null;
+  records: ApiRecord[];
+  selectedJobId: string;
+  status: ApiRecord | null;
+}) {
   const state = agent?.state || {};
+  const selectedRecord = records.find((record) => record.job_id === selectedJobId);
   return (
     <>
       <div className="karen-header">
@@ -746,8 +816,13 @@ function AgentKarenPage() {
       </div>
       <StatusMessage type={status?.type} text={status?.text} />
       {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
-      {!!records.length && <label>Job<select value={selectedJobId} onChange={(event) => { setSelectedJobId(event.target.value); loadAgent(event.target.value, sessionId); }}>{records.map((record) => <option key={record.job_id} value={record.job_id}>{record.company} / {record.title}</option>)}</select></label>}
       <section className="panel">
+        <h2>Karen Dashboard</h2>
+        {selectedRecord && (
+          <p className="muted">
+            Selected job: {selectedRecord.company} / {selectedRecord.title}
+          </p>
+        )}
         <div className="grid three">
           <Field label="Job" value={state.selected_job_id || "None"} />
           <Field label="Gate" value={state.pending_gate || "None"} />
@@ -758,18 +833,89 @@ function AgentKarenPage() {
         <details><summary>Workflow timeline</summary>{Object.entries(state.artifacts_present || {}).map(([label, present]) => <p key={label}>- {titleCase(label)}: {present ? "ready" : "missing"}</p>)}</details>
         {!!state.next_allowed_actions?.length && <><h3>Next Actions</h3>{state.next_allowed_actions.map((actionName: string) => <p className="muted" key={actionName}>{agent?.action_labels?.[actionName] || titleCase(actionName)}</p>)}</>}
       </section>
-      <section className="panel">
-        <h2>Chat</h2>
-        <p className="muted">Page: Agent Karen</p>
-        {selectedJobId && <p className="muted">Job: {selectedJobId}</p>}
-        {state.pending_gate && <StatusMessage type="info" text={`Pending gate: ${state.pending_gate}`} />}
-        <div className="chat-log">{(agent?.messages || []).map((item: ApiRecord, index: number) => <div className={`chat-message ${item.role}`} key={`${item.timestamp}-${index}`}><strong>{titleCase(item.role)}</strong><p>{item.content}</p></div>)}</div>
-        <form onSubmit={sendChat} className="actions">
-          <input placeholder="Ask Karen" value={message} onChange={(event) => setMessage(event.target.value)} />
-          <button className="primary">Ask Karen</button>
-        </form>
-      </section>
     </>
+  );
+}
+
+function KarenChatPanel({
+  agent,
+  records,
+  selectedJobId,
+  message,
+  status,
+  width,
+  onMessageChange,
+  onSelectJob,
+  onWidthChange,
+  onSendChat
+}: {
+  agent: ApiRecord | null;
+  records: ApiRecord[];
+  selectedJobId: string;
+  message: string;
+  status: ApiRecord | null;
+  width: number;
+  onMessageChange: (message: string) => void;
+  onSelectJob: (jobId: string) => void;
+  onWidthChange: (width: number) => void;
+  onSendChat: (event: FormEvent) => void;
+}) {
+  const state = agent?.state || {};
+  return (
+    <aside className="karen-chat-panel" aria-label="Karen chat">
+      <div className="karen-panel-header">
+        <img src={karenImage} width="56" height="56" alt="Agent Karen" />
+        <div>
+          <h2>Karen Chat</h2>
+          <p className="muted">Workflow assistant</p>
+        </div>
+      </div>
+      <StatusMessage type={status?.type} text={status?.text} />
+      <label className="width-control">
+        Panel width
+        <input
+          aria-label="Panel width"
+          type="range"
+          min={karenPanelWidthMin}
+          max={karenPanelWidthMax}
+          step="20"
+          value={width}
+          onChange={(event) => onWidthChange(Number(event.target.value))}
+        />
+        <span className="muted">{width}px</span>
+      </label>
+      {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
+      {!!records.length && (
+        <label>
+          Job
+          <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
+            {records.map((record) => (
+              <option key={record.job_id} value={record.job_id}>
+                {record.company} / {record.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {state.pending_gate && <StatusMessage type="info" text={`Pending gate: ${state.pending_gate}`} />}
+      <div className="chat-log">
+        {(agent?.messages || []).map((item: ApiRecord, index: number) => (
+          <div className={`chat-message ${item.role}`} key={`${item.timestamp}-${index}`}>
+            <strong>{titleCase(item.role)}</strong>
+            <p>{item.content}</p>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={onSendChat} className="karen-chat-form">
+        <input
+          aria-label="Ask Karen"
+          placeholder="Ask Karen"
+          value={message}
+          onChange={(event) => onMessageChange(event.target.value)}
+        />
+        <button className="primary">Ask Karen</button>
+      </form>
+    </aside>
   );
 }
 
@@ -980,6 +1126,15 @@ function blocksFromText(value: string) {
 function optionalNumber(value: string) {
   const normalized = value.trim().replace(/[.,]/g, "");
   return normalized ? Number(normalized) : null;
+}
+
+function readKarenPanelWidth() {
+  const savedWidth = Number(localStorage.getItem(karenPanelWidthKey));
+  return clampNumber(savedWidth || karenPanelWidthDefault, karenPanelWidthMin, karenPanelWidthMax);
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function splitSelected(value: string) {

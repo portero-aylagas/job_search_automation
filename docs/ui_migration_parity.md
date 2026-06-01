@@ -12,7 +12,7 @@ platform parity, not product redesign.
 | Job Intake | Job Intake tab | Top-level tab preserved. |
 | Jobs | Jobs tab | Top-level tab preserved. |
 | Tracker | Tracker tab | Top-level tab preserved. |
-| Agent Karen | Agent Karen tab | Karen remains a top-level page, not a persistent side panel. |
+| Agent Karen | Agent Karen tab plus persistent side panel | Agent Karen tab remains as a dashboard; chat is app-level and persistent. |
 
 ## Candidate Profile
 
@@ -80,16 +80,17 @@ platform parity, not product redesign.
 
 | Streamlit section/action | React/FastAPI equivalent | Parity notes |
 | --- | --- | --- |
-| Karen portrait/title | Agent Karen header | Top-level page preserved. |
-| Job selector | Job select control | Same selected-job concept. |
-| Workflow status metrics | Status summary | Job, gate, action count, blockers, errors, and timeline preserved. |
+| Karen portrait/title | Agent Karen dashboard header and side-panel header | Top-level page preserved; chat remains visible across pages. |
+| Job selector | Persistent side-panel job select control | Same selected-job concept without duplicating chat controls in the dashboard. |
+| Workflow status metrics | Dashboard status summary | Job, gate, action count, blockers, errors, and timeline preserved. |
 | Next Actions | Static guidance | Review-gated actions point users to Jobs page panels rather than executing hidden workflow actions. |
-| Chat transcript | Chat transcript | Persisted Karen messages rendered. |
-| Ask Karen | Chat input | Chat turn routed through existing Karen graph. |
+| Chat transcript | Persistent side-panel transcript | Persisted Karen messages rendered across top-level pages. |
+| Ask Karen | Persistent side-panel chat input | Chat turn routed through existing Karen graph. |
 
 ## Intentional Deviations
 
-None approved or implemented.
+- Karen chat intentionally moved from the `Agent Karen` tab into a persistent
+  app-level side panel. The tab remains as a status/dashboard view.
 
 ## Pending Follow-Up Tasks
 

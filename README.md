@@ -50,8 +50,8 @@ application tracking
   inspection/extraction slice
 - historical deterministic candidate/job match analysis backend, disabled from
   the current known-job apply workflow
-- Agent Karen runtime assistant tab with persisted chat transcripts and audit
-  events, using `assets/karen.png` in the page and browser tab icon
+- Persistent Agent Karen side chat with persisted chat transcripts and audit
+  events, using `assets/karen.png` in the panel, dashboard, and browser tab icon
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -312,12 +312,14 @@ Historical analysis output used `data/runtime/jobs/<job_id>/analysis.json`.
 
 ### Karen Runtime Assistant
 
-Karen is the runtime product assistant inside the app. She appears in the
-top-level `Agent Karen` tab, not in a sidebar or persistent cross-page chat.
-The tab shows Karen's portrait from `assets/karen.png`, the selected job,
-workflow timeline, blockers, pending gate, static next-action guidance, and the
-chat transcript. Karen is separate from `AGENTS.md`, which remains
-development-agent guidance.
+Karen is the runtime product assistant inside the app. Her chat appears as a
+persistent app-level side panel across `Candidate Profile`, `Job Intake`,
+`Jobs`, `Tracker`, and `Agent Karen`. The side panel owns the selected job,
+pending-gate hint, transcript, and `Ask Karen` input. The top-level
+`Agent Karen` tab remains as a dashboard-only page showing Karen's portrait
+from `assets/karen.png`, selected-job workflow status, blockers, pending gate,
+timeline, and static next-action guidance. Karen is separate from `AGENTS.md`,
+which remains development-agent guidance.
 
 Karen transcripts are stored in
 `data/runtime/agent_sessions/<session_id>/chat.jsonl`. Job-scoped copies are
@@ -328,9 +330,9 @@ affected job directory.
 Karen can explain the app and her role, inspect the current workflow state,
 suggest next steps, route users to the right page, and process safe draft/local
 workflow requests after explicit chat intent through the backend policy layer.
-The current Streamlit Agent Karen tab displays next actions as guidance rather
-than direct workflow buttons. She does not duplicate Job Intake or the detailed
-Jobs review forms.
+The Agent Karen dashboard displays next actions as guidance rather than direct
+workflow buttons. She does not duplicate Job Intake or the detailed Jobs review
+forms.
 
 For a selected saved job with a valid `apply_url`, Karen's apply-oriented next
 step is application requirements discovery. She does not propose match analysis
@@ -422,8 +424,8 @@ The top navigation includes a `Jobs` page. It lists opportunities from the track
 opens a per-job workspace. The current version shows saved Job Intake data from
 `data/runtime/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
 summary, requirements, responsibilities, nice-to-have skills, and dynamic
-extracted details. Karen remains available from the separate `Agent Karen` tab
-with the selected job context.
+extracted details. Karen's selected-job context remains available in the
+persistent side chat and the `Agent Karen` dashboard.
 
 ---
 
