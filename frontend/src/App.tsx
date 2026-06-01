@@ -1022,18 +1022,26 @@ function KarenChatPanel({
         ))}
       </div>
       <form onSubmit={onSendChat} className="karen-chat-form">
-        <textarea
-          aria-label="Ask Karen"
-          disabled={isSending}
-          onKeyDown={handleComposerKeyDown}
-          placeholder="Ask Karen"
-          rows={3}
-          value={message}
-          onChange={(event) => onMessageChange(event.target.value)}
-        />
-        <button className="primary" disabled={isSending || !message.trim()}>
-          {isSending ? "Sending..." : "Ask Karen"}
-        </button>
+        <div className="karen-composer">
+          <textarea
+            aria-label="Ask Karen"
+            disabled={isSending}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Ask Karen"
+            rows={2}
+            value={message}
+            onChange={(event) => onMessageChange(event.target.value)}
+          />
+          <button
+            aria-busy={isSending}
+            aria-label="Ask Karen"
+            className="karen-send-button"
+            disabled={isSending || !message.trim()}
+            title="Ask Karen"
+          >
+            <span aria-hidden="true" className={isSending ? "send-spinner" : "send-icon"} />
+          </button>
+        </div>
       </form>
     </aside>
   );
