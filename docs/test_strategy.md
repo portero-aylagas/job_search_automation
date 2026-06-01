@@ -140,3 +140,8 @@ npx playwright show-report
 GitHub Actions uploads these paths as the `test-reports` artifact for each
 verification run. Use those CI artifacts for screenshots, traces, videos, and
 machine-readable test reports.
+
+For pushes to `main`, GitHub Actions also publishes the latest Playwright HTML
+report to GitHub Pages through the `publish-playwright-report` job. The direct
+browser URL appears in that job's GitHub Actions summary. Pull requests keep
+the downloadable artifact only and do not publish Pages reports.

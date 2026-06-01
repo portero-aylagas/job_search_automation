@@ -582,7 +582,9 @@ keys.
 
 Verification writes local generated reports to `reports/`, `playwright-report/`,
 and `test-results/`. These paths are ignored by git. In GitHub Actions, they are
-uploaded as the `test-reports` artifact.
+uploaded as the `test-reports` artifact. On pushes to `main`, the latest
+Playwright HTML report is also published to GitHub Pages and linked from the
+`publish-playwright-report` job summary.
 
 If you are using a standard virtual environment instead of the repository-local
 `.conda` environment, activate it first and run `make verify` from the
