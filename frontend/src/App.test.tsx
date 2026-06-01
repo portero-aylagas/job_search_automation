@@ -198,6 +198,7 @@ describe("App workflow pages", () => {
 
     expect(screen.getAllByPlaceholderText("Ask Karen")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Ask Karen" })).toHaveLength(1);
+    expect(screen.getByRole("log", { name: "Karen transcript" })).toBeInTheDocument();
     const resizeHandle = screen.getByRole("separator", { name: "Resize Karen panel" });
     expect(resizeHandle).toHaveAttribute("aria-valuenow", "380");
     fireEvent.keyDown(resizeHandle, { key: "ArrowLeft" });

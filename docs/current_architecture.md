@@ -38,7 +38,10 @@ The React UI preserves the Streamlit navigation and workflow semantics:
 
 Karen chat remains mounted as an app-level side panel across all top-level
 pages. The top-level `Agent Karen` page remains as a dashboard for selected-job
-workflow status, blockers, timeline, and next-action guidance. Buttons that
+workflow status, blockers, timeline, and next-action guidance. The side panel
+keeps context controls fixed at the top, the transcript in the only scrolling
+middle area, and the Ask Karen form fixed at the bottom; desktop users can
+resize the panel from the divider between page content and chat. Buttons that
 invoke AI keep visible `with AI` labels. Review gates remain explicit and
 human-controlled. Dynamic job fields, application requirements, package
 artifacts, and fill plans remain structured editable forms rather than raw JSON

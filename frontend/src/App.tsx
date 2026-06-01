@@ -914,29 +914,31 @@ function KarenChatPanel({
         role="separator"
         tabIndex={0}
       />
-      <div className="karen-panel-header">
-        <img src={karenImage} width="56" height="56" alt="Agent Karen" />
-        <div>
-          <h2>Karen Chat</h2>
-          <p className="muted">Workflow assistant</p>
+      <div className="karen-panel-top">
+        <div className="karen-panel-header">
+          <img src={karenImage} width="56" height="56" alt="Agent Karen" />
+          <div>
+            <h2>Karen Chat</h2>
+            <p className="muted">Workflow assistant</p>
+          </div>
         </div>
+        <StatusMessage type={status?.type} text={status?.text} />
+        {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
+        {!!records.length && (
+          <label>
+            Job
+            <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
+              {records.map((record) => (
+                <option key={record.job_id} value={record.job_id}>
+                  {record.company} / {record.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {state.pending_gate && <StatusMessage type="info" text={`Pending gate: ${state.pending_gate}`} />}
       </div>
-      <StatusMessage type={status?.type} text={status?.text} />
-      {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
-      {!!records.length && (
-        <label>
-          Job
-          <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
-            {records.map((record) => (
-              <option key={record.job_id} value={record.job_id}>
-                {record.company} / {record.title}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {state.pending_gate && <StatusMessage type="info" text={`Pending gate: ${state.pending_gate}`} />}
-      <div className="chat-log">
+      <div aria-label="Karen transcript" className="chat-log" role="log">
         {(agent?.messages || []).map((item: ApiRecord, index: number) => (
           <div className={`chat-message ${item.role}`} key={`${item.timestamp}-${index}`}>
             <strong>{titleCase(item.role)}</strong>

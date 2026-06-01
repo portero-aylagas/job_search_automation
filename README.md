@@ -315,11 +315,14 @@ Historical analysis output used `data/runtime/jobs/<job_id>/analysis.json`.
 Karen is the runtime product assistant inside the app. Her chat appears as a
 persistent app-level side panel across `Candidate Profile`, `Job Intake`,
 `Jobs`, `Tracker`, and `Agent Karen`. The side panel owns the selected job,
-pending-gate hint, transcript, and `Ask Karen` input. The top-level
-`Agent Karen` tab remains as a dashboard-only page showing Karen's portrait
-from `assets/karen.png`, selected-job workflow status, blockers, pending gate,
-timeline, and static next-action guidance. Karen is separate from `AGENTS.md`,
-which remains development-agent guidance.
+pending-gate hint, transcript, and `Ask Karen` input. The panel uses a stable
+viewport-relative layout: Karen context, job selection, and pending gate stay at
+the top, the transcript scrolls in the middle, and the message input remains at
+the bottom. Its width is adjustable from the divider between the page and chat
+panel. The top-level `Agent Karen` tab remains as a dashboard-only page showing
+Karen's portrait from `assets/karen.png`, selected-job workflow status,
+blockers, pending gate, timeline, and static next-action guidance. Karen is
+separate from `AGENTS.md`, which remains development-agent guidance.
 
 Karen transcripts are stored in
 `data/runtime/agent_sessions/<session_id>/chat.jsonl`. Job-scoped copies are

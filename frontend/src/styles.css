@@ -107,8 +107,11 @@ label {
 .karen-chat-panel {
   position: sticky;
   top: 5rem;
-  max-height: calc(100vh - 6.25rem);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 6.25rem);
+  min-height: 28rem;
+  overflow: hidden;
   border: 1px solid #d8dee8;
   border-radius: 8px 0 0 8px;
   background: #ffffff;
@@ -263,8 +266,17 @@ summary {
 
 .chat-log {
   display: grid;
+  flex: 1 1 auto;
   gap: 0.7rem;
+  align-content: start;
+  min-height: 0;
   margin: 1rem 0;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.karen-panel-top {
+  flex: 0 0 auto;
 }
 
 .karen-panel-header {
@@ -291,6 +303,7 @@ summary {
 
 .karen-chat-form {
   display: grid;
+  flex: 0 0 auto;
   gap: 0.6rem;
   margin-top: 1rem;
 }
@@ -330,7 +343,8 @@ summary {
 
   .karen-chat-panel {
     position: static;
-    max-height: none;
+    height: min(42rem, calc(100vh - 2rem));
+    min-height: 30rem;
     border-radius: 8px;
   }
 
