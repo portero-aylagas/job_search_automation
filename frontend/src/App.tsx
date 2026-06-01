@@ -903,11 +903,25 @@ function KarenChatPanel({
   const messages = agent?.messages || [];
   const blockers = [...(state.blockers || []), ...(state.errors || [])].filter(Boolean);
   const nextActions = state.next_allowed_actions || [];
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const latestMessage = messages[messages.length - 1];
   const quickPrompts = [
     "What is blocking this application?",
     "What should I do next?",
     "Summarize the selected job status."
   ];
+
+  useEffect(() => {
+    if (!messages.length) return;
+    const chatLog = chatLogRef.current;
+    if (!chatLog) return;
+    if (typeof chatLog.scrollTo === "function") {
+      chatLog.scrollTo({ top: chatLog.scrollHeight, behavior: "smooth" });
+      return;
+    }
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }, [messages.length, latestMessage?.content, latestMessage?.timestamp]);
+
   function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -995,7 +1009,7 @@ function KarenChatPanel({
           ))}
         </div>
       </div>
-      <div aria-label="Karen transcript" className="chat-log" role="log">
+      <div aria-label="Karen transcript" className="chat-log" ref={chatLogRef} role="log">
         {!messages.length && (
           <div className="chat-empty">
             <strong>No messages yet.</strong>

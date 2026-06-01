@@ -277,6 +277,46 @@ describe("App workflow pages", () => {
     expect(screen.getByLabelText("Message actions")).toHaveTextContent("Review requirements");
   });
 
+  it("scrolls the Karen transcript to new messages", async () => {
+    const scrollTo = vi.fn();
+    const originalScrollTo = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [
+            {
+              role: "assistant",
+              content: "Latest reply",
+              timestamp: "2026-06-02T10:20:00.000Z"
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    await screen.findByText("Latest reply");
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    expect(scrollTo).toHaveBeenCalledWith({ top: expect.any(Number), behavior: "smooth" });
+    if (originalScrollTo) {
+      Object.defineProperty(HTMLElement.prototype, "scrollTo", originalScrollTo);
+    } else {
+      delete HTMLElement.prototype.scrollTo;
+    }
+  });
+
   it("submits Karen composer with Enter and keeps Shift+Enter as a newline", async () => {
     const chatBodies: unknown[] = [];
     mockFetch((url, init) => {
