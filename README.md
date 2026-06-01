@@ -2,9 +2,7 @@
 
 Job Search Automation is a controlled human-in-the-loop job application workflow.
 The current UI is a React + TypeScript + Vite frontend backed by a FastAPI
-adapter over the existing Python workflow code. The original Streamlit UI is
-kept as a legacy/parity reference while the React UI becomes the primary
-runtime surface.
+adapter over the existing Python workflow code.
 
 The core feature is:
 
@@ -111,7 +109,6 @@ job_search_automation/
 ├── package.json
 ├── vite.config.ts
 ├── index.html
-├── app.py
 ├── frontend/
 │   └── src/
 │       ├── App.tsx
@@ -133,7 +130,7 @@ job_search_automation/
 │   ├── application_requirements.py
 │   ├── application_fill_plan.py
 │   ├── application_package.py
-│   ├── agent_ui.py
+│   ├── job_workspace.py
 │   ├── agents/
 │   │   └── karen/
 │   │       ├── agent_card.yaml
@@ -550,14 +547,6 @@ During Vite development, the frontend calls `http://127.0.0.1:8001` by default.
 Override this with `VITE_API_BASE_URL` if the API runs elsewhere. A fresh local
 state is valid: when `data/candidate_profile.json` and `data/runtime/` are
 missing, the API returns an empty draft candidate profile.
-
-### Legacy Streamlit UI
-
-```bash
-PATH="$PWD/.conda/bin:$PATH" streamlit run app.py
-```
-
----
 
 ## Verification
 

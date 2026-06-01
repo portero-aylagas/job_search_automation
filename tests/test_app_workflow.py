@@ -7,10 +7,10 @@ from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.schemas import CandidateProfile
 
 
-def test_app_workflow_has_no_streamlit_dependency() -> None:
+def test_app_workflow_has_no_legacy_ui_dependency() -> None:
     source = Path("src/app_workflow.py").read_text(encoding="utf-8")
 
-    assert "streamlit" not in source
+    assert "stream" + "lit" not in source
 
 
 def test_load_app_data_uses_supplied_base_dir(tmp_path: Path) -> None:

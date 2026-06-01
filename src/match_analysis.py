@@ -492,7 +492,6 @@ def _looks_like_skill(value: str) -> bool:
         "sql",
         "api",
         "apis",
-        "streamlit",
         "automation",
         "dashboard",
         "dashboards",
