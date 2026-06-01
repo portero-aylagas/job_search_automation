@@ -10,11 +10,11 @@
     "strict": false,
     "forceConsistentCasingInFileNames": true,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["frontend/src"]
+  "include": ["frontend/src", "vite.config.ts", "playwright.config.ts", "e2e"]
 }

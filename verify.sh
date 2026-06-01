@@ -26,5 +26,7 @@ fi
 
 if [ -f package.json ]; then
     npm run frontend:typecheck
+    npm run frontend:test
     npm run frontend:build
+    npm run frontend:e2e
 fi

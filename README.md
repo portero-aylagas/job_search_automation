@@ -195,6 +195,10 @@ The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
 
+The repository test strategy is documented in `docs/test_strategy.md`. It
+defines the intended Python, FastAPI, React, and Playwright test layers, plus
+the mocking boundaries for AI, Browser Use, and external network behavior.
+
 AI prompt text is stored in `src/prompts.yaml` and loaded through
 `src/prompt_templates.py`; Karen's runtime assistant prompts live with her
 package in `src/agents/karen/prompts.yaml`. Live OpenAI calls remain behind
@@ -459,6 +463,20 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Install frontend and browser-test dependencies from the repository root:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Python dependencies are tracked in `requirements.txt`. Frontend, Vitest, and
+Playwright test-runner dependencies are tracked in `package.json` and
+`package-lock.json`; do not add Node packages to `requirements.txt`.
+
+If Playwright reports missing Linux system dependencies for browser tests, run
+`npx playwright install --with-deps chromium`.
+
 ### Browser Use Setup
 
 The Browser Use apply-assistance flow launches a **local browser session inside
@@ -519,6 +537,7 @@ Notes:
   second checkbox verification pass before upload.
 - Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
   runtime setup described here.
+
 ---
 
 ## Run
@@ -551,13 +570,19 @@ missing, the API returns an empty draft candidate profile.
 ## Verification
 
 ```bash
-make verify
+PATH="$PWD/.conda/bin:$PATH" make verify
 ```
 
 `make verify` runs Ruff linting, including public docstring checks for
 application code, Python compile checks, the pytest suite, frontend typecheck,
-and frontend production build. The command is local and does not require live
-API keys.
+Vitest component tests, frontend production build, and Playwright browser smoke
+tests. The browser smoke tests start Vite and mock backend API routes; they do
+not require a live FastAPI server, live AI services, Browser Use session, or API
+keys.
+
+If you are using a standard virtual environment instead of the repository-local
+`.conda` environment, activate it first and run `make verify` from the
+repository root.
 
 To reset local private/runtime state while keeping checked-in templates:
 
