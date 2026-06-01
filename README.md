@@ -531,7 +531,7 @@ Notes:
 Start the FastAPI backend in one terminal:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Start the Vite frontend in another terminal:
@@ -554,7 +554,7 @@ missing, the API returns an empty draft candidate profile.
 ### Legacy Streamlit UI
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" streamlit run app.py
+streamlit run app.py
 ```
 
 ---
