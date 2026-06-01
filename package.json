@@ -3,7 +3,7 @@
     "frontend:dev": "vite --host 127.0.0.1",
     "frontend:build": "vite build",
     "frontend:typecheck": "tsc --noEmit",
-    "frontend:test": "vitest run",
+    "frontend:test": "vitest run --reporter=default --reporter=junit --outputFile.junit=reports/vitest.xml",
     "frontend:e2e": "playwright test"
   },
   "dependencies": {

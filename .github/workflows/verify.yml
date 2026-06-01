@@ -21,10 +21,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m venv .conda
+          ./.conda/bin/python -m pip install --upgrade pip
+          ./.conda/bin/python -m pip install -r requirements.txt
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
 
       - name: Run verification
-        run: make verify
+        run: PATH="$PWD/.conda/bin:$PATH" make verify
+
+      - name: Upload test reports and browser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          if-no-files-found: ignore
+          path: |
+            reports/
+            playwright-report/
+            test-results/

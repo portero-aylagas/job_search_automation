@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+mkdir -p reports
+
 ruff check .
 
 python - <<'PY'
@@ -19,7 +21,7 @@ else:
 PY
 
 if find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -q .; then
-    pytest
+    pytest --junitxml=reports/pytest.xml
 else
     echo "No tests found; skipping pytest."
 fi

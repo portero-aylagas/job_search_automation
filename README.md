@@ -580,6 +580,10 @@ tests. The browser smoke tests start Vite and mock backend API routes; they do
 not require a live FastAPI server, live AI services, Browser Use session, or API
 keys.
 
+Verification writes local generated reports to `reports/`, `playwright-report/`,
+and `test-results/`. These paths are ignored by git. In GitHub Actions, they are
+uploaded as the `test-reports` artifact.
+
 If you are using a standard virtual environment instead of the repository-local
 `.conda` environment, activate it first and run `make verify` from the
 repository root.

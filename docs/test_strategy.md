@@ -120,3 +120,23 @@ PATH="$PWD/.conda/bin:$PATH" make verify
 
 Python dependencies live in the repo-local Conda environment. Frontend and
 browser test dependencies live in `package.json` and `package-lock.json`.
+
+## Reports And Artifacts
+
+Local verification writes generated reports that are useful for inspection but
+should not be committed:
+
+- `reports/pytest.xml`
+- `reports/vitest.xml`
+- `playwright-report/`
+- `test-results/`
+
+The Playwright HTML report can be opened locally after a run with:
+
+```bash
+npx playwright show-report
+```
+
+GitHub Actions uploads these paths as the `test-reports` artifact for each
+verification run. Use those CI artifacts for screenshots, traces, videos, and
+machine-readable test reports.
