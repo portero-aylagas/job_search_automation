@@ -236,7 +236,6 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(chatBodies).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Ask Karen" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ask Karen" })).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByRole("status")).toHaveTextContent("Sending...");
     resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
   });

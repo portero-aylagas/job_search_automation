@@ -1022,13 +1022,13 @@ function KarenChatPanel({
         ))}
       </div>
       <form onSubmit={onSendChat} className="karen-chat-form">
-        <div className="karen-command-bar">
+        <div className="karen-composer">
           <textarea
             aria-label="Ask Karen"
             disabled={isSending}
             onKeyDown={handleComposerKeyDown}
             placeholder="Ask Karen"
-            rows={1}
+            rows={2}
             value={message}
             onChange={(event) => onMessageChange(event.target.value)}
           />
@@ -1039,14 +1039,9 @@ function KarenChatPanel({
             disabled={isSending || !message.trim()}
             title="Ask Karen"
           >
-            <span aria-hidden="true" className="send-icon" />
+            <span aria-hidden="true" className={isSending ? "send-spinner" : "send-icon"} />
           </button>
         </div>
-        {isSending && (
-          <p className="karen-composer-status" role="status">
-            Sending...
-          </p>
-        )}
       </form>
     </aside>
   );
