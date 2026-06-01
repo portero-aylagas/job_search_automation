@@ -10,12 +10,12 @@ test("top-level navigation renders without a backend server", async ({ page }) =
   await expect(page.getByRole("heading", { name: "Candidate Profile" })).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
   await expect(page.getByPlaceholder("Ask Karen")).toBeVisible();
-  await expect(page.getByLabel("Panel width")).toBeVisible();
+  await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
   for (const name of ["Job Intake", "Jobs", "Tracker", "Agent Karen"]) {
     await page.getByRole("button", { name }).click();
     await expect(page.getByRole("heading", { name })).toBeVisible();
     await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
-    await expect(page.getByLabel("Panel width")).toBeVisible();
+    await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "Karen Dashboard" })).toBeVisible();
   await expect(page.getByPlaceholder("Ask Karen")).toHaveCount(1);

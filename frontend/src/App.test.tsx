@@ -198,11 +198,11 @@ describe("App workflow pages", () => {
 
     expect(screen.getAllByPlaceholderText("Ask Karen")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Ask Karen" })).toHaveLength(1);
-    const widthControl = screen.getByLabelText("Panel width");
-    expect(widthControl).toHaveValue("380");
-    fireEvent.change(widthControl, { target: { value: "460" } });
-    expect(widthControl).toHaveValue("460");
-    expect(localStorage.getItem("karenPanelWidth")).toBe("460");
+    const resizeHandle = screen.getByRole("separator", { name: "Resize Karen panel" });
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "380");
+    fireEvent.keyDown(resizeHandle, { key: "ArrowLeft" });
+    expect(resizeHandle).toHaveAttribute("aria-valuenow", "400");
+    expect(localStorage.getItem("karenPanelWidth")).toBe("400");
     expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
     expect(screen.getByText("Review requirements")).toBeInTheDocument();
   });

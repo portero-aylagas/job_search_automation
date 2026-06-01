@@ -115,6 +115,43 @@ label {
   padding: 1rem;
 }
 
+.karen-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -0.5rem;
+  width: 1rem;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.karen-resize-handle::after {
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  left: 0.45rem;
+  width: 2px;
+  border-radius: 999px;
+  background: transparent;
+  content: "";
+}
+
+.karen-resize-handle:hover::after,
+.karen-resize-handle:focus-visible::after,
+.resizing-karen-panel .karen-resize-handle::after {
+  background: #1f6feb;
+}
+
+.karen-resize-handle:focus-visible {
+  outline: 2px solid #1f6feb;
+  outline-offset: -2px;
+}
+
+.resizing-karen-panel {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .panel {
   border: 1px solid #d8dee8;
   border-radius: 8px;
@@ -258,18 +295,6 @@ summary {
   margin-top: 1rem;
 }
 
-.width-control {
-  margin-bottom: 1rem;
-}
-
-.width-control input {
-  padding: 0;
-}
-
-.width-control span {
-  justify-self: end;
-}
-
 .karen-header {
   display: flex;
   gap: 1rem;
@@ -307,6 +332,10 @@ summary {
     position: static;
     max-height: none;
     border-radius: 8px;
+  }
+
+  .karen-resize-handle {
+    display: none;
   }
 
   .grid,

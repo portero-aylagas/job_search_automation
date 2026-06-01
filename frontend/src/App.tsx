@@ -1,4 +1,12 @@
-import { CSSProperties, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  CSSProperties,
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useState
+} from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
@@ -111,6 +119,23 @@ function App() {
     localStorage.setItem(karenPanelWidthKey, String(nextWidth));
   }
 
+  function startKarenPanelResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    document.body.classList.add("resizing-karen-panel");
+
+    const resize = (resizeEvent: PointerEvent) => {
+      updateKarenPanelWidth(window.innerWidth - resizeEvent.clientX);
+    };
+    const stopResize = () => {
+      document.body.classList.remove("resizing-karen-panel");
+      document.removeEventListener("pointermove", resize);
+    };
+
+    resize(event.nativeEvent);
+    document.addEventListener("pointermove", resize);
+    document.addEventListener("pointerup", stopResize, { once: true });
+  }
+
   return (
     <div className="app-shell">
       <nav className="top-nav" aria-label="Navigate">
@@ -159,6 +184,7 @@ function App() {
           onMessageChange={setKarenMessage}
           onSelectJob={selectKarenJob}
           onWidthChange={updateKarenPanelWidth}
+          onResizeStart={startKarenPanelResize}
           onSendChat={sendKarenChat}
         />
       </div>
@@ -847,6 +873,7 @@ function KarenChatPanel({
   onMessageChange,
   onSelectJob,
   onWidthChange,
+  onResizeStart,
   onSendChat
 }: {
   agent: ApiRecord | null;
@@ -858,11 +885,35 @@ function KarenChatPanel({
   onMessageChange: (message: string) => void;
   onSelectJob: (jobId: string) => void;
   onWidthChange: (width: number) => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSendChat: (event: FormEvent) => void;
 }) {
   const state = agent?.state || {};
+  function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      onWidthChange(width + 20);
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      onWidthChange(width - 20);
+    }
+  }
+
   return (
     <aside className="karen-chat-panel" aria-label="Karen chat">
+      <div
+        aria-label="Resize Karen panel"
+        aria-orientation="vertical"
+        aria-valuemax={karenPanelWidthMax}
+        aria-valuemin={karenPanelWidthMin}
+        aria-valuenow={width}
+        className="karen-resize-handle"
+        onKeyDown={resizeWithKeyboard}
+        onPointerDown={onResizeStart}
+        role="separator"
+        tabIndex={0}
+      />
       <div className="karen-panel-header">
         <img src={karenImage} width="56" height="56" alt="Agent Karen" />
         <div>
@@ -871,19 +922,6 @@ function KarenChatPanel({
         </div>
       </div>
       <StatusMessage type={status?.type} text={status?.text} />
-      <label className="width-control">
-        Panel width
-        <input
-          aria-label="Panel width"
-          type="range"
-          min={karenPanelWidthMin}
-          max={karenPanelWidthMax}
-          step="20"
-          value={width}
-          onChange={(event) => onWidthChange(Number(event.target.value))}
-        />
-        <span className="muted">{width}px</span>
-      </label>
       {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
       {!!records.length && (
         <label>
