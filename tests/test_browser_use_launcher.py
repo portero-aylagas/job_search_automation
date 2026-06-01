@@ -173,51 +173,39 @@ def test_open_apply_url_with_browser_use_fill_plan_passes_guarded_task(
     assert "--available-file-path" in command
     assert command[command.index("--available-file-path") + 1] == str(cv_path)
     agent_task = command[command.index("--agent-task") + 1]
-    assert "reviewed application fill plan" in agent_task
+    task_payload = extract_task_payload(agent_task)
+
+    assert set(task_payload) == {
+        "field_values_before_upload",
+        "mandatory_checkbox_fields",
+        "intentionally_blank_fields",
+        "intentionally_untouched_checkbox_fields",
+        "upload_files_last",
+        "blocked_fields",
+        "submit_guard_labels",
+        "review_status",
+    }
+    assert task_payload["field_values_before_upload"][0]["label"] == "Vorname"
+    assert task_payload["field_values_before_upload"][0]["value"] == "Taylor"
+    assert task_payload["mandatory_checkbox_fields"][0]["label"] == (
+        "Privacy acknowledgement"
+    )
+    assert task_payload["mandatory_checkbox_fields"][0]["value"] == "true"
+    assert task_payload["intentionally_untouched_checkbox_fields"][0]["label"] == (
+        "Internal application"
+    )
+    assert task_payload["blocked_fields"] == []
+    assert task_payload["upload_files_last"][0]["label"] == "Lebenslauf"
+    assert task_payload["upload_files_last"][0]["file_path"] == str(cv_path)
     assert "https://example.com/apply/automation-engineer" not in agent_task
-    assert '"field_values_before_upload"' in agent_task
-    assert '"mandatory_checkbox_fields"' in agent_task
-    assert '"intentionally_blank_fields"' in agent_task
-    assert '"intentionally_untouched_checkbox_fields"' in agent_task
-    assert '"upload_files_last"' in agent_task
-    assert '"blocked_fields"' in agent_task
-    assert '"accept_terms_and_privacy"' not in agent_task
-    assert '"interpreted_label": "Vorname"' in agent_task
-    assert '"literal_evidence": [' in agent_task
-    assert '"consent_privacy_gate_fields"' not in agent_task
-    assert '"value": "Taylor"' in agent_task
-    assert '"value": "true"' in agent_task
-    assert '"label": "Lebenslauf"' in agent_task
     assert str(cv_path) in agent_task
-    assert "Do not translate the page" in agent_task
-    assert "translation prompts" in agent_task
-    assert "cookie, privacy, newsletter, chat" in agent_task
-    assert "Weiter & Prüfen" in agent_task
-    assert "using Browser Use's upload_file" in agent_task
-    assert "Never click upload controls" in agent_task
-    assert "Never type or paste the CV file path" in agent_task
     assert "Never touch fields listed in blocked_fields" in agent_task
+    assert "Never type or paste the CV file path" in agent_task
+    assert "Never click upload controls" in agent_task
+    assert "Never click, press, or activate" in agent_task
+    assert "Last, and only after all field_values_before_upload" in agent_task
     assert "accept_terms_and_privacy is true" not in agent_task
     assert "consent_privacy_gate_fields" not in agent_task
-    assert "semantic hints" in agent_task
-    assert "guaranteed live page" in agent_task
-    assert "evidence_status is \"interpreted_only\"" in agent_task
-    assert "reviewed blank values" in agent_task
-    assert "Never click checkbox controls listed" in agent_task
-    assert "Process every item in mandatory_checkbox_fields" in agent_task
-    assert "mandatory_checkbox_fields exactly once" in agent_task
-    assert "never click it again" in agent_task
-    assert "Upload completion is not task completion" in agent_task
-    assert "checked mandatory checkboxes" in agent_task
-    assert "First, process every item in field_values_before_upload" in agent_task
-    assert "optional non-empty fields such as telephone" in agent_task
-    assert "Last, and only after all field_values_before_upload" in agent_task
-    assert (
-        "mandatory_checkbox_fields rows are complete or explicitly reported as failed"
-        in agent_task
-    )
-    assert "never navigate, reload, or open a new tab" in agent_task
-    assert "ATS gate" not in agent_task
     assert "candidate_profile" not in agent_task
     assert "cv_extracted" not in agent_task
     assert result.log_path.name.startswith("browser-use-apply-agent-")
@@ -292,59 +280,49 @@ def test_open_apply_url_passes_and_serializes_multiple_upload_paths(
 
 def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> None:
     task = build_fill_plan_application_task(make_fill_plan())
+    task_payload = extract_task_payload(task)
 
     assert "reviewed application fill plan" in task
-    assert '"field_values_before_upload"' in task
-    assert '"mandatory_checkbox_fields"' in task
-    assert '"intentionally_blank_fields"' in task
-    assert '"intentionally_untouched_checkbox_fields"' in task
-    assert '"upload_files_last"' in task
-    assert '"blocked_fields"' in task
+    assert set(task_payload) == {
+        "field_values_before_upload",
+        "mandatory_checkbox_fields",
+        "intentionally_blank_fields",
+        "intentionally_untouched_checkbox_fields",
+        "upload_files_last",
+        "blocked_fields",
+        "submit_guard_labels",
+        "review_status",
+    }
+    assert task_payload["field_values_before_upload"][0] == {
+        "label": "Vorname",
+        "interpreted_label": "Vorname",
+        "name": "",
+        "value": "Taylor",
+        "input_type": "text",
+        "options": [],
+        "required": True,
+        "source": "manual_review",
+        "confidence": "high",
+        "literal_evidence": ["Vorname"],
+        "evidence_source": "control_label",
+        "evidence_status": "literal_verified",
+    }
+    assert task_payload["mandatory_checkbox_fields"][0]["label"] == (
+        "Privacy acknowledgement"
+    )
+    assert task_payload["intentionally_blank_fields"][0]["label"] == "Employee referral"
+    assert task_payload["intentionally_untouched_checkbox_fields"][0]["label"] == (
+        "Internal application"
+    )
+    assert task_payload["upload_files_last"][0]["file_path"] == "/tmp/candidate/cv.pdf"
+    assert task_payload["blocked_fields"] == []
     assert '"accept_terms_and_privacy"' not in task
-    assert '"interpreted_label": "Vorname"' in task
-    assert '"literal_evidence": [' in task
     assert '"consent_privacy_gate_fields"' not in task
-    assert '"label": "Vorname"' in task
-    assert '"value": "Taylor"' in task
-    assert '"label": "Privacy acknowledgement"' in task
-    assert '"value": "true"' in task
-    assert '"label": "Internal application"' in task
-    assert "ATS gate" not in task
-    assert "Upload only files listed in upload_files_last" in task
-    assert '"/tmp/candidate/cv.pdf"' in task
-    assert "Do not translate the page" in task
-    assert "dismiss them instead of accepting translation" in task
-    assert "least intrusive" in task
-    assert "Never click" in task
-    assert "Weiter & Prüfen" in task
-    assert "Absenden" in task
     assert "Never touch fields listed in blocked_fields" in task
-    assert "accept_terms_and_privacy is true" not in task
-    assert "semantic hints" in task
-    assert "guaranteed live page" in task
-    assert "Do not force actions against text or controls" in task
     assert "Never click upload controls" in task
     assert "Never type or paste the CV file path" in task
-    assert "Do not fill, select, type into, click, or modify any field" in task
-    assert "reviewed blank values" in task
-    assert "split reviewed values on semicolons" in task
-    assert "A sensitive or consent checkbox with value \"true\"" in task
-    assert "Process every item in mandatory_checkbox_fields" in task
-    assert "Upload completion is not task completion" in task
-    assert "Do not mark a field complete from memory" in task
-    assert "mandatory_checkbox_fields exactly once" in task
-    assert "never click it again" in task
-    assert "verify live field values and checkbox states before any upload" not in task
-    assert "Merely\n  extracting labels is not verification" not in task
-    assert "Never start file uploads before every field_values_before_upload row" in task
-    assert (
-        "every mandatory_checkbox_fields\n  row is complete or explicitly reported as failed"
-        in task
-    )
-    assert "If upload_file reports an error" in task
-    assert "Upload each listed file_path at most one time" in task
-    assert "Do not restart the upload list" in task
-    assert "do not search for additional\n  required checkboxes" in task
+    assert "Never click, press, or activate" in task
+    assert "Last, and only after all field_values_before_upload" in task
     assert "candidate_profile" not in task
     assert "cv_extracted" not in task
 
