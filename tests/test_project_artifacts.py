@@ -64,6 +64,14 @@ def test_env_example_documents_required_ai_settings() -> None:
     assert "OPENAI_MODEL=gpt-5.4" in env_example
 
 
+def test_readme_documents_venv_not_conda() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "python -m venv .venv" in readme
+    assert "source .venv/bin/activate" in readme
+    assert ".conda" not in readme
+
+
 def test_requirements_are_bounded_and_include_direct_pdf_dependency() -> None:
     requirements = Path("requirements.txt").read_text(encoding="utf-8").splitlines()
     dependency_lines = [
