@@ -5,6 +5,7 @@ import {
   PointerEvent as ReactPointerEvent,
   useEffect,
   useMemo,
+  useRef,
   useState
 } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
@@ -52,6 +53,8 @@ function App() {
   const [karenMessage, setKarenMessage] = useState("");
   const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
+  const [isKarenSending, setIsKarenSending] = useState(false);
+  const karenSendingRef = useRef(false);
   const sessionId = agent?.context?.session_id;
 
   useEffect(() => {
@@ -91,21 +94,26 @@ function App() {
     loadKarenJobs("", "");
   }, []);
 
-  async function sendKarenChat(event: FormEvent) {
+  async function sendKarenChat(event: FormEvent, overrideMessage?: string) {
     event.preventDefault();
-    if (!karenMessage.trim()) return;
-    await runBusy(() => undefined, setKarenStatus, async () => {
+    const outgoingMessage = (overrideMessage ?? karenMessage).trim();
+    if (!outgoingMessage || karenSendingRef.current) return;
+    karenSendingRef.current = true;
+    await runBusy(setIsKarenSending, setKarenStatus, async () => {
       const result = await apiRequest<ApiRecord>("/api/agent/chat", {
         method: "POST",
         body: JSON.stringify({
-          message: karenMessage,
+          message: outgoingMessage,
           selected_job_id: selectedKarenJobId,
           session_id: sessionId
         })
       });
-      setKarenMessage("");
-      loadAgent(result.context?.selected_job_id || selectedKarenJobId, result.context?.session_id);
+      if (!overrideMessage) setKarenMessage("");
+      const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
+      if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
+      loadAgent(nextJobId, result.context?.session_id);
     });
+    karenSendingRef.current = false;
   }
 
   function selectKarenJob(jobId: string) {
@@ -181,6 +189,7 @@ function App() {
           message={karenMessage}
           status={karenStatus}
           width={karenPanelWidth}
+          isSending={isKarenSending}
           onMessageChange={setKarenMessage}
           onSelectJob={selectKarenJob}
           onWidthChange={updateKarenPanelWidth}
@@ -870,6 +879,7 @@ function KarenChatPanel({
   message,
   status,
   width,
+  isSending,
   onMessageChange,
   onSelectJob,
   onWidthChange,
@@ -882,13 +892,22 @@ function KarenChatPanel({
   message: string;
   status: ApiRecord | null;
   width: number;
+  isSending: boolean;
   onMessageChange: (message: string) => void;
   onSelectJob: (jobId: string) => void;
   onWidthChange: (width: number) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  onSendChat: (event: FormEvent) => void;
+  onSendChat: (event: FormEvent, overrideMessage?: string) => void;
 }) {
   const state = agent?.state || {};
+  const messages = agent?.messages || [];
+  const blockers = [...(state.blockers || []), ...(state.errors || [])].filter(Boolean);
+  const nextActions = state.next_allowed_actions || [];
+  const quickPrompts = [
+    "What is blocking this application?",
+    "What should I do next?",
+    "Summarize the selected job status."
+  ];
   function resizeWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -897,6 +916,18 @@ function KarenChatPanel({
     if (event.key === "ArrowRight") {
       event.preventDefault();
       onWidthChange(width - 20);
+    }
+  }
+
+  function submitQuickPrompt(prompt: string) {
+    const event = { preventDefault() {} } as FormEvent;
+    onSendChat(event, prompt);
+  }
+
+  function handleComposerKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
     }
   }
 
@@ -936,24 +967,73 @@ function KarenChatPanel({
             </select>
           </label>
         )}
-        {state.pending_gate && <StatusMessage type="info" text={`Pending gate: ${state.pending_gate}`} />}
+        <div className="karen-context-summary" aria-label="Karen workflow summary">
+          <div>
+            <span className="summary-label">Gate</span>
+            <strong>{state.pending_gate ? titleCase(state.pending_gate) : "None"}</strong>
+          </div>
+          <div>
+            <span className="summary-label">Blockers</span>
+            <strong>{blockers.length}</strong>
+          </div>
+          <div>
+            <span className="summary-label">Next</span>
+            <strong>{nextActionLabel(nextActions, agent?.action_labels)}</strong>
+          </div>
+        </div>
+        <div className="quick-prompts" aria-label="Karen quick prompts">
+          {quickPrompts.map((prompt) => (
+            <button
+              className="quick-prompt"
+              disabled={isSending || !records.length}
+              key={prompt}
+              onClick={() => submitQuickPrompt(prompt)}
+              type="button"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
       </div>
       <div aria-label="Karen transcript" className="chat-log" role="log">
-        {(agent?.messages || []).map((item: ApiRecord, index: number) => (
-          <div className={`chat-message ${item.role}`} key={`${item.timestamp}-${index}`}>
-            <strong>{titleCase(item.role)}</strong>
+        {!messages.length && (
+          <div className="chat-empty">
+            <strong>No messages yet.</strong>
+            <p>Ask about blockers, the next gate, or what is ready for the selected job.</p>
+          </div>
+        )}
+        {messages.map((item: ApiRecord, index: number) => (
+          <div className={`chat-message ${item.role === "user" ? "user" : "assistant"}`} key={`${item.timestamp}-${index}`}>
+            <div className="chat-message-meta">
+              <strong>{item.role === "user" ? "You" : "Karen"}</strong>
+              {item.timestamp && <time dateTime={item.timestamp}>{formatTimestamp(item.timestamp)}</time>}
+            </div>
             <p>{item.content}</p>
+            {!!item.actions?.length && (
+              <div className="chat-action-badges" aria-label="Message actions">
+                {item.actions.map((actionName: string) => (
+                  <span className="action-badge" key={actionName}>
+                    {agent?.action_labels?.[actionName] || titleCase(actionName)}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
       <form onSubmit={onSendChat} className="karen-chat-form">
-        <input
+        <textarea
           aria-label="Ask Karen"
+          disabled={isSending}
+          onKeyDown={handleComposerKeyDown}
           placeholder="Ask Karen"
+          rows={3}
           value={message}
           onChange={(event) => onMessageChange(event.target.value)}
         />
-        <button className="primary">Ask Karen</button>
+        <button className="primary" disabled={isSending || !message.trim()}>
+          {isSending ? "Sending..." : "Ask Karen"}
+        </button>
       </form>
     </aside>
   );
@@ -1191,6 +1271,17 @@ function isCoverLetter(artifact: ApiRecord) {
 
 function basename(path: string) {
   return path.split(/[\\/]/).pop() || path;
+}
+
+function formatTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function nextActionLabel(actions: string[] = [], labels: ApiRecord = {}) {
+  if (!actions.length) return "None";
+  return labels[actions[0]] || titleCase(actions[0]);
 }
 
 function titleCase(value: string) {

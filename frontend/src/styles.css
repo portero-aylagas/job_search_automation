@@ -283,7 +283,7 @@ summary {
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 0.85rem;
 }
 
 .karen-panel-header h2 {
@@ -301,11 +301,74 @@ summary {
   object-fit: cover;
 }
 
+.karen-context-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.karen-context-summary > div {
+  min-width: 0;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 0.6rem;
+}
+
+.karen-context-summary strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-label {
+  display: block;
+  color: #647085;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+}
+
+.quick-prompt {
+  border-color: #c8d0dc;
+  background: #f8fafc;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.86rem;
+}
+
+.quick-prompt:hover:not(:disabled),
+.quick-prompt:focus-visible {
+  border-color: #1f6feb;
+  background: #eaf3ff;
+}
+
 .karen-chat-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   flex: 0 0 auto;
   gap: 0.6rem;
   margin-top: 1rem;
+  align-items: end;
+}
+
+.karen-chat-form textarea {
+  min-height: 4.9rem;
+  max-height: 12rem;
+  resize: vertical;
+}
+
+.karen-chat-form button {
+  min-width: 7rem;
 }
 
 .karen-header {
@@ -322,13 +385,63 @@ summary {
 }
 
 .chat-message {
+  max-width: 92%;
   border-radius: 8px;
   padding: 0.75rem;
   background: #f0f3f8;
 }
 
 .chat-message.user {
+  justify-self: end;
   background: #eaf3ff;
+}
+
+.chat-message.assistant {
+  justify-self: start;
+  background: #f5f0e8;
+}
+
+.chat-message p,
+.chat-empty p {
+  margin: 0.45rem 0 0;
+  white-space: pre-wrap;
+}
+
+.chat-message-meta {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.chat-message-meta time {
+  color: #647085;
+  font-size: 0.78rem;
+}
+
+.chat-action-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.action-badge {
+  border: 1px solid #c9d7b8;
+  border-radius: 999px;
+  background: #f2f8ea;
+  color: #385318;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.chat-empty {
+  border: 1px dashed #c8d0dc;
+  border-radius: 8px;
+  background: #fbfcfe;
+  color: #4d5a6f;
+  padding: 0.9rem;
 }
 
 @media (max-width: 760px) {
@@ -354,7 +467,13 @@ summary {
 
   .grid,
   .grid.three,
-  .check-grid {
+  .check-grid,
+  .karen-context-summary,
+  .karen-chat-form {
     grid-template-columns: 1fr;
+  }
+
+  .karen-chat-form button {
+    width: 100%;
   }
 }
