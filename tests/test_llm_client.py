@@ -206,6 +206,8 @@ def test_provider_client_disables_sdk_retries(monkeypatch: pytest.MonkeyPatch) -
             constructed.append(kwargs)
 
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
 
     llm_client.get_openai_client()

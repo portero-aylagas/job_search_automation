@@ -9,6 +9,10 @@ import json
 import os
 import signal
 from pathlib import Path
+from types import MethodType
+from typing import Any
+
+from src.observability import traceable, wrap_openai_client
 
 SETUP_REFERENCE = "Refer to README.md -> Installation -> Browser Use Setup."
 APPLY_PAGE_READY_TIMEOUT_SECONDS = 60.0
@@ -114,7 +118,12 @@ async def open_visible_browser(
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY is required for Browser Use agent tasks.")
         model = os.getenv("BROWSER_USE_AGENT_MODEL", os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
-        llm = BrowserUseChatModel(model=model, temperature=0.2, api_key=api_key)
+        llm = _build_traced_browser_use_chat_model(
+            BrowserUseChatModel,
+            model=model,
+            temperature=0.2,
+            api_key=api_key,
+        )
         max_steps = _browser_use_agent_max_steps()
         print(f"Browser Use agent max steps: {max_steps}", flush=True)
         agent = Agent(
@@ -130,7 +139,7 @@ async def open_visible_browser(
                 if path.exists()
             ],
         )
-        await agent.run(max_steps=max_steps)
+        await _run_browser_use_apply_agent(agent, max_steps=max_steps)
         print("Browser Use agent task finished. Browser remains open.", flush=True)
 
     stop_event = asyncio.Event()
@@ -203,6 +212,25 @@ def _install_signal_handlers(stop_event: asyncio.Event) -> None:
             loop.add_signal_handler(selected_signal, stop_event.set)
         except NotImplementedError:
             continue
+
+
+def _build_traced_browser_use_chat_model(
+    chat_model_class: type[Any],
+    **kwargs: Any,
+) -> Any:
+    llm = chat_model_class(**kwargs)
+    get_client = llm.get_client
+
+    def traced_get_client(self: object) -> Any:
+        return wrap_openai_client(get_client())
+
+    llm.get_client = MethodType(traced_get_client, llm)
+    return llm
+
+
+@traceable("browser_use_apply_agent")
+async def _run_browser_use_apply_agent(agent: object, *, max_steps: int) -> object:
+    return await agent.run(max_steps=max_steps)
 
 
 async def _close_existing_pages(browser: object) -> int:

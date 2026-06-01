@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from src.observability import wrap_openai_client
 from src.schemas import AIWorkflowTrace
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
@@ -103,6 +104,7 @@ class RetryOutcome:
 
 def get_openai_client() -> Any:
     """Return a configured OpenAI client for live AI calls."""
+
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("Set OPENAI_API_KEY before using AI-assisted workflows.")
 
@@ -111,8 +113,8 @@ def get_openai_client() -> Any:
     except ImportError as exc:
         raise RuntimeError("Install the OpenAI Python package before using AI extraction.") from exc
 
-    # We keep SDK retries off so retry behavior stays visible in this module.
-    return OpenAI(max_retries=0)
+    client = OpenAI(max_retries=0)
+    return wrap_openai_client(client)
 
 
 def parse_structured_response(
