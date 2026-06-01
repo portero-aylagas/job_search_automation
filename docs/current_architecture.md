@@ -40,7 +40,8 @@ Karen chat remains mounted as an app-level side panel across all top-level
 pages. The top-level `Agent Karen` page remains as a dashboard for selected-job
 workflow status, blockers, timeline, and next-action guidance. The side panel
 keeps context controls fixed at the top, the transcript in the only scrolling
-middle area, and the Ask Karen form fixed at the bottom; desktop users can
+middle area with automatic scroll-to-latest behavior, and a compact Ask Karen
+composer with an icon send control fixed at the bottom; desktop users can
 resize the panel from the divider between page content and chat. Buttons that
 invoke AI keep visible `with AI` labels. Review gates remain explicit and
 human-controlled. Dynamic job fields, application requirements, package
