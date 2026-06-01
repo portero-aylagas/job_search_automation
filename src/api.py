@@ -76,7 +76,7 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.job_intake import create_job_listing, persist_job_listing
-from src.job_workspace_ui import (
+from src.job_workspace import (
     apply_application_package_review_edits,
     apply_application_requirements_review_edits,
     build_application_package_summary,
@@ -407,7 +407,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
 
     @app.get("/api/tracker")
     async def tracker() -> dict[str, object]:
-        """Return tracker records sorted like the Streamlit tracker."""
+        """Return tracker records sorted like the frontend tracker."""
 
         _, records = load_app_data(app.state.base_dir)
         sorted_records = sorted(
@@ -913,7 +913,7 @@ def fill_plan_review_rows(
         | ApplicationFillBlockedField,
     ]
 ]:
-    """Return fill-plan rows in the same grouping order as Streamlit."""
+    """Return fill-plan rows in the same grouping order as the frontend."""
 
     return [
         *[

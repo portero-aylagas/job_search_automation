@@ -124,7 +124,7 @@ Definition of done:
 
 Tasks:
 
-- create the Streamlit app scaffold
+- create the React + FastAPI app scaffold
 - define candidate, experience, job, analysis, package, and tracker schemas
 - add sample data
 - add JSON load/save helpers

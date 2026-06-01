@@ -128,7 +128,7 @@ class BrowserUseLauncher(Protocol):
 
 @dataclass(frozen=True)
 class AgentWorkflowDependencies:
-    """Injectable workflow steps used by tests and the Streamlit controller."""
+    """Injectable workflow steps used by tests and the runtime API controller."""
 
     requirements_discoverer: RequirementsDiscoverer = run_requirements_discovery_graph
     package_generator: PackageGenerator = generate_application_package

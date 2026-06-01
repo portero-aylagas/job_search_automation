@@ -1,4 +1,4 @@
-"""UI-free workflow helpers shared by the Streamlit app and tests."""
+"""UI-free workflow helpers shared by the API layer and tests."""
 
 from __future__ import annotations
 

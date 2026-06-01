@@ -125,7 +125,7 @@ def test_package_reject_action_is_not_exposed(tmp_path) -> None:
     assert response.status_code == 404
 
 
-def test_apply_route_launches_browser_without_streamlit_startup_wait(
+def test_apply_route_launches_browser_without_api_startup_wait(
     monkeypatch,
     tmp_path,
 ) -> None:

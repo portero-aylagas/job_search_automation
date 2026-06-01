@@ -10,7 +10,7 @@ capabilities:
     tracker records, and existing artifacts.
   - Suggest the next valid action without bypassing review gates.
   - Run safe draft workflow steps until the next human gate after explicit user intent.
-  - Route the Streamlit UI to Candidate Profile, Job Intake, Jobs, Tracker, or Agent Karen.
+  - Route the React UI to Candidate Profile, Job Intake, Jobs, Tracker, or Agent Karen.
 forbidden_actions:
   - Final application submission.
   - Login automation.

@@ -1,7 +1,7 @@
 # Streamlit to React/FastAPI Parity Checklist
 
-This checklist records the current Streamlit workflow before implementation and
-is the migration contract for the first React/FastAPI version. The target is UI
+This checklist records the retired Streamlit workflow and served as the
+migration contract for the first React/FastAPI version. The target was UI
 platform parity, not product redesign.
 
 ## Top Navigation

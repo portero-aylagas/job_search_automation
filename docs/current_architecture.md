@@ -28,7 +28,8 @@ rules already owned by modules such as `app_workflow.py`,
 
 ## UI Contract
 
-The React UI preserves the Streamlit navigation and workflow semantics:
+The React UI preserves the navigation and workflow semantics from the retired
+Streamlit UI:
 
 - `Candidate Profile`
 - `Job Intake`

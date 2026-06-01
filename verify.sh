@@ -7,7 +7,7 @@ python - <<'PY'
 from pathlib import Path
 import compileall
 
-paths = [Path("app.py"), Path("src"), Path("tests")]
+paths = [Path("src"), Path("tests")]
 existing = [str(path) for path in paths if path.exists()]
 
 if existing:

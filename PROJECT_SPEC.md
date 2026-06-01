@@ -362,10 +362,10 @@ The first version should not implement:
 ## Main UI Pages
 
 The primary runtime UI is React + TypeScript + Vite with FastAPI as the adapter
-layer over existing Python workflow logic. The original Streamlit UI remains a
-legacy/parity reference. The React migration must preserve workflow semantics,
-field coverage, review gates, navigation, and AI button labels before any
-future redesign is proposed.
+layer over existing Python workflow logic. The original Streamlit UI has been
+removed from the runtime codebase. The React UI must preserve workflow
+semantics, field coverage, review gates, navigation, and AI button labels before
+any future redesign is proposed.
 
 Current top-level pages:
 
@@ -529,8 +529,8 @@ Capabilities:
   Agent Karen tab
 - process safe draft/local workflow requests only after explicit user intent,
   starting with requirements discovery for a selected job that has a valid
-  apply URL; the current Streamlit UI shows next actions as static guidance
-  rather than direct action buttons
+  apply URL; the React UI shows next actions as static guidance rather than
+  direct action buttons
 
 Boundaries:
 
