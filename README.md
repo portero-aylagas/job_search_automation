@@ -652,3 +652,17 @@ See `IMPLEMENTATION_PLAN.md` for detailed implementation phases and acceptance c
 ## Specification
 
 See `PROJECT_SPEC.md` for product scope, workflow design, data entities, UI pages, and boundaries.
+
+### Optional LangSmith tracing
+
+The application can send normal app LLM calls and Browser Use agent LLM calls
+to LangSmith for debugging and observability. Repo-local `.env` values are
+loaded automatically, but exported shell values take precedence.
+
+Set the following environment variables:
+
+```env
+LANGSMITH_API_KEY=your_langsmith_api_key
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=job-search-automation
+```

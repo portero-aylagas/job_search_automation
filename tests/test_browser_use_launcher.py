@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,10 +20,12 @@ from src.browser_use_launcher import (
 )
 from src.browser_use_visible_runner import (
     _browser_use_agent_max_steps,
+    _build_traced_browser_use_chat_model,
     _close_existing_pages,
     _close_other_pages,
     _open_page_with_retries,
     _page_has_interactive_content,
+    _run_browser_use_apply_agent,
     _write_stable_profile_preferences,
 )
 from src.schemas import (
@@ -692,6 +695,75 @@ def test_browser_use_agent_max_steps_ignores_invalid_override(
     monkeypatch.setenv("BROWSER_USE_AGENT_MAX_STEPS", "not-a-number")
 
     assert _browser_use_agent_max_steps() == 120
+
+
+def test_browser_use_chat_model_wraps_internal_openai_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_client = object()
+    wrapped_client = object()
+
+    class FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        def get_client(self) -> object:
+            return raw_client
+
+    wrapped_inputs: list[object] = []
+
+    def fake_wrap_openai_client(client: object) -> object:
+        wrapped_inputs.append(client)
+        return wrapped_client
+
+    monkeypatch.setattr(
+        "src.browser_use_visible_runner.wrap_openai_client",
+        fake_wrap_openai_client,
+    )
+
+    llm = _build_traced_browser_use_chat_model(
+        FakeChatModel,
+        model="gpt-4.1-mini",
+        temperature=0.2,
+        api_key="test-key",
+    )
+
+    assert llm.kwargs == {
+        "model": "gpt-4.1-mini",
+        "temperature": 0.2,
+        "api_key": "test-key",
+    }
+    assert llm.get_client() is wrapped_client
+    assert wrapped_inputs == [raw_client]
+
+
+def test_browser_use_agent_run_uses_named_trace(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, str]] = []
+    langsmith_module = type(sys)("langsmith")
+
+    def fake_traceable(*, name: str, run_type: str):
+        calls.append((name, run_type))
+
+        def decorator(func):
+            async def wrapper(*args: object, **kwargs: object) -> object:
+                return await func(*args, **kwargs)
+
+            return wrapper
+
+        return decorator
+
+    class FakeAgent:
+        async def run(self, *, max_steps: int) -> str:
+            return f"ran:{max_steps}"
+
+    langsmith_module.traceable = fake_traceable
+    monkeypatch.setitem(sys.modules, "langsmith", langsmith_module)
+    monkeypatch.setattr("src.observability.langsmith_enabled", lambda: True)
+
+    result = asyncio.run(_run_browser_use_apply_agent(FakeAgent(), max_steps=12))
+
+    assert result == "ran:12"
+    assert calls == [("browser_use_apply_agent", "chain")]
 
 
 def test_close_existing_pages_closes_tabs_before_navigation() -> None:
