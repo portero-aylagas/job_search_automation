@@ -18,6 +18,13 @@ def test_core_project_artifacts_exist() -> None:
     assert not missing, f"Missing required project artifact(s): {', '.join(missing)}"
 
 
+def test_legacy_ui_is_not_a_runtime_dependency() -> None:
+    dependency_name = "stream" + "lit"
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+
+    assert dependency_name not in requirements
+
+
 def test_llm_provider_calls_stay_behind_llm_client() -> None:
     allowed_provider_file = Path("src/llm_client.py")
     forbidden_patterns = ("responses.parse", "OpenAI(")

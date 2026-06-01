@@ -99,7 +99,8 @@ Create the minimum runnable application structure.
 ### Create
 
 ```text
-app.py
+frontend/src/App.tsx
+src/api.py
 src/__init__.py
 src/schemas.py
 src/storage.py
@@ -117,8 +118,8 @@ tests/
 - sample experience units
 - sample job listing
 - sample tracker records
-- basic Streamlit app
-- app navigation
+- FastAPI app
+- React app navigation
 - Candidate Profile page
 - Tracker page
 
@@ -135,7 +136,8 @@ tests/
 - app runs with:
 
 ```bash
-streamlit run app.py
+uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+npm run frontend:dev
 ```
 
 - sample profile is visible
@@ -651,9 +653,13 @@ job_search_automation/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── requirements.txt
-├── app.py
+├── package.json
+├── vite.config.ts
+├── index.html
+├── frontend/
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
@@ -697,7 +703,8 @@ job_search_automation/
 Initial:
 
 ```text
-streamlit
+fastapi
+uvicorn
 pydantic
 python-dotenv
 pytest
@@ -743,7 +750,7 @@ After each phase:
 
 ```bash
 pytest
-streamlit run app.py
+npm run frontend:typecheck
 git add .
 git commit -m "Implement phase X"
 ```
