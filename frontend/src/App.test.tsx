@@ -194,6 +194,34 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled();
   });
 
+  it("shows the workflow stepper and switches selected job details", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord(), jobRecord2()] } };
+      }
+      if (url.includes("/api/jobs/job-2/workspace")) {
+        return { body: readyWorkspace2() };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      return { body: agentState(1) };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    expect(await screen.findByRole("list", { name: "Selected job workflow steps" })).toHaveTextContent("Requirements");
+    expect(screen.getByRole("button", { name: /Automation Engineer/ })).toHaveClass("selected");
+    await userEvent.click(screen.getByRole("button", { name: /Data Analyst/ }));
+
+    expect(await screen.findByRole("heading", { name: "Example Analytics / Data Analyst" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Data Analyst/ })).toHaveClass("selected");
+  });
+
   it("shows pending feedback while requirements discovery is running", async () => {
     let resolveDiscovery: (value: MockResponse) => void = () => undefined;
     const pendingDiscovery = new Promise<MockResponse>((resolve) => {
@@ -331,6 +359,71 @@ describe("App workflow pages", () => {
     );
   });
 
+  it("shows pending feedback and prevents repeat package review saves", async () => {
+    let reviewCalls = 0;
+    let resolveReview: (value: MockResponse) => void = () => undefined;
+    const pendingReview = new Promise<MockResponse>((resolve) => {
+      resolveReview = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/package/review")) {
+        reviewCalls += 1;
+        return pendingReview;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    const saveButton = await screen.findByRole("button", { name: "Save package review" });
+    await userEvent.click(saveButton);
+    fireEvent.click(saveButton);
+
+    expect(screen.getByRole("button", { name: "Saving package review..." })).toBeDisabled();
+    expect(reviewCalls).toBe(1);
+    resolveReview({ body: { message: "Saved package review." } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save package review" })).toBeEnabled());
+  });
+
+  it("shows pending feedback while exporting the cover letter", async () => {
+    let resolveExport: (value: MockResponse) => void = () => undefined;
+    const pendingExport = new Promise<MockResponse>((resolve) => {
+      resolveExport = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: coverLetterWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/package/export-cover-letter")) {
+        return pendingExport;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Export cover letter PDF" }));
+
+    expect(screen.getByRole("button", { name: "Exporting cover letter..." })).toBeDisabled();
+    resolveExport({ body: { message: "Exported cover letter." } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export cover letter PDF" })).toBeEnabled());
+  });
+
   it("shows pending feedback while fill-plan generation is running", async () => {
     let resolveFillPlan: (value: MockResponse) => void = () => undefined;
     const pendingFillPlan = new Promise<MockResponse>((resolve) => {
@@ -398,6 +491,36 @@ describe("App workflow pages", () => {
     );
   });
 
+  it("shows pending feedback while saving fill-plan review", async () => {
+    let resolveReview: (value: MockResponse) => void = () => undefined;
+    const pendingReview = new Promise<MockResponse>((resolve) => {
+      resolveReview = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/fill-plan/review")) {
+        return pendingReview;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save fill plan review" }));
+
+    expect(screen.getByRole("button", { name: "Saving fill plan review..." })).toBeDisabled();
+    resolveReview({ body: { message: "Saved fill plan review." } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save fill plan review" })).toBeEnabled());
+  });
+
   it("shows shared pending feedback while Apply starts", async () => {
     let resolveApply: (value: MockResponse) => void = () => undefined;
     const pendingApply = new Promise<MockResponse>((resolve) => {
@@ -430,6 +553,89 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("button", { name: "Kill All Browser Use Processes" })).toBeDisabled();
     resolveApply({ body: { message: "Started Browser Use apply agent." } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
+  });
+
+  it("shows pending feedback for browser process controls", async () => {
+    let resolveStop: (value: MockResponse) => void = () => undefined;
+    const pendingStop = new Promise<MockResponse>((resolve) => {
+      resolveStop = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: browserActiveWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/browser/stop-session")) {
+        return pendingStop;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Stop Browser Use Session" }));
+
+    expect(screen.getByRole("button", { name: "Stopping Browser Use Session..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Kill All Browser Use Processes" })).toBeDisabled();
+    resolveStop({ body: { message: "Stopped Browser Use session." } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Stop Browser Use Session" })).toBeEnabled());
+  });
+
+  it("shows tracker curated columns and filters", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.endsWith("/api/tracker")) {
+        return { body: { records: [jobRecord(), { ...jobRecord2(), status: "blocked", blocker_count: 2 }] } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
+
+    expect(await screen.findByRole("columnheader", { name: "Company" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Retrieval Mode" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Blocked" }));
+
+    expect(screen.getByText("Example Analytics")).toBeInTheDocument();
+    expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
+  });
+
+  it("navigates Karen action shortcuts to the matching workflow section", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click((await screen.findAllByRole("button", { name: "Review requirements" }))[0]);
+
+    expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
+    expect(screen.getByText("Application Requirements")).toBeInTheDocument();
   });
 
   it("loads persistent Karen chat, sends chat payloads, and reloads state", async () => {
@@ -818,6 +1024,19 @@ function jobRecord() {
   };
 }
 
+function jobRecord2() {
+  return {
+    job_id: "job-2",
+    title: "Data Analyst",
+    company: "Example Analytics",
+    source_url: "https://example.com/jobs/2",
+    apply_url: "https://example.com/apply/2",
+    retrieval_mode: "url",
+    status: "ready",
+    last_updated: "2026-06-02T09:00:00.000Z"
+  };
+}
+
 function blockedWorkspace() {
   return {
     job: normalizedJob(),
@@ -831,6 +1050,58 @@ function blockedWorkspace() {
     apply_blockers: ["Discover application requirements for this apply URL."],
     active_browser_use_session: null,
     browser_use_runner_count: 0
+  };
+}
+
+function readyWorkspace2() {
+  return {
+    ...readyWorkspace(),
+    job: {
+      id: "job-2",
+      title: "Data Analyst",
+      company: "Example Analytics",
+      source_url: "https://example.com/jobs/2",
+      apply_url: "https://example.com/apply/2",
+      retrieval_mode: "url"
+    },
+    requirements: {
+      ...readyWorkspace().requirements,
+      job_id: "job-2"
+    },
+    package: {
+      ...readyWorkspace().package,
+      job_id: "job-2"
+    },
+    fill_plan: { job_id: "job-2", review_status: "reviewed" }
+  };
+}
+
+function coverLetterWorkspace() {
+  return {
+    ...readyWorkspace(),
+    package: {
+      job_id: "job-1",
+      status: "approved",
+      artifacts: [
+        {
+          id: "cover",
+          type: "cover_letter",
+          label: "Cover Letter",
+          content: "Dear hiring team,"
+        }
+      ]
+    }
+  };
+}
+
+function browserActiveWorkspace() {
+  return {
+    ...readyWorkspace(),
+    active_browser_use_session: {
+      pid: 1234,
+      url: "https://example.com/apply/1"
+    },
+    browser_use_runner_count: 1
   };
 }
 
