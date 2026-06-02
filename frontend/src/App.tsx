@@ -13,6 +13,7 @@ import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"];
+const trackerStatusFilters = ["All", "New", "In progress", "Application Draft", "Blocked", "Ready", "Applied"];
 const careerLevel = [
   ["internship", "Internship"],
   ["working_student", "Working student"],
@@ -1145,7 +1146,7 @@ function TrackerPage() {
       ) : (
         <>
           <div className="filter-bar" aria-label="Tracker status filters">
-            {["All", "New", "In progress", "Blocked", "Ready", "Applied"].map((status) => (
+            {trackerStatusFilters.map((status) => (
               <button
                 className={`filter-button ${statusFilter === status ? "active" : ""}`}
                 key={status}
@@ -1890,6 +1891,7 @@ function normalizeJobStatus(status?: string) {
   if (normalized.includes("applied")) return "complete";
   if (normalized.includes("ready")) return "ready";
   if (normalized.includes("block")) return "blocked";
+  if (normalized.includes("draft")) return "needs-review";
   if (normalized.includes("progress") || normalized.includes("review")) return "needs-review";
   return "missing";
 }
@@ -1899,6 +1901,7 @@ function normalizeTrackerStatus(status?: string) {
   if (normalized.includes("applied")) return "Applied";
   if (normalized.includes("ready")) return "Ready";
   if (normalized.includes("block")) return "Blocked";
+  if (normalized.includes("application draft")) return "Application Draft";
   if (normalized.includes("progress") || normalized.includes("review")) return "In progress";
   return "New";
 }

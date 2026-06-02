@@ -595,7 +595,15 @@ describe("App workflow pages", () => {
         return { body: { records: [jobRecord()] } };
       }
       if (url.endsWith("/api/tracker")) {
-        return { body: { records: [jobRecord(), { ...jobRecord2(), status: "blocked", blocker_count: 2 }] } };
+        return {
+          body: {
+            records: [
+              jobRecord(),
+              { ...jobRecord2(), job_id: "job-3", company: "Draft Labs", status: "application_draft" },
+              { ...jobRecord2(), status: "blocked", blocker_count: 2 }
+            ]
+          }
+        };
       }
       if (url.includes("/api/agent")) {
         return { body: agentState(1) };
@@ -608,6 +616,19 @@ describe("App workflow pages", () => {
 
     expect(await screen.findByRole("columnheader", { name: "Company" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "Retrieval Mode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Application Draft" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Application Draft" }));
+
+    expect(screen.getByText("Draft Labs")).toBeInTheDocument();
+    expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
+    expect(screen.queryByText("Example Analytics")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "New" }));
+
+    expect(screen.getByText("Example Co")).toBeInTheDocument();
+    expect(screen.queryByText("Draft Labs")).not.toBeInTheDocument();
+
     await userEvent.click(screen.getByRole("button", { name: "Blocked" }));
 
     expect(screen.getByText("Example Analytics")).toBeInTheDocument();
