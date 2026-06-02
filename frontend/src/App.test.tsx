@@ -91,7 +91,8 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("button", { name: "Parsing CV..." })).toBeDisabled();
     expect(screen.getByLabelText(/Email/)).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save CV review changes" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save manual preferences" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
     resolveParse({ body: { profile: candidateProfile(), message: "Parsed CV." } });
     expect(await screen.findByRole("button", { name: "Parse CV with AI" })).toBeEnabled();
   });

@@ -190,8 +190,8 @@ preferences that are not required for known-job applications.
   - availability
   - annual EUR salary range
   - EU work authorization
-- profile validation before final save
-- single final `Save profile` action
+- section-level save actions for reviewed CV fields and optional preferences
+- workflow readiness validation through downstream blockers
 - JSON persistence to `data/candidate_profile.json`
 
 ### Data Output
@@ -213,7 +213,10 @@ data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
 - work authorization is an optional mutually exclusive EU radio choice
 - salary is an optional yearly EUR min/max range and max must be greater than
   or equal to min when both values are present
-- final save validates all required fields and writes one candidate profile JSON
+- reviewed CV fields and optional preferences are saved through their own
+  section actions
+- downstream workflow readiness is validated by blockers against the persisted
+  candidate profile data
 - local personal profile artifacts are not committed to git
 - optional supporting documents can be saved and merged into the reviewable
   candidate profile data

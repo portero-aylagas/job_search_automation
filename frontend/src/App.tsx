@@ -286,11 +286,6 @@ function CandidateProfilePage() {
     await saveProfileDraft("/api/candidate-profile/preferences", profile, setProfile, setMessage);
   }
 
-  async function finalSave() {
-    if (!profile) return;
-    await saveProfileDraft("/api/candidate-profile/save", profile, setProfile, setMessage);
-  }
-
   if (message?.type === "error" && (!profile || !extracted || !preferences || !sourceDocuments)) {
     return <StatusMessage type="error" text={message.text} />;
   }
@@ -419,8 +414,6 @@ function CandidateProfilePage() {
           <div className="actions"><button className="primary" onClick={savePreferences}>Save manual preferences</button></div>
         </section>
 
-        <h2>Save</h2>
-        <div className="actions"><button className="primary" onClick={finalSave}>Save profile</button></div>
       </fieldset>
     </>
   );
@@ -1286,7 +1279,7 @@ function Traceability({ metadata }: { metadata: ApiRecord }) {
 async function saveProfileDraft(path: string, profile: ApiRecord, setProfile: (profile: ApiRecord) => void, setMessage: (message: ApiRecord | null) => void) {
   await runBusy(() => undefined, setMessage, async () => {
     const result = await apiRequest<ApiRecord>(path, {
-      method: path.endsWith("/save") ? "POST" : "PUT",
+      method: "PUT",
       body: JSON.stringify({ profile })
     });
     setProfile(result.profile);
