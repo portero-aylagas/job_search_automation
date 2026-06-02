@@ -24,6 +24,7 @@ from src.agents.karen.tools import (
     get_karen_tool_definition,
 )
 from src.schemas import AgentChatMessage, AgentWorkflowEvent
+from src.services.karen_permission_service import grant_job_session_permission
 
 KAREN_PROMPTS_PATH = Path(__file__).with_name("prompts.yaml")
 KarenIntentClassifier = Callable[[KarenContext, str], KarenIntentResponse]
@@ -43,6 +44,7 @@ class KarenGraphState(TypedDict, total=False):
     intent: KarenIntentResponse | None
     tool_result: KarenToolResult | None
     assistant_message: str
+    inline_permission_granted: bool
 
 
 def process_karen_chat_turn(
@@ -206,6 +208,7 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
         }
 
     actual_permission = definition.permission_level if definition else intent.permission_level
+    context = _apply_inline_permission_grant_if_requested(state, context, definition)
     decision = evaluate_karen_tool_request(
         tool_name=tool_name,
         permission_level=actual_permission,
@@ -230,12 +233,13 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
         )
         _log_refusal(state, tool_name or "karen_chat", safety_reason)
         return {
+            "context": context,
             "tool_result": tool_result,
             "assistant_message": _combine_messages(intent.assistant_message, safety_reason),
         }
 
     if not tool_name:
-        return {"assistant_message": intent.assistant_message}
+        return {"context": context, "assistant_message": intent.assistant_message}
 
     tool_result = execute_karen_tool(
         state["base_dir"],
@@ -245,11 +249,15 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
         route_page=intent.route_page,
         dependencies=state.get("dependencies"),
     )
-    if tool_result.status in {"routed", "answered", "needs_job"}:
+    if _should_log_tool_result(definition, tool_result):
         _log_tool_event(state, tool_result)
+    assistant_message = intent.assistant_message
+    if state.get("inline_permission_granted") and tool_result.status == "executed":
+        assistant_message = "Granted selected-job permissions for this session."
     return {
+        "context": context,
         "tool_result": tool_result,
-        "assistant_message": _combine_messages(intent.assistant_message, tool_result.message),
+        "assistant_message": _combine_messages(assistant_message, tool_result.message),
     }
 
 
@@ -314,6 +322,74 @@ def _combine_messages(primary: str, secondary: str) -> str:
     return f"{primary_text}\n\n{secondary_text}"
 
 
+def _should_log_tool_result(
+    definition: object,
+    tool_result: KarenToolResult,
+) -> bool:
+    if getattr(definition, "workflow_action", None):
+        return False
+    return tool_result.status in {
+        "answered",
+        "error",
+        "executed",
+        "needs_input",
+        "needs_job",
+        "refused",
+        "routed",
+    }
+
+
+def _apply_inline_permission_grant_if_requested(
+    state: KarenGraphState,
+    context: KarenContext,
+    definition: object,
+) -> KarenContext:
+    intent = state.get("intent")
+    grant_intent = intent.permission_grant if intent is not None else None
+    if grant_intent is None or not grant_intent.grant_selected_job_permissions:
+        return context
+    if (
+        definition is not None
+        and getattr(definition, "name", None)
+        == "grant_job_session_permission"
+    ):
+        return context
+    if not context.selected_job_id:
+        return context
+
+    session = grant_job_session_permission(
+        state["base_dir"],
+        session_id=context.session_id,
+        job_id=context.selected_job_id,
+        allow_app_mutations=grant_intent.allow_app_mutations,
+        allow_browser_launch=grant_intent.allow_browser_launch,
+        allow_final_submission=grant_intent.allow_final_submission_permission,
+    )
+    granted_context = context.model_copy(
+        update={"job_permissions": session.job_permissions},
+    )
+    state["context"] = granted_context
+    state["inline_permission_granted"] = True
+    log_agent_event(
+        state["base_dir"],
+        AgentWorkflowEvent(
+            session_id=context.session_id,
+            job_id=context.selected_job_id,
+            action="grant_job_session_permission",
+            result="executed",
+            details={
+                "source": "inline_chat_permission",
+                "allow_app_mutations": grant_intent.allow_app_mutations,
+                "allow_browser_launch": grant_intent.allow_browser_launch,
+                "allow_final_submission": (
+                    grant_intent.allow_final_submission_permission
+                ),
+            },
+        ),
+    )
+    return granted_context
+
+
 def _log_refusal(state: KarenGraphState, action: str, safety_reason: str) -> None:
     context = state["context"]
     log_agent_event(
@@ -330,11 +406,12 @@ def _log_refusal(state: KarenGraphState, action: str, safety_reason: str) -> Non
 
 def _log_tool_event(state: KarenGraphState, tool_result: KarenToolResult) -> None:
     context = state["context"]
+    job_id = None if tool_result.tool_name == "delete_job_data" else context.selected_job_id
     log_agent_event(
         state["base_dir"],
         AgentWorkflowEvent(
             session_id=context.session_id,
-            job_id=context.selected_job_id,
+            job_id=job_id,
             action=tool_result.tool_name,
             result=tool_result.status,
             artifact_paths=tool_result.artifact_paths,

@@ -23,13 +23,13 @@ from src.app_workflow import (
     workflow_trace_payload,
 )
 from src.application_fill_plan import (
-    apply_fill_plan_edits,
     generate_application_fill_plan,
     load_application_fill_plan,
     map_application_fields_with_llm,
     mark_application_fill_plan_reviewed,
     save_application_fill_plan,
 )
+from src.application_fill_plan_review import apply_fill_plan_review_submission
 from src.application_package import (
     export_cover_letter_artifact,
     generate_application_package,
@@ -351,12 +351,14 @@ def review_fill_plan(
 
     ensure_job_is_active(base_dir, job_id)
     fill_plan = require_fill_plan(base_dir, job_id)
-    edited = apply_fill_plan_edits(
+    edited = apply_fill_plan_review_submission(
         fill_plan,
-        edited_values,
-        upload_paths_by_key=upload_paths_by_key,
-        needs_answer_values_by_key=needs_answer_values_by_key,
-        blocked_values_by_key=blocked_values_by_key,
+        {
+            "edited_values": edited_values,
+            "upload_paths_by_key": upload_paths_by_key,
+            "needs_answer_values_by_key": needs_answer_values_by_key,
+            "blocked_values_by_key": blocked_values_by_key,
+        },
     )
     try:
         reviewed = mark_application_fill_plan_reviewed(edited)

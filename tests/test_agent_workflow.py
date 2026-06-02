@@ -227,7 +227,7 @@ def test_agent_workflow_runs_happy_path_until_browser_launch_gate(tmp_path: Path
     assert "launch_browser_use" in state.next_allowed_actions
 
 
-def test_agent_workflow_permissioned_continue_runs_until_browser_launch_gate(
+def test_agent_workflow_permissioned_continue_launches_browser_use(
     tmp_path: Path,
 ) -> None:
     _, job = setup_job(tmp_path)
@@ -250,7 +250,40 @@ def test_agent_workflow_permissioned_continue_runs_until_browser_launch_gate(
         "approve_package",
         "generate_fill_plan",
         "review_fill_plan",
+        "launch_browser_use",
     ]
+    assert events[-1].result == "browser_use_started"
+
+
+def test_agent_workflow_permissioned_continue_approves_needs_review_package(
+    tmp_path: Path,
+) -> None:
+    _, job = setup_job(tmp_path)
+    save_application_requirements(tmp_path, make_requirements(job, reviewed=True))
+    save_application_page_snapshot(
+        tmp_path,
+        job.id,
+        ApplicationPageSnapshot(requested_url=str(job.apply_url)),
+    )
+    save_application_package(tmp_path, make_package(job, status="needs_review"), job)
+
+    state = run_agent_workflow(
+        tmp_path,
+        session_id="agent-permissioned-needs-review-package",
+        selected_job_id=job.id,
+        action="continue_to_apply_assistance",
+        dependencies=workflow_dependencies(),
+    )
+
+    assert state.pending_gate == "browser_use_launch"
+    events = load_agent_events(tmp_path, "agent-permissioned-needs-review-package")
+    assert [event.action for event in events] == [
+        "approve_package",
+        "generate_fill_plan",
+        "review_fill_plan",
+        "launch_browser_use",
+    ]
+    assert events[-1].result == "browser_use_started"
 
 
 def test_agent_workflow_starts_known_job_at_requirements_discovery(tmp_path: Path) -> None:

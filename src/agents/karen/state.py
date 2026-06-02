@@ -8,6 +8,15 @@ from src.agents.karen.policy import PermissionLevel
 from src.schemas import AgentJobPermissionGrant
 
 
+class KarenPermissionGrantIntent(BaseModel):
+    """Structured intent to grant selected-job permissions for this session."""
+
+    grant_selected_job_permissions: bool = False
+    allow_app_mutations: bool = False
+    allow_browser_launch: bool = False
+    allow_final_submission_permission: bool = False
+
+
 class KarenIntentResponse(BaseModel):
     """Structured LLM response for one Karen chat turn."""
 
@@ -17,6 +26,7 @@ class KarenIntentResponse(BaseModel):
     auto_execute: bool = False
     target_job_id: str | None = None
     route_page: str | None = None
+    permission_grant: KarenPermissionGrantIntent | None = None
     safety_reason: str = ""
 
     @field_validator("proposed_tool", "target_job_id", "route_page", mode="before")

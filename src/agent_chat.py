@@ -47,7 +47,7 @@ GATE_LABELS = {
     "requirements_review": "Review the discovered application requirements.",
     "package_review": "Review and approve the generated application package.",
     "fill_plan_review": "Review every fill-plan field before Browser Use can receive it.",
-    "browser_use_launch": "Browser Use is ready, but launch requires explicit approval.",
+    "browser_use_launch": "Browser Use apply assistance is ready to launch or already running.",
 }
 
 

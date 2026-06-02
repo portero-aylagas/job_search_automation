@@ -50,6 +50,7 @@ _EXPLICIT_ACTION_WORDS = {
     "analyze",
     "apply",
     "approve",
+    "approval",
     "build",
     "complete",
     "continue",
@@ -59,19 +60,24 @@ _EXPLICIT_ACTION_WORDS = {
     "draft",
     "generate",
     "go",
+    "handle",
     "grant",
     "help",
+    "kill",
     "launch",
     "navigate",
     "open",
     "prepare",
     "remove",
     "revoke",
+    "review",
     "run",
     "show",
     "start",
+    "stop",
     "submit",
     "switch",
+    "authorize",
 }
 
 
@@ -148,11 +154,39 @@ def evaluate_karen_tool_request(
         )
 
     if tool_name not in PERMISSION_MANAGEMENT_TOOLS:
+        active_job_id = target_job_id or selected_job_id
+        if requires_job_permission and not active_job_id:
+            return KarenPolicyDecision(
+                allowed=True,
+                permission_level=permission_level,
+                reason="The tool will ask the user to select a job.",
+            )
         grant = _grant_for_job(
             job_permissions or {},
-            target_job_id or selected_job_id,
+            active_job_id,
         )
+        if tool_name == "continue_to_apply_assistance":
+            if grant is None or not (
+                grant.allow_app_mutations and grant.allow_browser_launch
+            ):
+                return KarenPolicyDecision(
+                    allowed=False,
+                    permission_level=permission_level,
+                    reason=(
+                        "Continue to apply assistance requires a per-job session "
+                        "grant with app mutations and Browser Use launch enabled."
+                    ),
+                )
         if permission_level == PermissionLevel.FINAL_SUBMISSION:
+            if "submit" not in user_message.casefold():
+                return KarenPolicyDecision(
+                    allowed=False,
+                    permission_level=permission_level,
+                    reason=(
+                        "Final submission requires an explicit submit or "
+                        "final-submit request."
+                    ),
+                )
             if grant is None or not grant.allow_final_submission:
                 return KarenPolicyDecision(
                     allowed=False,
@@ -187,16 +221,21 @@ def evaluate_karen_tool_request(
                 )
 
     if permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION:
-        if tool_name not in {"prepare_apply_assistance", "launch_browser_use"}:
+        if tool_name not in {
+            "prepare_apply_assistance",
+            "launch_browser_use",
+            "stop_browser_use_session",
+            "kill_browser_use_processes",
+        }:
             return KarenPolicyDecision(
                 allowed=False,
                 permission_level=permission_level,
-                reason="Browser Use launch is never auto-executed from chat.",
+                reason="This Browser Use action is not available from free-form chat.",
             )
         return KarenPolicyDecision(
             allowed=True,
             permission_level=permission_level,
-            reason="Preparing apply assistance is allowed; launching Browser Use is not.",
+            reason="Explicit Browser Use action is allowed by the selected-job grant.",
         )
 
     return KarenPolicyDecision(

@@ -84,6 +84,38 @@ def test_karen_policy_grant_is_job_scoped() -> None:
     assert "session grant" in decision.reason
 
 
+def test_karen_policy_continue_to_apply_requires_app_and_browser_permission() -> None:
+    blocked_with_app_only = evaluate_karen_tool_request(
+        tool_name="continue_to_apply_assistance",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Do all steps needed to apply.",
+        selected_job_id="job-1",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+
+    assert blocked_with_app_only.allowed is False
+    assert "app mutations and Browser Use launch" in blocked_with_app_only.reason
+
+    allowed = evaluate_karen_tool_request(
+        tool_name="continue_to_apply_assistance",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Do all steps needed to apply.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+            )
+        },
+        requires_job_permission=True,
+    )
+
+    assert allowed.allowed is True
+
+
 def test_karen_policy_blocks_review_gate_actions_from_chat() -> None:
     decision = evaluate_karen_tool_request(
         tool_name="approve_package",
@@ -140,6 +172,24 @@ def test_karen_policy_blocks_final_submission_and_unsafe_actions() -> None:
         requires_job_permission=True,
     )
     assert allowed_final_submission.allowed is True
+
+    blocked_without_submit_intent = evaluate_karen_tool_request(
+        tool_name="final_submission",
+        permission_level=PermissionLevel.FINAL_SUBMISSION,
+        auto_execute=True,
+        user_message="Apply to this job now.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+                allow_final_submission=True,
+            )
+        },
+        requires_job_permission=True,
+    )
+    assert blocked_without_submit_intent.allowed is False
+    assert "explicit submit" in blocked_without_submit_intent.reason
 
     for tool_name in (
         "login_automation",

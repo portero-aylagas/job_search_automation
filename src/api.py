@@ -22,13 +22,8 @@ from src.app_workflow import (
     load_normalized_job,
     resolved_apply_url,
 )
-from src.application_fill_plan import (
-    fill_plan_blocked_field_edit_key,
-    fill_plan_field_edit_key,
-    fill_plan_needs_answer_edit_key,
-    fill_plan_upload_edit_key,
-    load_application_fill_plan,
-)
+from src.application_fill_plan import load_application_fill_plan
+from src.application_fill_plan_review import build_fill_plan_review_payload
 from src.application_package import (
     load_application_package,
 )
@@ -44,9 +39,6 @@ from src.job_workspace import (
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
-    ApplicationFillBlockedField,
-    ApplicationFillFieldValue,
-    ApplicationFillNeedsAnswerField,
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
@@ -854,101 +846,6 @@ def require_fill_plan(base_dir: Path, job_id: str) -> ApplicationFillPlan:
     if fill_plan is None:
         raise HTTPException(status_code=404, detail="Application fill plan not found.")
     return fill_plan
-
-
-def build_fill_plan_review_payload(
-    fill_plan: ApplicationFillPlan | None,
-) -> dict[str, object] | None:
-    """Return stable edit keys for the structured fill-plan review UI."""
-
-    if fill_plan is None:
-        return None
-    required_rows: list[dict[str, object]] = []
-    optional_rows: list[dict[str, object]] = []
-    for kind, index, field in fill_plan_review_rows(fill_plan):
-        row = fill_plan_row_payload(kind, index, field)
-        if bool(row["required"]):
-            required_rows.append(row)
-        else:
-            optional_rows.append(row)
-    upload_rows = [
-        {
-            "edit_key": fill_plan_upload_edit_key(upload, index),
-            "label": upload.label,
-            "file_path": upload.file_path,
-            "document_type": upload.document_type,
-            "required": upload.required,
-            "source": upload.source,
-            "confidence": upload.confidence,
-        }
-        for index, upload in enumerate(fill_plan.upload_files)
-    ]
-    return {
-        "required_rows": required_rows,
-        "optional_rows": optional_rows,
-        "upload_rows": upload_rows,
-    }
-
-
-def fill_plan_review_rows(
-    fill_plan: ApplicationFillPlan,
-) -> list[
-    tuple[
-        str,
-        int,
-        ApplicationFillFieldValue
-        | ApplicationFillNeedsAnswerField
-        | ApplicationFillBlockedField,
-    ]
-]:
-    """Return fill-plan rows in the same grouping order as Streamlit."""
-
-    return [
-        *[
-            ("field", index, field)
-            for index, field in enumerate(fill_plan.field_values)
-        ],
-        *[
-            ("needs", index, field)
-            for index, field in enumerate(fill_plan.needs_answer_fields)
-        ],
-        *[
-            ("blocked", index, field)
-            for index, field in enumerate(fill_plan.blocked_fields)
-        ],
-    ]
-
-
-def fill_plan_row_payload(
-    kind: str,
-    index: int,
-    field: ApplicationFillFieldValue
-    | ApplicationFillNeedsAnswerField
-    | ApplicationFillBlockedField,
-) -> dict[str, object]:
-    """Return one fill-plan row with the backend edit key and default value."""
-
-    if kind == "field":
-        edit_key = fill_plan_field_edit_key(field, index)  # type: ignore[arg-type]
-        value = field.value  # type: ignore[union-attr]
-    elif kind == "needs":
-        edit_key = fill_plan_needs_answer_edit_key(field, index)  # type: ignore[arg-type]
-        value = ""
-    else:
-        edit_key = fill_plan_blocked_field_edit_key(field, index)  # type: ignore[arg-type]
-        value = "true" if field.input_type.casefold() == "checkbox" and field.required else ""
-    return {
-        "kind": kind,
-        "edit_key": edit_key,
-        "label": field.label,
-        "value": value,
-        "required": field.required,
-        "input_type": field.input_type,
-        "options": list(field.options),
-        "reason": getattr(field, "reason", ""),
-        "source": field.source,
-        "confidence": field.confidence,
-    }
 
 
 app = create_app()
