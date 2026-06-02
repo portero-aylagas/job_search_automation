@@ -45,6 +45,49 @@ button:disabled {
   opacity: 0.55;
 }
 
+.ai-action-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  white-space: nowrap;
+}
+
+.ai-button-content,
+.ai-button-sizer {
+  grid-area: 1 / 1;
+}
+
+.ai-button-content {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-button-sizer {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+}
+
+.ai-button-sizer::before {
+  width: 0.9rem;
+  height: 0.9rem;
+  content: "";
+}
+
+.ai-button-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
 input,
 textarea,
 select {

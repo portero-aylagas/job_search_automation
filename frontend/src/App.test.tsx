@@ -99,6 +99,36 @@ describe("App workflow pages", () => {
     expect((saveBodies[0] as any).dynamic_fields[0].value).toBe("Reliability");
   });
 
+  it("shows pending feedback while Job Intake extraction is running", async () => {
+    let resolveExtraction: (value: MockResponse) => void = () => undefined;
+    const pendingExtraction = new Promise<MockResponse>((resolve) => {
+      resolveExtraction = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/job-intake/extract")) {
+        return pendingExtraction;
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [] } };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Job Intake" }));
+    await userEvent.type(screen.getByLabelText("Job URL"), "https://example.com/jobs/1");
+    await userEvent.click(screen.getByRole("button", { name: "Extract application data with AI" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Extracting application data..." });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    resolveExtraction({ body: jobExtraction() });
+    expect(await screen.findByRole("button", { name: "Extract application data with AI" })).toBeEnabled();
+  });
+
   it("shows Jobs blockers and enables Apply only when review gates are complete", async () => {
     const workspaces = [blockedWorkspace(), readyWorkspace()];
     mockFetch((url) => {
@@ -128,6 +158,140 @@ describe("App workflow pages", () => {
 
     expect(await screen.findByText("Ready summary")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled();
+  });
+
+  it("shows pending feedback while requirements discovery is running", async () => {
+    let resolveDiscovery: (value: MockResponse) => void = () => undefined;
+    const pendingDiscovery = new Promise<MockResponse>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/requirements/discover")) {
+        return pendingDiscovery;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Discover requirements from apply URL with AI" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Discovering requirements..." });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    resolveDiscovery({ body: { message: "Discovered requirements." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Discover requirements from apply URL with AI" })).toBeEnabled()
+    );
+  });
+
+  it("shows pending feedback while package generation is running", async () => {
+    let resolvePackage: (value: MockResponse) => void = () => undefined;
+    const pendingPackage = new Promise<MockResponse>((resolve) => {
+      resolvePackage = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: packageReadyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/package/generate")) {
+        return pendingPackage;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Generate application package with AI" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Generating application package..." });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    resolvePackage({ body: { message: "Generated package." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Generate application package with AI" })).toBeEnabled()
+    );
+  });
+
+  it("shows pending feedback while fill-plan generation is running", async () => {
+    let resolveFillPlan: (value: MockResponse) => void = () => undefined;
+    const pendingFillPlan = new Promise<MockResponse>((resolve) => {
+      resolveFillPlan = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: fillPlanReadyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/fill-plan/generate")) {
+        return pendingFillPlan;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Generate fill plan with AI" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Generating fill plan..." });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    resolveFillPlan({ body: { message: "Generated fill plan." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Generate fill plan with AI" })).toBeEnabled()
+    );
+  });
+
+  it("shows shared pending feedback while Apply starts", async () => {
+    let resolveApply: (value: MockResponse) => void = () => undefined;
+    const pendingApply = new Promise<MockResponse>((resolve) => {
+      resolveApply = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/apply")) {
+        return pendingApply;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Apply to job with AI" }));
+
+    const pendingButton = screen.getByRole("button", { name: "Starting AI apply assistance..." });
+    expect(pendingButton).toBeDisabled();
+    expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    resolveApply({ body: { message: "Started Browser Use apply agent." } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
   });
 
   it("loads persistent Karen chat, sends chat payloads, and reloads state", async () => {
@@ -234,8 +398,8 @@ describe("App workflow pages", () => {
     fireEvent.submit(form!);
 
     await waitFor(() => expect(chatBodies).toHaveLength(1));
-    expect(screen.getByRole("button", { name: "Ask Karen" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Ask Karen" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Asking Karen..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Asking Karen..." })).toHaveAttribute("aria-busy", "true");
     resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
   });
@@ -569,6 +733,27 @@ function readyWorkspace() {
     apply_blockers: [],
     active_browser_use_session: null,
     browser_use_runner_count: 0
+  };
+}
+
+function packageReadyWorkspace() {
+  return {
+    ...readyWorkspace(),
+    package: null,
+    package_summary: null,
+    fill_plan: null,
+    fill_plan_review: null,
+    package_blockers: [],
+    fill_plan_generation_blockers: ["Generate and review application package."]
+  };
+}
+
+function fillPlanReadyWorkspace() {
+  return {
+    ...readyWorkspace(),
+    fill_plan: null,
+    fill_plan_review: null,
+    fill_plan_generation_blockers: []
   };
 }
 

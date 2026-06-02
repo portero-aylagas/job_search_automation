@@ -1,4 +1,5 @@
 import {
+  ButtonHTMLAttributes,
   CSSProperties,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -210,7 +211,8 @@ function CandidateProfilePage() {
     other: []
   });
   const [message, setMessage] = useState<ApiRecord | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const isAiPending = !!pendingAction;
 
   useEffect(() => {
     apiRequest<ApiRecord>("/api/candidate-profile")
@@ -240,7 +242,7 @@ function CandidateProfilePage() {
       setMessage({ type: "error", text: "Upload a CV before parsing." });
       return;
     }
-    await runBusy(setBusy, setMessage, async () => {
+    await runBusy((value) => setPendingAction(value ? "parse-cv" : null), setMessage, async () => {
       const payload = await fileToPayload(cvFile);
       const result = await apiRequest<ApiRecord>("/api/candidate-profile/parse-cv", {
         method: "POST",
@@ -259,7 +261,7 @@ function CandidateProfilePage() {
       setMessage({ type: "error", text: "Upload at least one optional document before parsing." });
       return;
     }
-    await runBusy(setBusy, setMessage, async () => {
+    await runBusy((value) => setPendingAction(value ? "parse-optional-documents" : null), setMessage, async () => {
       let nextProfile = profile;
       for (const [documentType, file] of entries) {
         const payload = await fileToPayload(file, documentType);
@@ -315,7 +317,14 @@ function CandidateProfilePage() {
         </label>
         {cvFile && <p className="muted">Selected file: {cvFile.name}</p>}
         <div className="actions">
-          <button className="primary" disabled={busy} onClick={parseCv}>Parse CV with AI</button>
+          <AiActionButton
+            className="primary"
+            disabled={isAiPending}
+            isPending={pendingAction === "parse-cv"}
+            label="Parse CV with AI"
+            onClick={parseCv}
+            pendingLabel="Parsing CV..."
+          />
         </div>
       </section>
 
@@ -350,7 +359,14 @@ function CandidateProfilePage() {
           </label>
         ))}
         <div className="actions">
-          <button className="primary" disabled={busy} onClick={parseOptionalDocuments}>Parse optional documents with AI</button>
+          <AiActionButton
+            className="primary"
+            disabled={isAiPending}
+            isPending={pendingAction === "parse-optional-documents"}
+            label="Parse optional documents with AI"
+            onClick={parseOptionalDocuments}
+            pendingLabel="Parsing optional documents..."
+          />
         </div>
       </section>
 
@@ -414,11 +430,12 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
   const [extraction, setExtraction] = useState<ApiRecord | null>(null);
   const [form, setForm] = useState<ApiRecord>({});
   const [message, setMessage] = useState<ApiRecord | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function extract(event: FormEvent) {
     event.preventDefault();
-    await runBusy(setBusy, setMessage, async () => {
+    await runBusy(setExtracting, setMessage, async () => {
       const result = await apiRequest<ApiRecord>("/api/job-intake/extract", {
         method: "POST",
         body: JSON.stringify({ source_url: sourceUrl })
@@ -453,7 +470,7 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
   async function saveReviewedJob(event: FormEvent) {
     event.preventDefault();
     if (!extraction) return;
-    await runBusy(setBusy, setMessage, async () => {
+    await runBusy(setSaving, setMessage, async () => {
       const result = await apiRequest<ApiRecord>("/api/job-intake/save", {
         method: "POST",
         body: JSON.stringify({
@@ -477,7 +494,16 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
       <section className="panel">
         <form onSubmit={extract}>
           <label>Job URL<input placeholder="https://company.com/jobs/role" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /></label>
-          <div className="actions"><button className="primary" disabled={busy}>Extract application data with AI</button></div>
+          <div className="actions">
+            <AiActionButton
+              className="primary"
+              disabled={saving}
+              isPending={extracting}
+              label="Extract application data with AI"
+              pendingLabel="Extracting application data..."
+              type="submit"
+            />
+          </div>
         </form>
       </section>
       {extraction && (
@@ -502,7 +528,7 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
               <label key={`${field.name}-${index}`}>{field.name}<input value={field.value || ""} onChange={(event) => updateDynamicField(index, event.target.value, setForm)} /></label>
             )) : <p className="muted">No additional details were extracted.</p>}
             {extraction.extracted_data?.missing_or_uncertain?.length ? <StatusMessage type="warning" text={`Needs review: ${extraction.extracted_data.missing_or_uncertain.join("; ")}`} /> : null}
-            <div className="actions"><button className="primary" disabled={busy}>Add To Application Workflow</button></div>
+            <div className="actions"><button className="primary" disabled={saving}>Add To Application Workflow</button></div>
           </form>
         </section>
       )}
@@ -585,11 +611,18 @@ function JobSnapshot({ job }: { job: ApiRecord }) {
 function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
   const requirements = workspace.requirements;
   const [form, setForm] = useState<ApiRecord>(() => requirementsToForm(requirements));
+  const [discovering, setDiscovering] = useState(false);
   useEffect(() => setForm(requirementsToForm(requirements)), [requirements?.job_id, requirements?.review_status]);
   const buttonLabel = requirements ? "Refresh requirements from apply URL with AI" : "Discover requirements from apply URL with AI";
+  const pendingLabel = requirements ? "Refreshing requirements..." : "Discovering requirements...";
 
   async function discover() {
-    await action(`/api/jobs/${workspace.job.id}/requirements/discover`, "POST", {}, setMessage, reload);
+    setDiscovering(true);
+    try {
+      await action(`/api/jobs/${workspace.job.id}/requirements/discover`, "POST", {}, setMessage, reload);
+    } finally {
+      setDiscovering(false);
+    }
   }
 
   async function saveReview(event: FormEvent) {
@@ -602,7 +635,15 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
       <h2>Application Requirements</h2>
       {!workspace.job.apply_url && <StatusMessage type="warning" text="Apply URL is missing. Requirements discovery is blocked." />}
       <p className="muted">This action fetches the apply page and uses AI to interpret requirements.</p>
-      <div className="actions"><button className={requirements ? "secondary" : "primary"} onClick={discover}>{buttonLabel}</button></div>
+      <div className="actions">
+        <AiActionButton
+          className={requirements ? "secondary" : "primary"}
+          isPending={discovering}
+          label={buttonLabel}
+          onClick={discover}
+          pendingLabel={pendingLabel}
+        />
+      </div>
       {!requirements && <StatusMessage type="info" text="No application requirements have been discovered yet." />}
       {requirements && (
         <form onSubmit={saveReview}>
@@ -639,6 +680,7 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
   const packageData = workspace.package;
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [destination, setDestination] = useState("");
+  const [generating, setGenerating] = useState(false);
   useEffect(() => {
     const next: Record<string, string> = {};
     (packageData?.artifacts || []).forEach((artifact: ApiRecord) => {
@@ -648,13 +690,32 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
     setDestination(`/home/javi/projects/ironhack_AI_integration/ironhack_projects/job_search_automation/outputs/${workspace.job.id}/artifacts`);
   }, [packageData?.job_id, workspace.job.id]);
   const buttonLabel = packageData ? "Regenerate application package with AI" : "Generate application package with AI";
+  const pendingLabel = packageData ? "Regenerating application package..." : "Generating application package...";
+
+  async function generatePackage() {
+    setGenerating(true);
+    try {
+      await action(`/api/jobs/${workspace.job.id}/package/generate`, "POST", {}, setMessage, reload);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   return (
     <section className="panel">
       <h2>Application Package</h2>
       <Blockers title="Application package generation is blocked until these prerequisites are complete:" blockers={workspace.package_blockers} />
       <p className="muted">This action uses AI to draft application materials from reviewed data.</p>
-      <div className="actions"><button className={packageData ? "secondary" : "primary"} disabled={!!workspace.package_blockers?.length} onClick={() => action(`/api/jobs/${workspace.job.id}/package/generate`, "POST", {}, setMessage, reload)}>{buttonLabel}</button></div>
+      <div className="actions">
+        <AiActionButton
+          className={packageData ? "secondary" : "primary"}
+          disabled={!!workspace.package_blockers?.length}
+          isPending={generating}
+          label={buttonLabel}
+          onClick={generatePackage}
+          pendingLabel={pendingLabel}
+        />
+      </div>
       {!packageData && <StatusMessage type="info" text="No application package has been generated yet." />}
       {packageData && (
         <>
@@ -689,6 +750,7 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
   const review = workspace.fill_plan_review;
   const [values, setValues] = useState<ApiRecord>({});
   const [uploads, setUploads] = useState<ApiRecord>({});
+  const [generating, setGenerating] = useState(false);
   useEffect(() => {
     const nextValues: ApiRecord = {};
     const nextUploads: ApiRecord = {};
@@ -702,6 +764,16 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
     setUploads(nextUploads);
   }, [fillPlan?.job_id, fillPlan?.review_status]);
   const buttonLabel = fillPlan ? "Refresh fill plan with AI" : "Generate fill plan with AI";
+  const pendingLabel = fillPlan ? "Refreshing fill plan..." : "Generating fill plan...";
+
+  async function generateFillPlan() {
+    setGenerating(true);
+    try {
+      await action(`/api/jobs/${workspace.job.id}/fill-plan/generate`, "POST", {}, setMessage, reload);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   function submitReview(event: FormEvent) {
     event.preventDefault();
@@ -725,7 +797,16 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
     <section className="panel">
       <h2>Application Fill Plan</h2>
       <Blockers title="Fill plan generation is blocked until these steps are complete:" blockers={workspace.fill_plan_generation_blockers} />
-      <div className="actions"><button className={fillPlan ? "secondary" : "primary"} disabled={!!workspace.fill_plan_generation_blockers?.length} onClick={() => action(`/api/jobs/${workspace.job.id}/fill-plan/generate`, "POST", {}, setMessage, reload)}>{buttonLabel}</button></div>
+      <div className="actions">
+        <AiActionButton
+          className={fillPlan ? "secondary" : "primary"}
+          disabled={!!workspace.fill_plan_generation_blockers?.length}
+          isPending={generating}
+          label={buttonLabel}
+          onClick={generateFillPlan}
+          pendingLabel={pendingLabel}
+        />
+      </div>
       {!fillPlan && <StatusMessage type="info" text="No application fill plan has been generated yet." />}
       {fillPlan && review && (
         <form onSubmit={submitReview}>
@@ -801,13 +882,14 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
       </details>
       <p className="muted">This action opens the reviewed apply URL and asks Browser Use to execute the reviewed application fill plan.</p>
       <div className="actions">
-        <button
+        <AiActionButton
           className="primary"
           disabled={!!workspace.apply_blockers?.length || applying}
+          isPending={applying}
+          label="Apply to job with AI"
           onClick={applyWithAi}
-        >
-          Apply to job with AI
-        </button>
+          pendingLabel="Starting AI apply assistance..."
+        />
       </div>
     </section>
   );
@@ -1048,10 +1130,10 @@ function KarenChatPanel({
           />
           <button
             aria-busy={isSending}
-            aria-label="Ask Karen"
+            aria-label={isSending ? "Asking Karen..." : "Ask Karen"}
             className="karen-send-button"
             disabled={isSending || !message.trim()}
-            title="Ask Karen"
+            title={isSending ? "Asking Karen..." : "Ask Karen"}
           >
             <span aria-hidden="true" className={isSending ? "send-spinner" : "send-icon"} />
           </button>
@@ -1066,6 +1148,41 @@ type PanelProps = {
   setMessage: (message: ApiRecord | null) => void;
   reload: () => void;
 };
+
+type AiActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  pendingLabel: string;
+  isPending: boolean;
+};
+
+function AiActionButton({
+  className,
+  disabled,
+  isPending,
+  label,
+  pendingLabel,
+  type = "button",
+  ...props
+}: AiActionButtonProps) {
+  const currentLabel = isPending ? pendingLabel : label;
+  return (
+    <button
+      {...props}
+      aria-busy={isPending ? true : undefined}
+      className={`ai-action-button ${className || ""}`.trim()}
+      disabled={disabled || isPending}
+      type={type}
+    >
+      <span className="ai-button-content">
+        {isPending && <span aria-hidden="true" className="ai-button-spinner" />}
+        <span>{currentLabel}</span>
+      </span>
+      <span aria-hidden="true" className="ai-button-sizer">
+        {pendingLabel}
+      </span>
+    </button>
+  );
+}
 
 function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <label>{label}<textarea value={value || ""} onChange={(event) => onChange(event.target.value)} /></label>;
