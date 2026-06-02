@@ -33,6 +33,9 @@ node_modules/
 htmlcov/
 .tox/
 .nox/
+reports/
+playwright-report/
+test-results/
 
 # Type checker and tool caches
 .mypy_cache/
