@@ -34,8 +34,8 @@ htmlcov/
 .tox/
 .nox/
 reports/
-test-results/
 playwright-report/
+test-results/
 
 # Type checker and tool caches
 .mypy_cache/
