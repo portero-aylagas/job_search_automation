@@ -64,6 +64,38 @@ describe("App workflow pages", () => {
     expect(await screen.findByText("Email must be valid.")).toBeInTheDocument();
   });
 
+  it("blocks Candidate Profile edits while CV parsing is running", async () => {
+    let resolveParse: (value: MockResponse) => void = () => undefined;
+    const pendingParse = new Promise<MockResponse>((resolve) => {
+      resolveParse = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/candidate-profile/parse-cv")) {
+        return pendingParse;
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [] } };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    const cvInput = await screen.findByLabelText("Upload CV *");
+    await userEvent.upload(cvInput, new File(["CV"], "cv.txt", { type: "text/plain" }));
+    await userEvent.click(screen.getByRole("button", { name: "Parse CV with AI" }));
+
+    expect(screen.getByRole("button", { name: "Parsing CV..." })).toBeDisabled();
+    expect(screen.getByLabelText(/Email/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save CV review changes" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+    resolveParse({ body: { profile: candidateProfile(), message: "Parsed CV." } });
+    expect(await screen.findByRole("button", { name: "Parse CV with AI" })).toBeEnabled();
+  });
+
   it("extracts Job Intake data, saves reviewed edits, and navigates to Jobs", async () => {
     const saveBodies: unknown[] = [];
     mockFetch((url, init) => {
@@ -125,6 +157,7 @@ describe("App workflow pages", () => {
     const pendingButton = screen.getByRole("button", { name: "Extracting application data..." });
     expect(pendingButton).toBeDisabled();
     expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByLabelText("Job URL")).toBeDisabled();
     resolveExtraction({ body: jobExtraction() });
     expect(await screen.findByRole("button", { name: "Extract application data with AI" })).toBeEnabled();
   });
@@ -194,6 +227,41 @@ describe("App workflow pages", () => {
     );
   });
 
+  it("blocks requirements review controls while requirements refresh is running", async () => {
+    let resolveDiscovery: (value: MockResponse) => void = () => undefined;
+    const pendingDiscovery = new Promise<MockResponse>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/requirements/discover")) {
+        return pendingDiscovery;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Refresh requirements from apply URL with AI" }));
+
+    expect(screen.getByRole("button", { name: "Refreshing requirements..." })).toBeDisabled();
+    expect(screen.getByLabelText("Apply page matches this selected job")).toBeDisabled();
+    expect(screen.getByLabelText("Overall confidence")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save requirements review" })).toBeDisabled();
+    resolveDiscovery({ body: { message: "Refreshed requirements." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh requirements from apply URL with AI" })).toBeEnabled()
+    );
+  });
+
   it("shows pending feedback while package generation is running", async () => {
     let resolvePackage: (value: MockResponse) => void = () => undefined;
     const pendingPackage = new Promise<MockResponse>((resolve) => {
@@ -225,6 +293,40 @@ describe("App workflow pages", () => {
     resolvePackage({ body: { message: "Generated package." } });
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Generate application package with AI" })).toBeEnabled()
+    );
+  });
+
+  it("blocks package review controls while package regeneration is running", async () => {
+    let resolvePackage: (value: MockResponse) => void = () => undefined;
+    const pendingPackage = new Promise<MockResponse>((resolve) => {
+      resolvePackage = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/package/generate")) {
+        return pendingPackage;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Regenerate application package with AI" }));
+
+    expect(screen.getByRole("button", { name: "Regenerating application package..." })).toBeDisabled();
+    expect(screen.getByLabelText("Application Summary content")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save package review" })).toBeDisabled();
+    resolvePackage({ body: { message: "Regenerated package." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Regenerate application package with AI" })).toBeEnabled()
     );
   });
 
@@ -262,6 +364,39 @@ describe("App workflow pages", () => {
     );
   });
 
+  it("blocks fill-plan review controls while fill-plan refresh is running", async () => {
+    let resolveFillPlan: (value: MockResponse) => void = () => undefined;
+    const pendingFillPlan = new Promise<MockResponse>((resolve) => {
+      resolveFillPlan = resolve;
+    });
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/fill-plan/generate")) {
+        return pendingFillPlan;
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Refresh fill plan with AI" }));
+
+    expect(screen.getByRole("button", { name: "Refreshing fill plan..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save fill plan review" })).toBeDisabled();
+    resolveFillPlan({ body: { message: "Refreshed fill plan." } });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Refresh fill plan with AI" })).toBeEnabled()
+    );
+  });
+
   it("shows shared pending feedback while Apply starts", async () => {
     let resolveApply: (value: MockResponse) => void = () => undefined;
     const pendingApply = new Promise<MockResponse>((resolve) => {
@@ -290,6 +425,8 @@ describe("App workflow pages", () => {
     const pendingButton = screen.getByRole("button", { name: "Starting AI apply assistance..." });
     expect(pendingButton).toBeDisabled();
     expect(pendingButton).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Stop Browser Use Session" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Kill All Browser Use Processes" })).toBeDisabled();
     resolveApply({ body: { message: "Started Browser Use apply agent." } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
   });
@@ -400,6 +537,9 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(chatBodies).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByLabelText("Job")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "What should I do next?" })).toBeDisabled();
+    expect(composer).toBeDisabled();
     resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
   });

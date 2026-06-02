@@ -304,123 +304,124 @@ function CandidateProfilePage() {
       <h1>Candidate Profile</h1>
       <p>Upload your CV and certifications once, review the extracted data, and optionally add job-search preferences for future discovery.</p>
       <StatusMessage type={message?.type} text={message?.text} />
-
-      <section className="panel">
-        <h2>1. CV Upload</h2>
-        <p className="muted">The CV is the source of truth for professional data.</p>
-        {sourceDocuments.cv?.file_path && (
-          <p className="muted">Current CV: {basename(sourceDocuments.cv.file_path)} ({sourceDocuments.cv.parsed ? "parsed" : "uploaded, not parsed"})</p>
-        )}
-        <label>
-          Upload CV *
-          <input type="file" accept=".pdf,.txt,.md" onChange={(event) => setCvFile(event.target.files?.[0] || null)} />
-        </label>
-        {cvFile && <p className="muted">Selected file: {cvFile.name}</p>}
-        <div className="actions">
-          <AiActionButton
-            className="primary"
-            disabled={isAiPending}
-            isPending={pendingAction === "parse-cv"}
-            label="Parse CV with AI"
-            onClick={parseCv}
-            pendingLabel="Parsing CV..."
-          />
-        </div>
-      </section>
-
-      <section className="panel">
-        <h2>2. Optional documents</h2>
-        {!!sourceDocuments.optional_documents?.length && (
-          <>
-            <strong>Uploaded optional documents</strong>
-            {sourceDocuments.optional_documents.map((doc: ApiRecord, index: number) => (
-              <p className="muted" key={`${doc.file_name}-${index}`}>{doc.file_name} - {doc.document_type}, {doc.parsed ? "parsed" : "not parsed"}</p>
-            ))}
-          </>
-        )}
-        {[
-          ["reference", "Upload references"],
-          ["certificate", "Upload certificates"],
-          ["other", "Upload other documents"]
-        ].map(([documentType, label]) => (
-          <label key={documentType}>
-            {label}
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.txt,.md,.docx"
-              onChange={(event) =>
-                setOptionalFiles((current) => ({
-                  ...current,
-                  [documentType]: Array.from(event.target.files || [])
-                }))
-              }
-            />
+      <fieldset aria-busy={isAiPending} className="ai-blocking-surface" disabled={isAiPending}>
+        <section className="panel">
+          <h2>1. CV Upload</h2>
+          <p className="muted">The CV is the source of truth for professional data.</p>
+          {sourceDocuments.cv?.file_path && (
+            <p className="muted">Current CV: {basename(sourceDocuments.cv.file_path)} ({sourceDocuments.cv.parsed ? "parsed" : "uploaded, not parsed"})</p>
+          )}
+          <label>
+            Upload CV *
+            <input type="file" accept=".pdf,.txt,.md" onChange={(event) => setCvFile(event.target.files?.[0] || null)} />
           </label>
-        ))}
-        <div className="actions">
-          <AiActionButton
-            className="primary"
-            disabled={isAiPending}
-            isPending={pendingAction === "parse-optional-documents"}
-            label="Parse optional documents with AI"
-            onClick={parseOptionalDocuments}
-            pendingLabel="Parsing optional documents..."
-          />
-        </div>
-      </section>
+          {cvFile && <p className="muted">Selected file: {cvFile.name}</p>}
+          <div className="actions">
+            <AiActionButton
+              className="primary"
+              disabled={isAiPending}
+              isPending={pendingAction === "parse-cv"}
+              label="Parse CV with AI"
+              onClick={parseCv}
+              pendingLabel="Parsing CV..."
+            />
+          </div>
+        </section>
 
-      <section className="panel">
-        <h2>3. Extracted data review</h2>
-        {!sourceDocuments.cv?.parsed && <StatusMessage type="info" text="Upload and parse a CV to populate these review fields." />}
-        <h3>Identity</h3>
-        <div className="grid">
-          <label>First name *<input value={extracted.identity.first_name || ""} onChange={(event) => updateIdentity("first_name", event.target.value)} /></label>
-          <label>Surname *<input value={extracted.identity.last_name || ""} onChange={(event) => updateIdentity("last_name", event.target.value)} /></label>
-          <label>Gender *<select value={extracted.identity.gender || ""} onChange={(event) => updateIdentity("gender", event.target.value)}><option value="">Select gender</option>{genderOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-          <label>Email *<input value={extracted.identity.email || ""} onChange={(event) => updateIdentity("email", event.target.value)} /></label>
-          <label>Phone *<input value={extracted.identity.phone || ""} onChange={(event) => updateIdentity("phone", event.target.value)} /></label>
-          <label>Location<input value={extracted.identity.location || ""} onChange={(event) => updateIdentity("location", event.target.value)} /></label>
-          <label>Street *<input value={extracted.identity.street_address || ""} onChange={(event) => updateIdentity("street_address", event.target.value)} /></label>
-          <label>Street number *<input value={extracted.identity.street_number || ""} onChange={(event) => updateIdentity("street_number", event.target.value)} /></label>
-          <label>Postal code *<input value={extracted.identity.postal_code || ""} onChange={(event) => updateIdentity("postal_code", event.target.value)} /></label>
-          <label>City *<input value={extracted.identity.city || ""} onChange={(event) => updateIdentity("city", event.target.value)} /></label>
-          <label>Country of residence *<input value={extracted.identity.country || ""} onChange={(event) => updateIdentity("country", event.target.value)} /></label>
-          <label>Nationality *<input value={extracted.identity.nationality || ""} onChange={(event) => updateIdentity("nationality", event.target.value)} /></label>
-          <label>LinkedIn URL<input value={extracted.identity.linkedin_url || ""} onChange={(event) => updateIdentity("linkedin_url", event.target.value)} /></label>
-          <label>GitHub URL<input value={extracted.identity.github_url || ""} onChange={(event) => updateIdentity("github_url", event.target.value)} /></label>
-          <label>Portfolio URL<input value={extracted.identity.portfolio_url || ""} onChange={(event) => updateIdentity("portfolio_url", event.target.value)} /></label>
-        </div>
-        <h3>Professional data</h3>
-        <TextArea label="Work experience" value={blockTextFromItems(extracted.work_experience)} onChange={(value) => updateExtractedList("work_experience", value, true)} />
-        <TextArea label="Education" value={textFromItems(extracted.education)} onChange={(value) => updateExtractedList("education", value)} />
-        <TextArea label="Skills" value={textFromItems(extracted.skills)} onChange={(value) => updateExtractedList("skills", value)} />
-        <TextArea label="Languages" value={textFromItems(extracted.languages)} onChange={(value) => updateExtractedList("languages", value)} />
-        <TextArea label="Certifications" value={textFromItems(extracted.certifications)} onChange={(value) => updateExtractedList("certifications", value)} />
-        <TextArea label="Projects" value={textFromItems(extracted.projects)} onChange={(value) => updateExtractedList("projects", value)} />
-        <TextArea label="References" value={textFromItems(extracted.references)} onChange={(value) => updateExtractedList("references", value)} />
-        <div className="actions"><button className="primary" onClick={saveReview}>Save CV review changes</button></div>
-      </section>
+        <section className="panel">
+          <h2>2. Optional documents</h2>
+          {!!sourceDocuments.optional_documents?.length && (
+            <>
+              <strong>Uploaded optional documents</strong>
+              {sourceDocuments.optional_documents.map((doc: ApiRecord, index: number) => (
+                <p className="muted" key={`${doc.file_name}-${index}`}>{doc.file_name} - {doc.document_type}, {doc.parsed ? "parsed" : "not parsed"}</p>
+              ))}
+            </>
+          )}
+          {[
+            ["reference", "Upload references"],
+            ["certificate", "Upload certificates"],
+            ["other", "Upload other documents"]
+          ].map(([documentType, label]) => (
+            <label key={documentType}>
+              {label}
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.txt,.md,.docx"
+                onChange={(event) =>
+                  setOptionalFiles((current) => ({
+                    ...current,
+                    [documentType]: Array.from(event.target.files || [])
+                  }))
+                }
+              />
+            </label>
+          ))}
+          <div className="actions">
+            <AiActionButton
+              className="primary"
+              disabled={isAiPending}
+              isPending={pendingAction === "parse-optional-documents"}
+              label="Parse optional documents with AI"
+              onClick={parseOptionalDocuments}
+              pendingLabel="Parsing optional documents..."
+            />
+          </div>
+        </section>
 
-      <section className="panel">
-        <h2>4. Optional job-search preferences</h2>
-        <p className="muted">These fields can help future discovery and ranking, but they are not required to save a profile or prepare a known job application.</p>
-        <TextArea label="Target roles" value={(preferences.target_roles || []).join("\n")} onChange={(value) => updatePreference("target_roles", linesFromText(value))} />
-        <TextArea label="Target locations" value={(preferences.target_locations || []).join("\n")} onChange={(value) => updatePreference("target_locations", linesFromText(value))} />
-        <CheckboxGroup title="Remote preference" options={remotePreference} values={preferences.remote_preference || []} onChange={(value) => updatePreference("remote_preference", value)} />
-        <CheckboxGroup title="Employment type" options={employmentType} values={preferences.employment_type || []} onChange={(value) => updatePreference("employment_type", value)} />
-        <CheckboxGroup title="Career level" options={careerLevel} values={preferences.seniority_level || []} onChange={(value) => updatePreference("seniority_level", value)} />
-        <div className="grid">
-          <label>Availability<input value={preferences.availability || ""} onChange={(event) => updatePreference("availability", event.target.value)} /></label>
-          <label>Work authorization<select value={preferences.work_authorization || ""} onChange={(event) => updatePreference("work_authorization", event.target.value)}><option value=""></option>{workAuthorization.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          <label>Salary min (EUR / year)<input value={preferences.salary_min_eur ?? ""} onChange={(event) => updatePreference("salary_min_eur", optionalNumber(event.target.value))} /></label>
-          <label>Salary max (EUR / year)<input value={preferences.salary_max_eur ?? ""} onChange={(event) => updatePreference("salary_max_eur", optionalNumber(event.target.value))} /></label>
-        </div>
-        <div className="actions"><button className="primary" onClick={savePreferences}>Save manual preferences</button></div>
-      </section>
+        <section className="panel">
+          <h2>3. Extracted data review</h2>
+          {!sourceDocuments.cv?.parsed && <StatusMessage type="info" text="Upload and parse a CV to populate these review fields." />}
+          <h3>Identity</h3>
+          <div className="grid">
+            <label>First name *<input value={extracted.identity.first_name || ""} onChange={(event) => updateIdentity("first_name", event.target.value)} /></label>
+            <label>Surname *<input value={extracted.identity.last_name || ""} onChange={(event) => updateIdentity("last_name", event.target.value)} /></label>
+            <label>Gender *<select value={extracted.identity.gender || ""} onChange={(event) => updateIdentity("gender", event.target.value)}><option value="">Select gender</option>{genderOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label>Email *<input value={extracted.identity.email || ""} onChange={(event) => updateIdentity("email", event.target.value)} /></label>
+            <label>Phone *<input value={extracted.identity.phone || ""} onChange={(event) => updateIdentity("phone", event.target.value)} /></label>
+            <label>Location<input value={extracted.identity.location || ""} onChange={(event) => updateIdentity("location", event.target.value)} /></label>
+            <label>Street *<input value={extracted.identity.street_address || ""} onChange={(event) => updateIdentity("street_address", event.target.value)} /></label>
+            <label>Street number *<input value={extracted.identity.street_number || ""} onChange={(event) => updateIdentity("street_number", event.target.value)} /></label>
+            <label>Postal code *<input value={extracted.identity.postal_code || ""} onChange={(event) => updateIdentity("postal_code", event.target.value)} /></label>
+            <label>City *<input value={extracted.identity.city || ""} onChange={(event) => updateIdentity("city", event.target.value)} /></label>
+            <label>Country of residence *<input value={extracted.identity.country || ""} onChange={(event) => updateIdentity("country", event.target.value)} /></label>
+            <label>Nationality *<input value={extracted.identity.nationality || ""} onChange={(event) => updateIdentity("nationality", event.target.value)} /></label>
+            <label>LinkedIn URL<input value={extracted.identity.linkedin_url || ""} onChange={(event) => updateIdentity("linkedin_url", event.target.value)} /></label>
+            <label>GitHub URL<input value={extracted.identity.github_url || ""} onChange={(event) => updateIdentity("github_url", event.target.value)} /></label>
+            <label>Portfolio URL<input value={extracted.identity.portfolio_url || ""} onChange={(event) => updateIdentity("portfolio_url", event.target.value)} /></label>
+          </div>
+          <h3>Professional data</h3>
+          <TextArea label="Work experience" value={blockTextFromItems(extracted.work_experience)} onChange={(value) => updateExtractedList("work_experience", value, true)} />
+          <TextArea label="Education" value={textFromItems(extracted.education)} onChange={(value) => updateExtractedList("education", value)} />
+          <TextArea label="Skills" value={textFromItems(extracted.skills)} onChange={(value) => updateExtractedList("skills", value)} />
+          <TextArea label="Languages" value={textFromItems(extracted.languages)} onChange={(value) => updateExtractedList("languages", value)} />
+          <TextArea label="Certifications" value={textFromItems(extracted.certifications)} onChange={(value) => updateExtractedList("certifications", value)} />
+          <TextArea label="Projects" value={textFromItems(extracted.projects)} onChange={(value) => updateExtractedList("projects", value)} />
+          <TextArea label="References" value={textFromItems(extracted.references)} onChange={(value) => updateExtractedList("references", value)} />
+          <div className="actions"><button className="primary" onClick={saveReview}>Save CV review changes</button></div>
+        </section>
 
-      <h2>Save</h2>
-      <div className="actions"><button className="primary" onClick={finalSave}>Save profile</button></div>
+        <section className="panel">
+          <h2>4. Optional job-search preferences</h2>
+          <p className="muted">These fields can help future discovery and ranking, but they are not required to save a profile or prepare a known job application.</p>
+          <TextArea label="Target roles" value={(preferences.target_roles || []).join("\n")} onChange={(value) => updatePreference("target_roles", linesFromText(value))} />
+          <TextArea label="Target locations" value={(preferences.target_locations || []).join("\n")} onChange={(value) => updatePreference("target_locations", linesFromText(value))} />
+          <CheckboxGroup title="Remote preference" options={remotePreference} values={preferences.remote_preference || []} onChange={(value) => updatePreference("remote_preference", value)} />
+          <CheckboxGroup title="Employment type" options={employmentType} values={preferences.employment_type || []} onChange={(value) => updatePreference("employment_type", value)} />
+          <CheckboxGroup title="Career level" options={careerLevel} values={preferences.seniority_level || []} onChange={(value) => updatePreference("seniority_level", value)} />
+          <div className="grid">
+            <label>Availability<input value={preferences.availability || ""} onChange={(event) => updatePreference("availability", event.target.value)} /></label>
+            <label>Work authorization<select value={preferences.work_authorization || ""} onChange={(event) => updatePreference("work_authorization", event.target.value)}><option value=""></option>{workAuthorization.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <label>Salary min (EUR / year)<input value={preferences.salary_min_eur ?? ""} onChange={(event) => updatePreference("salary_min_eur", optionalNumber(event.target.value))} /></label>
+            <label>Salary max (EUR / year)<input value={preferences.salary_max_eur ?? ""} onChange={(event) => updatePreference("salary_max_eur", optionalNumber(event.target.value))} /></label>
+          </div>
+          <div className="actions"><button className="primary" onClick={savePreferences}>Save manual preferences</button></div>
+        </section>
+
+        <h2>Save</h2>
+        <div className="actions"><button className="primary" onClick={finalSave}>Save profile</button></div>
+      </fieldset>
     </>
   );
 }
@@ -491,22 +492,23 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
       <h1>Job Intake</h1>
       <p>Generate application data from a job URL.</p>
       <StatusMessage type={message?.type} text={message?.text} />
-      <section className="panel">
-        <form onSubmit={extract}>
-          <label>Job URL<input placeholder="https://company.com/jobs/role" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /></label>
-          <div className="actions">
-            <AiActionButton
-              className="primary"
-              disabled={saving}
-              isPending={extracting}
-              label="Extract application data with AI"
-              pendingLabel="Extracting application data..."
-              type="submit"
-            />
-          </div>
-        </form>
-      </section>
-      {extraction && (
+      <fieldset aria-busy={extracting} className="ai-blocking-surface" disabled={extracting}>
+        <section className="panel">
+          <form onSubmit={extract}>
+            <label>Job URL<input placeholder="https://company.com/jobs/role" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /></label>
+            <div className="actions">
+              <AiActionButton
+                className="primary"
+                disabled={saving}
+                isPending={extracting}
+                label="Extract application data with AI"
+                pendingLabel="Extracting application data..."
+                type="submit"
+              />
+            </div>
+          </form>
+        </section>
+        {extraction && (
         <section className="panel">
           <h2>Review Extracted Data</h2>
           <p className="muted">Review what the AI found before adding it to the application workflow.</p>
@@ -531,7 +533,8 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
             <div className="actions"><button className="primary" disabled={saving}>Add To Application Workflow</button></div>
           </form>
         </section>
-      )}
+        )}
+      </fieldset>
     </>
   );
 }
@@ -632,46 +635,48 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
 
   return (
     <section className="panel">
-      <h2>Application Requirements</h2>
-      {!workspace.job.apply_url && <StatusMessage type="warning" text="Apply URL is missing. Requirements discovery is blocked." />}
-      <p className="muted">This action fetches the apply page and uses AI to interpret requirements.</p>
-      <div className="actions">
-        <AiActionButton
-          className={requirements ? "secondary" : "primary"}
-          isPending={discovering}
-          label={buttonLabel}
-          onClick={discover}
-          pendingLabel={pendingLabel}
-        />
-      </div>
-      {!requirements && <StatusMessage type="info" text="No application requirements have been discovered yet." />}
-      {requirements && (
-        <form onSubmit={saveReview}>
-          {requirements.blocked_reason && <StatusMessage type="warning" text={requirements.blocked_reason} />}
-          <KeyRequirements requirements={requirements} />
-          <label className="check-row"><input type="checkbox" checked={!!form.job_preserving} onChange={(event) => setForm((current) => ({ ...current, job_preserving: event.target.checked }))} />Apply page matches this selected job</label>
-          <label>Overall confidence<select value={form.confidence} onChange={(event) => setForm((current) => ({ ...current, confidence: event.target.value }))}>{["low", "medium", "high"].map((value) => <option key={value}>{value}</option>)}</select></label>
-          {[
-            ["Blocked reason", "blocked_reason"],
-            ["Required documents", "required_documents_text"],
-            ["Upload expectations", "upload_expectations_text"],
-            ["Profile fields requested", "profile_fields_text"],
-            ["Screening questions", "screening_questions_text"],
-            ["Custom form fields", "custom_form_fields_text"],
-            ["Consent requirements", "consent_requirements_text"],
-            ["Privacy, login, and ATS gates", "privacy_login_ats_gates_text"],
-            ["Deadlines", "deadlines_text"],
-            ["Contact / fallback info", "contact_or_fallback_text"],
-            ["Missing or uncertain", "missing_or_uncertain_text"]
-          ].map(([label, key]) => <TextArea key={key} label={label} value={form[key] || ""} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} />)}
-          <div className="grid">
-            <label>Motivation / cover letter requirement<input value={form.motivation_label || ""} onChange={(event) => setForm((current) => ({ ...current, motivation_label: event.target.value }))} /></label>
-            <label className="check-row"><input type="checkbox" checked={!!form.motivation_required} onChange={(event) => setForm((current) => ({ ...current, motivation_required: event.target.checked }))} />Motivation / cover letter is required</label>
-          </div>
-          <details><summary>Requirements evidence</summary><List title="Source Evidence" values={requirements.source_evidence} /></details>
-          <div className="actions"><button className="primary">Save requirements review</button></div>
-        </form>
-      )}
+      <fieldset aria-busy={discovering} className="ai-blocking-surface" disabled={discovering}>
+        <h2>Application Requirements</h2>
+        {!workspace.job.apply_url && <StatusMessage type="warning" text="Apply URL is missing. Requirements discovery is blocked." />}
+        <p className="muted">This action fetches the apply page and uses AI to interpret requirements.</p>
+        <div className="actions">
+          <AiActionButton
+            className={requirements ? "secondary" : "primary"}
+            isPending={discovering}
+            label={buttonLabel}
+            onClick={discover}
+            pendingLabel={pendingLabel}
+          />
+        </div>
+        {!requirements && <StatusMessage type="info" text="No application requirements have been discovered yet." />}
+        {requirements && (
+          <form onSubmit={saveReview}>
+            {requirements.blocked_reason && <StatusMessage type="warning" text={requirements.blocked_reason} />}
+            <KeyRequirements requirements={requirements} />
+            <label className="check-row"><input type="checkbox" checked={!!form.job_preserving} onChange={(event) => setForm((current) => ({ ...current, job_preserving: event.target.checked }))} />Apply page matches this selected job</label>
+            <label>Overall confidence<select value={form.confidence} onChange={(event) => setForm((current) => ({ ...current, confidence: event.target.value }))}>{["low", "medium", "high"].map((value) => <option key={value}>{value}</option>)}</select></label>
+            {[
+              ["Blocked reason", "blocked_reason"],
+              ["Required documents", "required_documents_text"],
+              ["Upload expectations", "upload_expectations_text"],
+              ["Profile fields requested", "profile_fields_text"],
+              ["Screening questions", "screening_questions_text"],
+              ["Custom form fields", "custom_form_fields_text"],
+              ["Consent requirements", "consent_requirements_text"],
+              ["Privacy, login, and ATS gates", "privacy_login_ats_gates_text"],
+              ["Deadlines", "deadlines_text"],
+              ["Contact / fallback info", "contact_or_fallback_text"],
+              ["Missing or uncertain", "missing_or_uncertain_text"]
+            ].map(([label, key]) => <TextArea key={key} label={label} value={form[key] || ""} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} />)}
+            <div className="grid">
+              <label>Motivation / cover letter requirement<input value={form.motivation_label || ""} onChange={(event) => setForm((current) => ({ ...current, motivation_label: event.target.value }))} /></label>
+              <label className="check-row"><input type="checkbox" checked={!!form.motivation_required} onChange={(event) => setForm((current) => ({ ...current, motivation_required: event.target.checked }))} />Motivation / cover letter is required</label>
+            </div>
+            <details><summary>Requirements evidence</summary><List title="Source Evidence" values={requirements.source_evidence} /></details>
+            <div className="actions"><button className="primary">Save requirements review</button></div>
+          </form>
+        )}
+      </fieldset>
     </section>
   );
 }
@@ -703,44 +708,46 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
 
   return (
     <section className="panel">
-      <h2>Application Package</h2>
-      <Blockers title="Application package generation is blocked until these prerequisites are complete:" blockers={workspace.package_blockers} />
-      <p className="muted">This action uses AI to draft application materials from reviewed data.</p>
-      <div className="actions">
-        <AiActionButton
-          className={packageData ? "secondary" : "primary"}
-          disabled={!!workspace.package_blockers?.length}
-          isPending={generating}
-          label={buttonLabel}
-          onClick={generatePackage}
-          pendingLabel={pendingLabel}
-        />
-      </div>
-      {!packageData && <StatusMessage type="info" text="No application package has been generated yet." />}
-      {packageData && (
-        <>
-          <List title="Selected Experience Units" values={workspace.package_summary?.selected_experience_units || []} />
-          <form onSubmit={(event) => { event.preventDefault(); action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", { edits_by_artifact_id: edits }, setMessage, reload); }}>
-            {orderArtifacts(packageData.artifacts || []).map((artifact: ApiRecord) => (
-              <details key={artifact.id} open={isCoverLetter(artifact)}>
-                <summary>{artifact.label}</summary>
-                {artifact.source_prompt && <p className="muted">Source prompt: {artifact.source_prompt}</p>}
-                {artifact.source_requirement && <p className="muted">Source requirement: {artifact.source_requirement}</p>}
-                <TextArea label={`${artifact.label} content`} value={edits[artifact.id] || ""} onChange={(value) => setEdits((current) => ({ ...current, [artifact.id]: value }))} />
-                <Traceability metadata={artifact.metadata || {}} />
-              </details>
-            ))}
-            <div className="actions"><button className="primary">Save package review</button></div>
-          </form>
-          {packageData.artifacts?.some(isCoverLetter) && (
-            <div className="panel">
-              <h3>Cover Letter Artifact</h3>
-              <label>Cover letter destination folder<input value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
-              <div className="actions"><button onClick={() => action(`/api/jobs/${workspace.job.id}/package/export-cover-letter`, "POST", { destination_folder: destination }, setMessage, reload)}>Export cover letter PDF</button></div>
-            </div>
-          )}
-        </>
-      )}
+      <fieldset aria-busy={generating} className="ai-blocking-surface" disabled={generating}>
+        <h2>Application Package</h2>
+        <Blockers title="Application package generation is blocked until these prerequisites are complete:" blockers={workspace.package_blockers} />
+        <p className="muted">This action uses AI to draft application materials from reviewed data.</p>
+        <div className="actions">
+          <AiActionButton
+            className={packageData ? "secondary" : "primary"}
+            disabled={!!workspace.package_blockers?.length}
+            isPending={generating}
+            label={buttonLabel}
+            onClick={generatePackage}
+            pendingLabel={pendingLabel}
+          />
+        </div>
+        {!packageData && <StatusMessage type="info" text="No application package has been generated yet." />}
+        {packageData && (
+          <>
+            <List title="Selected Experience Units" values={workspace.package_summary?.selected_experience_units || []} />
+            <form onSubmit={(event) => { event.preventDefault(); action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", { edits_by_artifact_id: edits }, setMessage, reload); }}>
+              {orderArtifacts(packageData.artifacts || []).map((artifact: ApiRecord) => (
+                <details key={artifact.id} open={isCoverLetter(artifact)}>
+                  <summary>{artifact.label}</summary>
+                  {artifact.source_prompt && <p className="muted">Source prompt: {artifact.source_prompt}</p>}
+                  {artifact.source_requirement && <p className="muted">Source requirement: {artifact.source_requirement}</p>}
+                  <TextArea label={`${artifact.label} content`} value={edits[artifact.id] || ""} onChange={(value) => setEdits((current) => ({ ...current, [artifact.id]: value }))} />
+                  <Traceability metadata={artifact.metadata || {}} />
+                </details>
+              ))}
+              <div className="actions"><button className="primary">Save package review</button></div>
+            </form>
+            {packageData.artifacts?.some(isCoverLetter) && (
+              <div className="panel">
+                <h3>Cover Letter Artifact</h3>
+                <label>Cover letter destination folder<input value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
+                <div className="actions"><button onClick={() => action(`/api/jobs/${workspace.job.id}/package/export-cover-letter`, "POST", { destination_folder: destination }, setMessage, reload)}>Export cover letter PDF</button></div>
+              </div>
+            )}
+          </>
+        )}
+      </fieldset>
     </section>
   );
 }
@@ -795,36 +802,38 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
 
   return (
     <section className="panel">
-      <h2>Application Fill Plan</h2>
-      <Blockers title="Fill plan generation is blocked until these steps are complete:" blockers={workspace.fill_plan_generation_blockers} />
-      <div className="actions">
-        <AiActionButton
-          className={fillPlan ? "secondary" : "primary"}
-          disabled={!!workspace.fill_plan_generation_blockers?.length}
-          isPending={generating}
-          label={buttonLabel}
-          onClick={generateFillPlan}
-          pendingLabel={pendingLabel}
-        />
-      </div>
-      {!fillPlan && <StatusMessage type="info" text="No application fill plan has been generated yet." />}
-      {fillPlan && review && (
-        <form onSubmit={submitReview}>
-          <p className="muted">Prefilled values are ready to save. Edit only the fields that need a correction before Browser Use receives them.</p>
-          <div className="panel">
-            <h3>Required fields</h3>
-            {!review.required_rows?.length && <p className="muted">No required fields.</p>}
-            {review.required_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}
-          </div>
-          <div className="panel">
-            <h3>Uploads Sent To Browser</h3>
-            {!review.upload_rows?.length && <p className="muted">No uploads sent to browser.</p>}
-            {review.upload_rows?.map((row: ApiRecord) => <label key={row.edit_key}>{row.label} file path<input value={uploads[row.edit_key] || ""} onChange={(event) => setUploads((current) => ({ ...current, [row.edit_key]: event.target.value }))} /></label>)}
-          </div>
-          <details><summary>Optional or unclear</summary>{!review.optional_rows?.length && <p className="muted">No optional or unclear fields.</p>}{review.optional_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}</details>
-          <div className="actions"><button className="primary">Save fill plan review</button></div>
-        </form>
-      )}
+      <fieldset aria-busy={generating} className="ai-blocking-surface" disabled={generating}>
+        <h2>Application Fill Plan</h2>
+        <Blockers title="Fill plan generation is blocked until these steps are complete:" blockers={workspace.fill_plan_generation_blockers} />
+        <div className="actions">
+          <AiActionButton
+            className={fillPlan ? "secondary" : "primary"}
+            disabled={!!workspace.fill_plan_generation_blockers?.length}
+            isPending={generating}
+            label={buttonLabel}
+            onClick={generateFillPlan}
+            pendingLabel={pendingLabel}
+          />
+        </div>
+        {!fillPlan && <StatusMessage type="info" text="No application fill plan has been generated yet." />}
+        {fillPlan && review && (
+          <form onSubmit={submitReview}>
+            <p className="muted">Prefilled values are ready to save. Edit only the fields that need a correction before Browser Use receives them.</p>
+            <div className="panel">
+              <h3>Required fields</h3>
+              {!review.required_rows?.length && <p className="muted">No required fields.</p>}
+              {review.required_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}
+            </div>
+            <div className="panel">
+              <h3>Uploads Sent To Browser</h3>
+              {!review.upload_rows?.length && <p className="muted">No uploads sent to browser.</p>}
+              {review.upload_rows?.map((row: ApiRecord) => <label key={row.edit_key}>{row.label} file path<input value={uploads[row.edit_key] || ""} onChange={(event) => setUploads((current) => ({ ...current, [row.edit_key]: event.target.value }))} /></label>)}
+            </div>
+            <details><summary>Optional or unclear</summary>{!review.optional_rows?.length && <p className="muted">No optional or unclear fields.</p>}{review.optional_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}</details>
+            <div className="actions"><button className="primary">Save fill plan review</button></div>
+          </form>
+        )}
+      </fieldset>
     </section>
   );
 }
@@ -862,35 +871,37 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 
   return (
     <section className="panel">
-      <h2>Apply to position</h2>
-      <h3>Apply Assistance</h3>
-      <Blockers title="Apply assistance is blocked until these review steps are complete:" blockers={workspace.apply_blockers} />
-      <StatusMessage type={applyMessage?.type} text={applyMessage?.text} />
-      {staleRunnerCount > 0 && (
-        <StatusMessage
-          type="warning"
-          text={`${staleRunnerCount} Browser Use runner process is active outside the tracked session. Use Kill All Browser Use Processes before applying again.`}
-        />
-      )}
-      <details open={staleRunnerCount > 0}>
-        <summary>Browser process controls</summary>
-        {workspace.active_browser_use_session ? <StatusMessage type="info" text={`Browser Use session running: PID ${workspace.active_browser_use_session.pid} for ${workspace.active_browser_use_session.url}`} /> : <p className="muted">Browser Use session status: idle.</p>}
+      <fieldset aria-busy={applying} className="ai-blocking-surface" disabled={applying}>
+        <h2>Apply to position</h2>
+        <h3>Apply Assistance</h3>
+        <Blockers title="Apply assistance is blocked until these review steps are complete:" blockers={workspace.apply_blockers} />
+        <StatusMessage type={applyMessage?.type} text={applyMessage?.text} />
+        {staleRunnerCount > 0 && (
+          <StatusMessage
+            type="warning"
+            text={`${staleRunnerCount} Browser Use runner process is active outside the tracked session. Use Kill All Browser Use Processes before applying again.`}
+          />
+        )}
+        <details open={staleRunnerCount > 0}>
+          <summary>Browser process controls</summary>
+          {workspace.active_browser_use_session ? <StatusMessage type="info" text={`Browser Use session running: PID ${workspace.active_browser_use_session.pid} for ${workspace.active_browser_use_session.url}`} /> : <p className="muted">Browser Use session status: idle.</p>}
+          <div className="actions">
+            <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/stop-session`, "POST", {}, setMessage, reload)}>Stop Browser Use Session</button>
+            <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/kill-all`, "POST", {}, setMessage, reload)}>Kill All Browser Use Processes</button>
+          </div>
+        </details>
+        <p className="muted">This action opens the reviewed apply URL and asks Browser Use to execute the reviewed application fill plan.</p>
         <div className="actions">
-          <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/stop-session`, "POST", {}, setMessage, reload)}>Stop Browser Use Session</button>
-          <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/kill-all`, "POST", {}, setMessage, reload)}>Kill All Browser Use Processes</button>
+          <AiActionButton
+            className="primary"
+            disabled={!!workspace.apply_blockers?.length || applying}
+            isPending={applying}
+            label="Apply to job with AI"
+            onClick={applyWithAi}
+            pendingLabel="Starting AI apply assistance..."
+          />
         </div>
-      </details>
-      <p className="muted">This action opens the reviewed apply URL and asks Browser Use to execute the reviewed application fill plan.</p>
-      <div className="actions">
-        <AiActionButton
-          className="primary"
-          disabled={!!workspace.apply_blockers?.length || applying}
-          isPending={applying}
-          label="Apply to job with AI"
-          onClick={applyWithAi}
-          pendingLabel="Starting AI apply assistance..."
-        />
-      </div>
+      </fieldset>
     </section>
   );
 }
@@ -1041,104 +1052,106 @@ function KarenChatPanel({
         role="separator"
         tabIndex={0}
       />
-      <div className="karen-panel-top">
-        <div className="karen-panel-header">
-          <img src={karenImage} width="56" height="56" alt="Agent Karen" />
-          <div>
-            <h2>Karen Chat</h2>
-            <p className="muted">Workflow assistant</p>
+      <fieldset aria-busy={isSending} className="ai-blocking-surface karen-chat-controls" disabled={isSending}>
+        <div className="karen-panel-top">
+          <div className="karen-panel-header">
+            <img src={karenImage} width="56" height="56" alt="Agent Karen" />
+            <div>
+              <h2>Karen Chat</h2>
+              <p className="muted">Workflow assistant</p>
+            </div>
+          </div>
+          <StatusMessage type={status?.type} text={status?.text} />
+          {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
+          {!!records.length && (
+            <label>
+              Job
+              <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
+                {records.map((record) => (
+                  <option key={record.job_id} value={record.job_id}>
+                    {record.company} / {record.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <div className="karen-context-summary" aria-label="Karen workflow summary">
+            <div>
+              <span className="summary-label">Gate</span>
+              <strong>{state.pending_gate ? titleCase(state.pending_gate) : "None"}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Blockers</span>
+              <strong>{blockers.length}</strong>
+            </div>
+            <div>
+              <span className="summary-label">Next</span>
+              <strong>{nextActionLabel(nextActions, agent?.action_labels)}</strong>
+            </div>
+          </div>
+          <div className="quick-prompts" aria-label="Karen quick prompts">
+            {quickPrompts.map((prompt) => (
+              <button
+                className="quick-prompt"
+                disabled={isSending || !records.length}
+                key={prompt}
+                onClick={() => submitQuickPrompt(prompt)}
+                type="button"
+              >
+                {prompt}
+              </button>
+            ))}
           </div>
         </div>
-        <StatusMessage type={status?.type} text={status?.text} />
-        {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
-        {!!records.length && (
-          <label>
-            Job
-            <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
-              {records.map((record) => (
-                <option key={record.job_id} value={record.job_id}>
-                  {record.company} / {record.title}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <div className="karen-context-summary" aria-label="Karen workflow summary">
-          <div>
-            <span className="summary-label">Gate</span>
-            <strong>{state.pending_gate ? titleCase(state.pending_gate) : "None"}</strong>
-          </div>
-          <div>
-            <span className="summary-label">Blockers</span>
-            <strong>{blockers.length}</strong>
-          </div>
-          <div>
-            <span className="summary-label">Next</span>
-            <strong>{nextActionLabel(nextActions, agent?.action_labels)}</strong>
-          </div>
-        </div>
-        <div className="quick-prompts" aria-label="Karen quick prompts">
-          {quickPrompts.map((prompt) => (
-            <button
-              className="quick-prompt"
-              disabled={isSending || !records.length}
-              key={prompt}
-              onClick={() => submitQuickPrompt(prompt)}
-              type="button"
-            >
-              {prompt}
-            </button>
+        <div aria-label="Karen transcript" className="chat-log" ref={chatLogRef} role="log">
+          {!messages.length && (
+            <div className="chat-empty">
+              <strong>No messages yet.</strong>
+              <p>Ask about blockers, the next gate, or what is ready for the selected job.</p>
+            </div>
+          )}
+          {messages.map((item: ApiRecord, index: number) => (
+            <div className={`chat-message ${item.role === "user" ? "user" : "assistant"}`} key={`${item.timestamp}-${index}`}>
+              <div className="chat-message-meta">
+                <strong>{item.role === "user" ? "You" : "Karen"}</strong>
+                {item.timestamp && <time dateTime={item.timestamp}>{formatTimestamp(item.timestamp)}</time>}
+              </div>
+              <p>{item.content}</p>
+              {!!item.actions?.length && (
+                <div className="chat-action-badges" aria-label="Message actions">
+                  {item.actions.map((actionName: string) => (
+                    <span className="action-badge" key={actionName}>
+                      {agent?.action_labels?.[actionName] || titleCase(actionName)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
-      </div>
-      <div aria-label="Karen transcript" className="chat-log" ref={chatLogRef} role="log">
-        {!messages.length && (
-          <div className="chat-empty">
-            <strong>No messages yet.</strong>
-            <p>Ask about blockers, the next gate, or what is ready for the selected job.</p>
+        <form onSubmit={onSendChat} className="karen-chat-form">
+          <div className="karen-composer">
+            <textarea
+              aria-label="Ask Karen"
+              disabled={isSending}
+              onKeyDown={handleComposerKeyDown}
+              placeholder="Ask Karen"
+              rows={2}
+              value={message}
+              onChange={(event) => onMessageChange(event.target.value)}
+            />
+            <button
+              aria-busy={isSending}
+              aria-label={isSending ? "Asking Karen..." : "Ask Karen"}
+              className="karen-send-button"
+              disabled={isSending || !message.trim()}
+              title={isSending ? "Asking Karen..." : "Ask Karen"}
+            >
+              <span aria-hidden="true" className={isSending ? "send-spinner" : "send-icon"} />
+            </button>
           </div>
-        )}
-        {messages.map((item: ApiRecord, index: number) => (
-          <div className={`chat-message ${item.role === "user" ? "user" : "assistant"}`} key={`${item.timestamp}-${index}`}>
-            <div className="chat-message-meta">
-              <strong>{item.role === "user" ? "You" : "Karen"}</strong>
-              {item.timestamp && <time dateTime={item.timestamp}>{formatTimestamp(item.timestamp)}</time>}
-            </div>
-            <p>{item.content}</p>
-            {!!item.actions?.length && (
-              <div className="chat-action-badges" aria-label="Message actions">
-                {item.actions.map((actionName: string) => (
-                  <span className="action-badge" key={actionName}>
-                    {agent?.action_labels?.[actionName] || titleCase(actionName)}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <form onSubmit={onSendChat} className="karen-chat-form">
-        <div className="karen-composer">
-          <textarea
-            aria-label="Ask Karen"
-            disabled={isSending}
-            onKeyDown={handleComposerKeyDown}
-            placeholder="Ask Karen"
-            rows={2}
-            value={message}
-            onChange={(event) => onMessageChange(event.target.value)}
-          />
-          <button
-            aria-busy={isSending}
-            aria-label={isSending ? "Asking Karen..." : "Ask Karen"}
-            className="karen-send-button"
-            disabled={isSending || !message.trim()}
-            title={isSending ? "Asking Karen..." : "Ask Karen"}
-          >
-            <span aria-hidden="true" className={isSending ? "send-spinner" : "send-icon"} />
-          </button>
-        </div>
-      </form>
+        </form>
+      </fieldset>
     </aside>
   );
 }
