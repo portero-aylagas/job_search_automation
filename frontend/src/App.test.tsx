@@ -555,6 +555,43 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
   });
 
+  it("refreshes Karen workflow summary after fill plan review without a new chat turn", async () => {
+    let fillPlanReviewed = false;
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: fillPlanReviewed ? readyWorkspace() : fillPlanReviewWorkspace() };
+      }
+      if (url.includes("/api/jobs/job-1/fill-plan/review")) {
+        fillPlanReviewed = true;
+        return { body: { message: "Saved fill plan review." } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentFillPlanState(fillPlanReviewed) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    expect((await screen.findAllByText("Approve fill plan")).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Save fill plan review" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Prepare apply assistance" })).toBeInTheDocument()
+    );
+    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers0");
+    expect(screen.queryByText("Approve fill plan")).not.toBeInTheDocument();
+  });
+
   it("shows pending feedback for browser process controls", async () => {
     let resolveStop: (value: MockResponse) => void = () => undefined;
     const pendingStop = new Promise<MockResponse>((resolve) => {
@@ -1251,6 +1288,14 @@ function fillPlanReadyWorkspace() {
   };
 }
 
+function fillPlanReviewWorkspace() {
+  return {
+    ...readyWorkspace(),
+    fill_plan: { job_id: "job-1", review_status: "draft" },
+    apply_blockers: ["Review the application fill plan before applying."]
+  };
+}
+
 function agentState(loadCount: number, messages: ApiRecord[] = []) {
   return {
     context: { selected_job_id: "job-1", session_id: "session-1" },
@@ -1265,5 +1310,35 @@ function agentState(loadCount: number, messages: ApiRecord[] = []) {
     },
     messages,
     action_labels: { review_requirements: "Review requirements" }
+  };
+}
+
+function agentFillPlanState(reviewed: boolean) {
+  return {
+    context: { selected_job_id: "job-1", session_id: "session-1" },
+    state: reviewed
+      ? {
+          session_id: "session-1",
+          selected_job_id: "job-1",
+          blockers: [],
+          errors: [],
+          next_allowed_actions: ["prepare_apply_assistance"],
+          pending_gate: null,
+          artifacts_present: { fill_plan: true }
+        }
+      : {
+          session_id: "session-1",
+          selected_job_id: "job-1",
+          blockers: ["Review the application fill plan before applying."],
+          errors: [],
+          next_allowed_actions: ["review_fill_plan"],
+          pending_gate: "fill_plan_review",
+          artifacts_present: { fill_plan: true }
+        },
+    messages: [],
+    action_labels: {
+      review_fill_plan: "Approve fill plan",
+      prepare_apply_assistance: "Prepare apply assistance"
+    }
   };
 }

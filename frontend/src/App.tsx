@@ -92,6 +92,10 @@ function App() {
       .catch((error) => setKarenStatus({ type: "error", text: error.message }));
   }
 
+  function refreshKarenState(preferredJobId = selectedKarenJobId, nextSessionId = sessionId) {
+    loadKarenJobs(preferredJobId, nextSessionId);
+  }
+
   useEffect(() => {
     loadKarenJobs("", "");
   }, []);
@@ -179,7 +183,7 @@ function App() {
         style={{ "--karen-panel-width": `${karenPanelWidth}px` } as CSSProperties}
       >
         <main className="page">
-          {page === "Candidate Profile" && <CandidateProfilePage />}
+          {page === "Candidate Profile" && <CandidateProfilePage onWorkflowChange={refreshKarenState} />}
           {page === "Job Intake" && (
             <JobIntakePage
               onSaved={(jobId) => {
@@ -188,8 +192,13 @@ function App() {
               }}
             />
           )}
-          {page === "Jobs" && <JobsPage onNavigateToIntake={() => setPage("Job Intake")} />}
-          {page === "Tracker" && <TrackerPage />}
+          {page === "Jobs" && (
+            <JobsPage
+              onNavigateToIntake={() => setPage("Job Intake")}
+              onWorkflowChange={refreshKarenState}
+            />
+          )}
+          {page === "Tracker" && <TrackerPage onWorkflowChange={refreshKarenState} />}
           {page === "Agent Karen" && (
             <AgentKarenPage
               agent={agent}
@@ -222,7 +231,11 @@ function App() {
   );
 }
 
-function CandidateProfilePage() {
+function CandidateProfilePage({
+  onWorkflowChange
+}: {
+  onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+}) {
   const [profile, setProfile] = useState<ApiRecord | null>(null);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [optionalFiles, setOptionalFiles] = useState<Record<string, File[]>>({
@@ -270,6 +283,7 @@ function CandidateProfilePage() {
       });
       setProfile(result.profile);
       setMessage({ type: "success", text: result.message });
+      onWorkflowChange();
     });
   }
 
@@ -293,6 +307,7 @@ function CandidateProfilePage() {
       }
       setProfile(nextProfile);
       setMessage({ type: "success", text: `Parsed ${entries.length} optional document${entries.length === 1 ? "" : "s"} into the review fields.` });
+      onWorkflowChange();
     });
   }
 
@@ -300,6 +315,7 @@ function CandidateProfilePage() {
     if (!profile) return;
     await runBusy((value) => setPendingAction(value ? "save-review" : null), setMessage, async () => {
       await saveProfileDraft("/api/candidate-profile/review-changes", profile, setProfile, setMessage);
+      onWorkflowChange();
     });
   }
 
@@ -307,6 +323,7 @@ function CandidateProfilePage() {
     if (!profile) return;
     await runBusy((value) => setPendingAction(value ? "save-preferences" : null), setMessage, async () => {
       await saveProfileDraft("/api/candidate-profile/preferences", profile, setProfile, setMessage);
+      onWorkflowChange();
     });
   }
 
@@ -598,7 +615,13 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
   );
 }
 
-function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
+function JobsPage({
+  onNavigateToIntake,
+  onWorkflowChange
+}: {
+  onNavigateToIntake: () => void;
+  onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+}) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -624,9 +647,16 @@ function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
       .finally(() => setLoadingWorkspace(false));
   }, [selectedJobId]);
 
-  function reloadWorkspace() {
+  async function reloadWorkspace() {
     if (!selectedJobId) return;
-    apiRequest<ApiRecord>(`/api/jobs/${selectedJobId}/workspace`).then(setWorkspace);
+    const [workspacePayload, jobsPayload] = await Promise.all([
+      apiRequest<ApiRecord>(`/api/jobs/${selectedJobId}/workspace`),
+      apiRequest<ApiRecord>("/api/jobs")
+    ]);
+    setWorkspace(workspacePayload);
+    setRecords(jobsPayload.records || []);
+    setStatusOptions(jobsPayload.status_options || []);
+    onWorkflowChange(selectedJobId);
   }
 
   if (!records.length) {
@@ -1122,7 +1152,11 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
   );
 }
 
-function TrackerPage() {
+function TrackerPage({
+  onWorkflowChange
+}: {
+  onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+}) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
   const [statusFilters, setStatusFilters] = useState<ApiRecord[]>([]);
@@ -1156,6 +1190,7 @@ function TrackerPage() {
       setStatusOptions(payload.status_options || statusOptions);
       setStatusFilters(payload.status_filters || statusFilters);
       setMessage({ type: "info", text: payload.message || "Tracker status updated." });
+      onWorkflowChange(jobId);
     } catch (error: any) {
       setMessage({ type: "error", text: error.message });
     }
@@ -1478,7 +1513,7 @@ function KarenChatPanel({
 type PanelProps = {
   workspace: ApiRecord;
   setMessage: (message: ApiRecord | null) => void;
-  reload: () => void;
+  reload: () => Promise<void> | void;
 };
 
 type AiActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -1728,11 +1763,17 @@ async function saveProfileDraft(path: string, profile: ApiRecord, setProfile: (p
   setMessage({ type: "success", text: result.message || `Saved to ${result.saved_path}.` });
 }
 
-async function action(path: string, method: string, body: ApiRecord, setMessage: (message: ApiRecord | null) => void, reload: () => void) {
+async function action(
+  path: string,
+  method: string,
+  body: ApiRecord,
+  setMessage: (message: ApiRecord | null) => void,
+  reload: () => Promise<void> | void
+) {
   try {
     const result = await apiRequest<ApiRecord>(path, { method, body: JSON.stringify(body) });
     setMessage({ type: "success", text: result.message || "Saved." });
-    reload();
+    await reload();
   } catch (error) {
     setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
   }
