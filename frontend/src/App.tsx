@@ -55,6 +55,7 @@ function App() {
   const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
   const [isKarenSending, setIsKarenSending] = useState(false);
+  const [isKarenMobileOpen, setIsKarenMobileOpen] = useState(false);
   const karenSendingRef = useRef(false);
   const sessionId = agent?.context?.session_id;
 
@@ -122,6 +123,21 @@ function App() {
     loadAgent(jobId, sessionId);
   }
 
+  function navigateToWorkflowTarget(pageName: string, sectionId?: string) {
+    setPage(pageName);
+    if (!sectionId) return;
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
+  }
+
+  function navigateKarenAction(actionName: string) {
+    const target = karenActionTarget(actionName);
+    if (!target) return;
+    navigateToWorkflowTarget(target.page, target.sectionId);
+    setIsKarenMobileOpen(false);
+  }
+
   function updateKarenPanelWidth(width: number) {
     const nextWidth = clampNumber(width, karenPanelWidthMin, karenPanelWidthMax);
     setKarenPanelWidth(nextWidth);
@@ -172,7 +188,7 @@ function App() {
               }}
             />
           )}
-          {page === "Jobs" && <JobsPage />}
+          {page === "Jobs" && <JobsPage onNavigateToIntake={() => setPage("Job Intake")} />}
           {page === "Tracker" && <TrackerPage />}
           {page === "Agent Karen" && (
             <AgentKarenPage
@@ -180,6 +196,7 @@ function App() {
               records={karenRecords}
               selectedJobId={selectedKarenJobId}
               status={karenStatus}
+              onActionShortcut={navigateKarenAction}
             />
           )}
         </main>
@@ -191,6 +208,9 @@ function App() {
           status={karenStatus}
           width={karenPanelWidth}
           isSending={isKarenSending}
+          isMobileOpen={isKarenMobileOpen}
+          onMobileToggle={() => setIsKarenMobileOpen((current) => !current)}
+          onActionShortcut={navigateKarenAction}
           onMessageChange={setKarenMessage}
           onSelectJob={selectKarenJob}
           onWidthChange={updateKarenPanelWidth}
@@ -278,12 +298,16 @@ function CandidateProfilePage() {
 
   async function saveReview() {
     if (!profile) return;
-    await saveProfileDraft("/api/candidate-profile/review-changes", profile, setProfile, setMessage);
+    await runBusy((value) => setPendingAction(value ? "save-review" : null), setMessage, async () => {
+      await saveProfileDraft("/api/candidate-profile/review-changes", profile, setProfile, setMessage);
+    });
   }
 
   async function savePreferences() {
     if (!profile) return;
-    await saveProfileDraft("/api/candidate-profile/preferences", profile, setProfile, setMessage);
+    await runBusy((value) => setPendingAction(value ? "save-preferences" : null), setMessage, async () => {
+      await saveProfileDraft("/api/candidate-profile/preferences", profile, setProfile, setMessage);
+    });
   }
 
   if (message?.type === "error" && (!profile || !extracted || !preferences || !sourceDocuments)) {
@@ -300,8 +324,8 @@ function CandidateProfilePage() {
       <p>Upload your CV and certifications once, review the extracted data, and optionally add job-search preferences for future discovery.</p>
       <StatusMessage type={message?.type} text={message?.text} />
       <fieldset aria-busy={isAiPending} className="ai-blocking-surface" disabled={isAiPending}>
-        <section className="panel">
-          <h2>1. CV Upload</h2>
+        <section className="panel" id="workflow-profile">
+          <SectionHeader title="1. CV Upload" summary={sourceDocuments.cv?.parsed ? "CV parsed" : "CV needs parsing"} />
           <p className="muted">The CV is the source of truth for professional data.</p>
           {sourceDocuments.cv?.file_path && (
             <p className="muted">Current CV: {basename(sourceDocuments.cv.file_path)} ({sourceDocuments.cv.parsed ? "parsed" : "uploaded, not parsed"})</p>
@@ -324,7 +348,7 @@ function CandidateProfilePage() {
         </section>
 
         <section className="panel">
-          <h2>2. Optional documents</h2>
+          <SectionHeader title="2. Optional documents" summary={`${sourceDocuments.optional_documents?.length || 0} uploaded`} />
           {!!sourceDocuments.optional_documents?.length && (
             <>
               <strong>Uploaded optional documents</strong>
@@ -366,7 +390,7 @@ function CandidateProfilePage() {
         </section>
 
         <section className="panel">
-          <h2>3. Extracted data review</h2>
+          <SectionHeader title="3. Extracted data review" summary={sourceDocuments.cv?.parsed ? "Ready for human review" : "Waiting for parsed CV"} />
           {!sourceDocuments.cv?.parsed && <StatusMessage type="info" text="Upload and parse a CV to populate these review fields." />}
           <h3>Identity</h3>
           <div className="grid">
@@ -386,19 +410,29 @@ function CandidateProfilePage() {
             <label>GitHub URL<input value={extracted.identity.github_url || ""} onChange={(event) => updateIdentity("github_url", event.target.value)} /></label>
             <label>Portfolio URL<input value={extracted.identity.portfolio_url || ""} onChange={(event) => updateIdentity("portfolio_url", event.target.value)} /></label>
           </div>
-          <h3>Professional data</h3>
-          <TextArea label="Work experience" value={blockTextFromItems(extracted.work_experience)} onChange={(value) => updateExtractedList("work_experience", value, true)} />
-          <TextArea label="Education" value={textFromItems(extracted.education)} onChange={(value) => updateExtractedList("education", value)} />
-          <TextArea label="Skills" value={textFromItems(extracted.skills)} onChange={(value) => updateExtractedList("skills", value)} />
-          <TextArea label="Languages" value={textFromItems(extracted.languages)} onChange={(value) => updateExtractedList("languages", value)} />
-          <TextArea label="Certifications" value={textFromItems(extracted.certifications)} onChange={(value) => updateExtractedList("certifications", value)} />
-          <TextArea label="Projects" value={textFromItems(extracted.projects)} onChange={(value) => updateExtractedList("projects", value)} />
-          <TextArea label="References" value={textFromItems(extracted.references)} onChange={(value) => updateExtractedList("references", value)} />
-          <div className="actions"><button className="primary" onClick={saveReview}>Save CV review changes</button></div>
+          <details open>
+            <summary>Professional data</summary>
+            <TextArea label="Work experience" value={blockTextFromItems(extracted.work_experience)} onChange={(value) => updateExtractedList("work_experience", value, true)} />
+            <TextArea label="Education" value={textFromItems(extracted.education)} onChange={(value) => updateExtractedList("education", value)} />
+            <TextArea label="Skills" value={textFromItems(extracted.skills)} onChange={(value) => updateExtractedList("skills", value)} />
+            <TextArea label="Languages" value={textFromItems(extracted.languages)} onChange={(value) => updateExtractedList("languages", value)} />
+            <TextArea label="Certifications" value={textFromItems(extracted.certifications)} onChange={(value) => updateExtractedList("certifications", value)} />
+            <TextArea label="Projects" value={textFromItems(extracted.projects)} onChange={(value) => updateExtractedList("projects", value)} />
+            <TextArea label="References" value={textFromItems(extracted.references)} onChange={(value) => updateExtractedList("references", value)} />
+          </details>
+          <div className="actions">
+            <AiActionButton
+              className="primary"
+              isPending={pendingAction === "save-review"}
+              label="Save CV review changes"
+              onClick={saveReview}
+              pendingLabel="Saving CV review..."
+            />
+          </div>
         </section>
 
         <section className="panel">
-          <h2>4. Optional job-search preferences</h2>
+          <SectionHeader title="4. Optional job-search preferences" summary={`${(preferences.target_roles || []).length} target roles`} />
           <p className="muted">These fields can help future discovery and ranking, but they are not required to save a profile or prepare a known job application.</p>
           <TextArea label="Target roles" value={(preferences.target_roles || []).join("\n")} onChange={(value) => updatePreference("target_roles", linesFromText(value))} />
           <TextArea label="Target locations" value={(preferences.target_locations || []).join("\n")} onChange={(value) => updatePreference("target_locations", linesFromText(value))} />
@@ -411,7 +445,15 @@ function CandidateProfilePage() {
             <label>Salary min (EUR / year)<input value={preferences.salary_min_eur ?? ""} onChange={(event) => updatePreference("salary_min_eur", optionalNumber(event.target.value))} /></label>
             <label>Salary max (EUR / year)<input value={preferences.salary_max_eur ?? ""} onChange={(event) => updatePreference("salary_max_eur", optionalNumber(event.target.value))} /></label>
           </div>
-          <div className="actions"><button className="primary" onClick={savePreferences}>Save manual preferences</button></div>
+          <div className="actions">
+            <AiActionButton
+              className="primary"
+              isPending={pendingAction === "save-preferences"}
+              label="Save manual preferences"
+              onClick={savePreferences}
+              pendingLabel="Saving preferences..."
+            />
+          </div>
         </section>
 
       </fieldset>
@@ -485,8 +527,9 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
       <h1>Job Intake</h1>
       <p>Generate application data from a job URL.</p>
       <StatusMessage type={message?.type} text={message?.text} />
-      <fieldset aria-busy={extracting} className="ai-blocking-surface" disabled={extracting}>
+      <fieldset aria-busy={extracting || saving} className="ai-blocking-surface" disabled={extracting || saving}>
         <section className="panel">
+          <SectionHeader title="Source URL" summary={sourceUrl ? "Ready to extract" : "Waiting for job URL"} />
           <form onSubmit={extract}>
             <label>Job URL<input placeholder="https://company.com/jobs/role" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /></label>
             <div className="actions">
@@ -503,8 +546,15 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
         </section>
         {extraction && (
         <section className="panel">
-          <h2>Review Extracted Data</h2>
+          <SectionHeader
+            title="Review Extracted Data"
+            summary={extraction.extracted_data?.missing_or_uncertain?.length ? "Needs review" : "Ready to save"}
+          />
           <p className="muted">Review what the AI found before adding it to the application workflow.</p>
+          <div className="badge-row">
+            <StatusBadge status={extraction.extracted_data?.missing_or_uncertain?.length ? "needs-review" : "ready"} />
+            <StatusBadge status={extraction.apply_resolution?.confidence === "low" ? "low-confidence" : "reviewed"} label={`Apply URL confidence: ${extraction.apply_resolution?.confidence || "unknown"}`} />
+          </div>
           {extraction.apply_resolution?.status !== "resolved" && <StatusMessage type="warning" text={extraction.apply_resolution?.notes || "The application destination could not be verified automatically."} />}
           {(extraction.apply_url_messages?.errors || []).map((item: string) => <StatusMessage key={item} type="error" text={item} />)}
           {(extraction.apply_url_messages?.warnings || []).map((item: string) => <StatusMessage key={item} type="warning" text={item} />)}
@@ -520,10 +570,26 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
             <TextArea label="Nice-to-have Skills" value={form.nice_to_have_skills || ""} onChange={(value) => setForm((current) => ({ ...current, nice_to_have_skills: value }))} />
             <h3>Additional Extracted Details</h3>
             {form.dynamic_fields?.length ? form.dynamic_fields.map((field: ApiRecord, index: number) => (
-              <label key={`${field.name}-${index}`}>{field.name}<input value={field.value || ""} onChange={(event) => updateDynamicField(index, event.target.value, setForm)} /></label>
+              <label key={`${field.name}-${index}`}>
+                <span className="label-with-meta">
+                  {field.name}
+                  <StatusBadge status={field.confidence === "low" ? "low-confidence" : "reviewed"} label={`Confidence: ${field.confidence || "unknown"}`} />
+                </span>
+                <input aria-label={field.name || `Additional Detail ${index + 1}`} value={field.value || ""} onChange={(event) => updateDynamicField(index, event.target.value, setForm)} />
+                {field.source_text && <span className="field-hint">Source: {field.source_text}</span>}
+              </label>
             )) : <p className="muted">No additional details were extracted.</p>}
             {extraction.extracted_data?.missing_or_uncertain?.length ? <StatusMessage type="warning" text={`Needs review: ${extraction.extracted_data.missing_or_uncertain.join("; ")}`} /> : null}
-            <div className="actions"><button className="primary" disabled={saving}>Add To Application Workflow</button></div>
+            <div className="actions">
+              <AiActionButton
+                className="primary"
+                disabled={saving}
+                isPending={saving}
+                label="Add To Application Workflow"
+                pendingLabel="Adding to workflow..."
+                type="submit"
+              />
+            </div>
           </form>
         </section>
         )}
@@ -532,11 +598,12 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
   );
 }
 
-function JobsPage() {
+function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [workspace, setWorkspace] = useState<ApiRecord | null>(null);
   const [message, setMessage] = useState<ApiRecord | null>(null);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
 
   function loadJobs() {
     apiRequest<ApiRecord>("/api/jobs").then((payload) => {
@@ -548,9 +615,11 @@ function JobsPage() {
   useEffect(loadJobs, []);
   useEffect(() => {
     if (!selectedJobId) return;
+    setLoadingWorkspace(true);
     apiRequest<ApiRecord>(`/api/jobs/${selectedJobId}/workspace`)
       .then(setWorkspace)
-      .catch((error) => setMessage({ type: "error", text: error.message }));
+      .catch((error) => setMessage({ type: "error", text: error.message }))
+      .finally(() => setLoadingWorkspace(false));
   }, [selectedJobId]);
 
   function reloadWorkspace() {
@@ -562,33 +631,77 @@ function JobsPage() {
     return (
       <>
         <h1>Jobs</h1>
-        <StatusMessage type="info" text="No jobs have been added yet." />
+        <section className="empty-state">
+          <h2>No jobs have been added yet.</h2>
+          <p className="muted">Jobs appear here after intake and review.</p>
+          <button className="primary" onClick={onNavigateToIntake}>Go to Job Intake</button>
+        </section>
       </>
     );
   }
+
+  const selectedRecord = records.find((record) => record.job_id === selectedJobId);
 
   return (
     <>
       <h1>Jobs</h1>
       <StatusMessage type={message?.type} text={message?.text} />
-      <label>Job<select value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>{records.map((record) => <option key={record.job_id} value={record.job_id}>{record.company} / {record.title}</option>)}</select></label>
-      {workspace && (
-        <>
-          <JobSnapshot job={workspace.job} />
-          <RequirementsPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
-          <PackagePanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
-          <FillPlanPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
-          <ApplyPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
-        </>
-      )}
+      <div className="jobs-master-detail">
+        <aside className="job-list-panel" aria-label="Saved jobs">
+          <SectionHeader title="Saved jobs" summary={`${records.length} job${records.length === 1 ? "" : "s"}`} />
+          <label className="mobile-job-select">
+            Job
+            <select value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>
+              {records.map((record) => <option key={record.job_id} value={record.job_id}>{record.company} / {record.title}</option>)}
+            </select>
+          </label>
+          <div className="job-list" role="list">
+            {records.map((record) => (
+              <button
+                className={`job-list-item ${record.job_id === selectedJobId ? "selected" : ""}`}
+                key={record.job_id}
+                onClick={() => setSelectedJobId(record.job_id)}
+              >
+                <span className="job-list-title">{record.title || "Untitled role"}</span>
+                <span className="job-list-company">{record.company || "Unknown company"}</span>
+                <span className="job-list-meta">
+                  <StatusBadge status={normalizeJobStatus(record.status)} label={titleCase(record.status || "new")} />
+                  <span>{jobBlockerCount(record, record.job_id === selectedJobId ? workspace : null)} blockers</span>
+                </span>
+                <span className="job-list-next">{nextWorkspaceAction(record, record.job_id === selectedJobId ? workspace : null)}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div className="job-detail-panel">
+          {loadingWorkspace && <StatusMessage type="info" text={`Loading workspace for ${selectedRecord?.company || "selected job"}...`} />}
+          {!workspace && !loadingWorkspace && <StatusMessage type="info" text="Select a job to load its workflow workspace." />}
+          {workspace && (
+            <>
+              <section className="workflow-overview" aria-label="Selected job workflow">
+                <div>
+                  <p className="eyebrow">Selected job</p>
+                  <h2>{workspace.job.company} / {workspace.job.title}</h2>
+                </div>
+                <WorkflowStepper workspace={workspace} />
+              </section>
+              <JobSnapshot job={workspace.job} />
+              <RequirementsPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
+              <PackagePanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
+              <FillPlanPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
+              <ApplyPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
+            </>
+          )}
+        </div>
+      </div>
     </>
   );
 }
 
 function JobSnapshot({ job }: { job: ApiRecord }) {
   return (
-    <section className="panel">
-      <h2>Job Snapshot</h2>
+    <section className="panel" id="workflow-job">
+      <SectionHeader title="Job Snapshot" summary={job.apply_url ? "Apply URL present" : "Apply URL missing"} />
       <div className="grid">
         <Field label="Location" value={job.location} />
         <Field label="Remote Policy" value={job.remote_policy} />
@@ -608,6 +721,7 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
   const requirements = workspace.requirements;
   const [form, setForm] = useState<ApiRecord>(() => requirementsToForm(requirements));
   const [discovering, setDiscovering] = useState(false);
+  const [savingReview, setSavingReview] = useState(false);
   useEffect(() => setForm(requirementsToForm(requirements)), [requirements?.job_id, requirements?.review_status]);
   const buttonLabel = requirements ? "Refresh requirements from apply URL with AI" : "Discover requirements from apply URL with AI";
   const pendingLabel = requirements ? "Refreshing requirements..." : "Discovering requirements...";
@@ -623,13 +737,23 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
 
   async function saveReview(event: FormEvent) {
     event.preventDefault();
-    await action(`/api/jobs/${workspace.job.id}/requirements/review`, "PUT", form, setMessage, reload);
+    await runBusy(setSavingReview, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/requirements/review`, "PUT", form, setMessage, reload);
+    });
   }
 
   return (
-    <section className="panel">
-      <fieldset aria-busy={discovering} className="ai-blocking-surface" disabled={discovering}>
-        <h2>Application Requirements</h2>
+    <section className="panel" id="workflow-requirements">
+      <fieldset aria-busy={discovering || savingReview} className="ai-blocking-surface" disabled={discovering || savingReview}>
+        <SectionHeader
+          title="Application Requirements"
+          summary={requirements ? reviewSummary(requirements.review_status, requirements.confidence) : "Not discovered"}
+        />
+        <div className="badge-row">
+          <StatusBadge status={requirementsStatus(workspace).status} label={requirementsStatus(workspace).labelText} />
+          {requirements?.confidence && <StatusBadge status={requirements.confidence === "low" ? "low-confidence" : "reviewed"} label={`Confidence: ${requirements.confidence}`} />}
+          {requirements?.source_evidence?.length ? <StatusBadge status="ready" label={`${requirements.source_evidence.length} evidence item${requirements.source_evidence.length === 1 ? "" : "s"}`} /> : null}
+        </div>
         {!workspace.job.apply_url && <StatusMessage type="warning" text="Apply URL is missing. Requirements discovery is blocked." />}
         <p className="muted">This action fetches the apply page and uses AI to interpret requirements.</p>
         <div className="actions">
@@ -666,7 +790,15 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
               <label className="check-row"><input type="checkbox" checked={!!form.motivation_required} onChange={(event) => setForm((current) => ({ ...current, motivation_required: event.target.checked }))} />Motivation / cover letter is required</label>
             </div>
             <details><summary>Requirements evidence</summary><List title="Source Evidence" values={requirements.source_evidence} /></details>
-            <div className="actions"><button className="primary">Save requirements review</button></div>
+            <div className="actions">
+              <AiActionButton
+                className="primary"
+                isPending={savingReview}
+                label="Save requirements review"
+                pendingLabel="Saving requirements review..."
+                type="submit"
+              />
+            </div>
           </form>
         )}
       </fieldset>
@@ -679,6 +811,8 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [destination, setDestination] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [savingReview, setSavingReview] = useState(false);
+  const [exporting, setExporting] = useState(false);
   useEffect(() => {
     const next: Record<string, string> = {};
     (packageData?.artifacts || []).forEach((artifact: ApiRecord) => {
@@ -699,10 +833,30 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
     }
   }
 
+  async function saveReview(event: FormEvent) {
+    event.preventDefault();
+    await runBusy(setSavingReview, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", { edits_by_artifact_id: edits }, setMessage, reload);
+    });
+  }
+
+  async function exportCoverLetter() {
+    await runBusy(setExporting, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/package/export-cover-letter`, "POST", { destination_folder: destination }, setMessage, reload);
+    });
+  }
+
   return (
-    <section className="panel">
-      <fieldset aria-busy={generating} className="ai-blocking-surface" disabled={generating}>
-        <h2>Application Package</h2>
+    <section className="panel" id="workflow-package">
+      <fieldset aria-busy={generating || savingReview || exporting} className="ai-blocking-surface" disabled={generating || savingReview || exporting}>
+        <SectionHeader
+          title="Application Package"
+          summary={packageData ? reviewSummary(packageData.status || packageData.review_status) : "Not generated"}
+        />
+        <div className="badge-row">
+          <StatusBadge status={packageStatus(workspace).status} label={packageStatus(workspace).labelText} />
+          {packageData?.status && <StatusBadge status={packageData.status === "approved" ? "reviewed" : "needs-review"} label={`Status: ${titleCase(packageData.status)}`} />}
+        </div>
         <Blockers title="Application package generation is blocked until these prerequisites are complete:" blockers={workspace.package_blockers} />
         <p className="muted">This action uses AI to draft application materials from reviewed data.</p>
         <div className="actions">
@@ -719,7 +873,7 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
         {packageData && (
           <>
             <List title="Selected Experience Units" values={workspace.package_summary?.selected_experience_units || []} />
-            <form onSubmit={(event) => { event.preventDefault(); action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", { edits_by_artifact_id: edits }, setMessage, reload); }}>
+            <form onSubmit={saveReview}>
               {orderArtifacts(packageData.artifacts || []).map((artifact: ApiRecord) => (
                 <details key={artifact.id} open={isCoverLetter(artifact)}>
                   <summary>{artifact.label}</summary>
@@ -729,13 +883,29 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
                   <Traceability metadata={artifact.metadata || {}} />
                 </details>
               ))}
-              <div className="actions"><button className="primary">Save package review</button></div>
+              <div className="actions">
+                <AiActionButton
+                  className="primary"
+                  isPending={savingReview}
+                  label="Save package review"
+                  pendingLabel="Saving package review..."
+                  type="submit"
+                />
+              </div>
             </form>
             {packageData.artifacts?.some(isCoverLetter) && (
-              <div className="panel">
+              <div className="workflow-subsection">
                 <h3>Cover Letter Artifact</h3>
                 <label>Cover letter destination folder<input value={destination} onChange={(event) => setDestination(event.target.value)} /></label>
-                <div className="actions"><button onClick={() => action(`/api/jobs/${workspace.job.id}/package/export-cover-letter`, "POST", { destination_folder: destination }, setMessage, reload)}>Export cover letter PDF</button></div>
+                <div className="actions">
+                  <AiActionButton
+                    className="secondary"
+                    isPending={exporting}
+                    label="Export cover letter PDF"
+                    onClick={exportCoverLetter}
+                    pendingLabel="Exporting cover letter..."
+                  />
+                </div>
               </div>
             )}
           </>
@@ -751,6 +921,7 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
   const [values, setValues] = useState<ApiRecord>({});
   const [uploads, setUploads] = useState<ApiRecord>({});
   const [generating, setGenerating] = useState(false);
+  const [savingReview, setSavingReview] = useState(false);
   useEffect(() => {
     const nextValues: ApiRecord = {};
     const nextUploads: ApiRecord = {};
@@ -775,7 +946,7 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
     }
   }
 
-  function submitReview(event: FormEvent) {
+  async function submitReview(event: FormEvent) {
     event.preventDefault();
     const edited_values: ApiRecord = {};
     const needs_answer_values_by_key: ApiRecord = {};
@@ -785,18 +956,27 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
       if (row.kind === "needs") needs_answer_values_by_key[row.edit_key] = values[row.edit_key] || "";
       if (row.kind === "blocked") blocked_values_by_key[row.edit_key] = values[row.edit_key] || "";
     });
-    action(`/api/jobs/${workspace.job.id}/fill-plan/review`, "PUT", {
-      edited_values,
-      upload_paths_by_key: uploads,
-      needs_answer_values_by_key,
-      blocked_values_by_key
-    }, setMessage, reload);
+    await runBusy(setSavingReview, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/fill-plan/review`, "PUT", {
+        edited_values,
+        upload_paths_by_key: uploads,
+        needs_answer_values_by_key,
+        blocked_values_by_key
+      }, setMessage, reload);
+    });
   }
 
   return (
-    <section className="panel">
-      <fieldset aria-busy={generating} className="ai-blocking-surface" disabled={generating}>
-        <h2>Application Fill Plan</h2>
+    <section className="panel" id="workflow-fill-plan">
+      <fieldset aria-busy={generating || savingReview} className="ai-blocking-surface" disabled={generating || savingReview}>
+        <SectionHeader
+          title="Application Fill Plan"
+          summary={fillPlan ? reviewSummary(fillPlan.review_status) : "Not generated"}
+        />
+        <div className="badge-row">
+          <StatusBadge status={fillPlanStatus(workspace).status} label={fillPlanStatus(workspace).labelText} />
+          {review && <StatusBadge status="ready" label={`${(review.required_rows || []).length} required fields`} />}
+        </div>
         <Blockers title="Fill plan generation is blocked until these steps are complete:" blockers={workspace.fill_plan_generation_blockers} />
         <div className="actions">
           <AiActionButton
@@ -812,18 +992,26 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
         {fillPlan && review && (
           <form onSubmit={submitReview}>
             <p className="muted">Prefilled values are ready to save. Edit only the fields that need a correction before Browser Use receives them.</p>
-            <div className="panel">
+            <div className="workflow-subsection">
               <h3>Required fields</h3>
               {!review.required_rows?.length && <p className="muted">No required fields.</p>}
               {review.required_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}
             </div>
-            <div className="panel">
+            <div className="workflow-subsection">
               <h3>Uploads Sent To Browser</h3>
               {!review.upload_rows?.length && <p className="muted">No uploads sent to browser.</p>}
               {review.upload_rows?.map((row: ApiRecord) => <label key={row.edit_key}>{row.label} file path<input value={uploads[row.edit_key] || ""} onChange={(event) => setUploads((current) => ({ ...current, [row.edit_key]: event.target.value }))} /></label>)}
             </div>
             <details><summary>Optional or unclear</summary>{!review.optional_rows?.length && <p className="muted">No optional or unclear fields.</p>}{review.optional_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}</details>
-            <div className="actions"><button className="primary">Save fill plan review</button></div>
+            <div className="actions">
+              <AiActionButton
+                className="primary"
+                isPending={savingReview}
+                label="Save fill plan review"
+                pendingLabel="Saving fill plan review..."
+                type="submit"
+              />
+            </div>
           </form>
         )}
       </fieldset>
@@ -833,6 +1021,8 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
 
 function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
   const [applying, setApplying] = useState(false);
+  const [stoppingSession, setStoppingSession] = useState(false);
+  const [killingProcesses, setKillingProcesses] = useState(false);
   const [applyMessage, setApplyMessage] = useState<ApiRecord | null>(null);
   const staleRunnerCount =
     Math.max(
@@ -862,10 +1052,29 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
     }
   }
 
+  async function stopBrowserSession() {
+    await runBusy(setStoppingSession, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/browser/stop-session`, "POST", {}, setMessage, reload);
+    });
+  }
+
+  async function killBrowserProcesses() {
+    await runBusy(setKillingProcesses, setMessage, async () => {
+      await action(`/api/jobs/${workspace.job.id}/browser/kill-all`, "POST", {}, setMessage, reload);
+    });
+  }
+
   return (
-    <section className="panel">
-      <fieldset aria-busy={applying} className="ai-blocking-surface" disabled={applying}>
-        <h2>Apply to position</h2>
+    <section className="panel" id="workflow-apply">
+      <fieldset aria-busy={applying || stoppingSession || killingProcesses} className="ai-blocking-surface" disabled={applying || stoppingSession || killingProcesses}>
+        <SectionHeader
+          title="Apply to position"
+          summary={workspace.apply_blockers?.length ? "Blocked" : "Ready"}
+        />
+        <div className="badge-row">
+          <StatusBadge status={applyStatus(workspace).status} label={applyStatus(workspace).labelText} />
+          {workspace.active_browser_use_session ? <StatusBadge status="needs-review" label="Browser session active" /> : <StatusBadge status="ready" label="Browser idle" />}
+        </div>
         <h3>Apply Assistance</h3>
         <Blockers title="Apply assistance is blocked until these review steps are complete:" blockers={workspace.apply_blockers} />
         <StatusMessage type={applyMessage?.type} text={applyMessage?.text} />
@@ -879,8 +1088,20 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
           <summary>Browser process controls</summary>
           {workspace.active_browser_use_session ? <StatusMessage type="info" text={`Browser Use session running: PID ${workspace.active_browser_use_session.pid} for ${workspace.active_browser_use_session.url}`} /> : <p className="muted">Browser Use session status: idle.</p>}
           <div className="actions">
-            <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/stop-session`, "POST", {}, setMessage, reload)}>Stop Browser Use Session</button>
-            <button onClick={() => action(`/api/jobs/${workspace.job.id}/browser/kill-all`, "POST", {}, setMessage, reload)}>Kill All Browser Use Processes</button>
+            <AiActionButton
+              className="secondary"
+              isPending={stoppingSession}
+              label="Stop Browser Use Session"
+              onClick={stopBrowserSession}
+              pendingLabel="Stopping Browser Use Session..."
+            />
+            <AiActionButton
+              className="danger"
+              isPending={killingProcesses}
+              label="Kill All Browser Use Processes"
+              onClick={killBrowserProcesses}
+              pendingLabel="Killing Browser Use Processes..."
+            />
           </div>
         </details>
         <p className="muted">This action opens the reviewed apply URL and asks Browser Use to execute the reviewed application fill plan.</p>
@@ -902,16 +1123,41 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 function TrackerPage() {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [message, setMessage] = useState<ApiRecord | null>(null);
+  const [statusFilter, setStatusFilter] = useState("All");
   useEffect(() => {
     apiRequest<ApiRecord>("/api/tracker")
       .then((payload) => setRecords(payload.records || []))
       .catch((error) => setMessage({ type: "error", text: error.message }));
   }, []);
+  const filteredRecords = records.filter((record) => {
+    if (statusFilter === "All") return true;
+    return normalizeTrackerStatus(record.status) === statusFilter;
+  });
   return (
     <>
       <h1>Tracker</h1>
       <StatusMessage type={message?.type} text={message?.text} />
-      <DataTable records={records} />
+      {!records.length ? (
+        <section className="empty-state">
+          <h2>No tracker records yet.</h2>
+          <p className="muted">Jobs appear in the tracker after intake creates an application workspace.</p>
+        </section>
+      ) : (
+        <>
+          <div className="filter-bar" aria-label="Tracker status filters">
+            {["All", "New", "In progress", "Blocked", "Ready", "Applied"].map((status) => (
+              <button
+                className={`filter-button ${statusFilter === status ? "active" : ""}`}
+                key={status}
+                onClick={() => setStatusFilter(status)}
+              >
+                {status}
+              </button>
+            ))}
+          </div>
+          <TrackerTable records={filteredRecords} />
+        </>
+      )}
     </>
   );
 }
@@ -920,12 +1166,14 @@ function AgentKarenPage({
   agent,
   records,
   selectedJobId,
-  status
+  status,
+  onActionShortcut
 }: {
   agent: ApiRecord | null;
   records: ApiRecord[];
   selectedJobId: string;
   status: ApiRecord | null;
+  onActionShortcut: (actionName: string) => void;
 }) {
   const state = agent?.state || {};
   const selectedRecord = records.find((record) => record.job_id === selectedJobId);
@@ -952,7 +1200,21 @@ function AgentKarenPage({
         <Blockers title="Workflow blockers" blockers={state.blockers} />
         <Blockers title="Last workflow error" blockers={state.errors} />
         <details><summary>Workflow timeline</summary>{Object.entries(state.artifacts_present || {}).map(([label, present]) => <p key={label}>- {titleCase(label)}: {present ? "ready" : "missing"}</p>)}</details>
-        {!!state.next_allowed_actions?.length && <><h3>Next Actions</h3>{state.next_allowed_actions.map((actionName: string) => <p className="muted" key={actionName}>{agent?.action_labels?.[actionName] || titleCase(actionName)}</p>)}</>}
+        {!!state.next_allowed_actions?.length && (
+          <>
+            <h3>Next Actions</h3>
+            <div className="action-shortcuts">
+              {state.next_allowed_actions.map((actionName: string) => (
+                <KarenActionShortcut
+                  actionName={actionName}
+                  key={actionName}
+                  label={agent?.action_labels?.[actionName] || titleCase(actionName)}
+                  onActionShortcut={onActionShortcut}
+                />
+              ))}
+            </div>
+          </>
+        )}
       </section>
     </>
   );
@@ -966,6 +1228,9 @@ function KarenChatPanel({
   status,
   width,
   isSending,
+  isMobileOpen,
+  onMobileToggle,
+  onActionShortcut,
   onMessageChange,
   onSelectJob,
   onWidthChange,
@@ -979,6 +1244,9 @@ function KarenChatPanel({
   status: ApiRecord | null;
   width: number;
   isSending: boolean;
+  isMobileOpen: boolean;
+  onMobileToggle: () => void;
+  onActionShortcut: (actionName: string) => void;
   onMessageChange: (message: string) => void;
   onSelectJob: (jobId: string) => void;
   onWidthChange: (width: number) => void;
@@ -1032,7 +1300,10 @@ function KarenChatPanel({
   }
 
   return (
-    <aside className="karen-chat-panel" aria-label="Karen chat">
+    <aside className={`karen-chat-panel ${isMobileOpen ? "mobile-open" : "mobile-closed"}`} aria-label="Karen chat">
+      <button className="karen-mobile-toggle" onClick={onMobileToggle} type="button">
+        {isMobileOpen ? "Close Karen" : "Open Karen"}
+      </button>
       <div
         aria-label="Resize Karen panel"
         aria-orientation="vertical"
@@ -1083,6 +1354,21 @@ function KarenChatPanel({
             </div>
           </div>
           <div className="quick-prompts" aria-label="Karen quick prompts">
+            {nextActions.map((actionName: string) => {
+              const target = karenActionTarget(actionName);
+              if (!target) return null;
+              return (
+                <button
+                  className="quick-prompt action"
+                  disabled={isSending || !records.length}
+                  key={actionName}
+                  onClick={() => onActionShortcut(actionName)}
+                  type="button"
+                >
+                  {agent?.action_labels?.[actionName] || titleCase(actionName)}
+                </button>
+              );
+            })}
             {quickPrompts.map((prompt) => (
               <button
                 className="quick-prompt"
@@ -1113,9 +1399,12 @@ function KarenChatPanel({
               {!!item.actions?.length && (
                 <div className="chat-action-badges" aria-label="Message actions">
                   {item.actions.map((actionName: string) => (
-                    <span className="action-badge" key={actionName}>
-                      {agent?.action_labels?.[actionName] || titleCase(actionName)}
-                    </span>
+                    <KarenActionShortcut
+                      actionName={actionName}
+                      key={actionName}
+                      label={agent?.action_labels?.[actionName] || titleCase(actionName)}
+                      onActionShortcut={onActionShortcut}
+                    />
                   ))}
                 </div>
               )}
@@ -1187,6 +1476,96 @@ function AiActionButton({
         {pendingLabel}
       </span>
     </button>
+  );
+}
+
+function SectionHeader({ title, summary }: { title: string; summary?: string }) {
+  return (
+    <div className="section-header">
+      <h2>{title}</h2>
+      {summary && <span>{summary}</span>}
+    </div>
+  );
+}
+
+function StatusBadge({ status, label }: { status: string; label?: string }) {
+  return <span className={`status-badge ${status}`}>{label || titleCase(status)}</span>;
+}
+
+function WorkflowStepper({ workspace }: { workspace: ApiRecord }) {
+  const steps = [
+    { id: "workflow-profile", label: "Profile", ...profileStatus(workspace) },
+    { id: "workflow-job", label: "Job", ...jobStatus(workspace) },
+    { id: "workflow-requirements", label: "Requirements", ...requirementsStatus(workspace) },
+    { id: "workflow-package", label: "Package", ...packageStatus(workspace) },
+    { id: "workflow-fill-plan", label: "Fill plan", ...fillPlanStatus(workspace) },
+    { id: "workflow-apply", label: "Apply", ...applyStatus(workspace) }
+  ];
+  return (
+    <ol className="workflow-stepper" aria-label="Selected job workflow steps">
+      {steps.map((step) => (
+        <li className={`workflow-step ${step.status}`} key={step.label}>
+          <a href={`#${step.id}`}>
+            <span>{step.label}</span>
+            <StatusBadge status={step.status} label={step.labelText} />
+          </a>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function KarenActionShortcut({
+  actionName,
+  label,
+  onActionShortcut
+}: {
+  actionName: string;
+  label: string;
+  onActionShortcut: (actionName: string) => void;
+}) {
+  if (!karenActionTarget(actionName)) {
+    return <span className="action-badge">{label}</span>;
+  }
+  return (
+    <button className="action-badge button" onClick={() => onActionShortcut(actionName)} type="button">
+      {label}
+    </button>
+  );
+}
+
+function TrackerTable({ records }: { records: ApiRecord[] }) {
+  if (!records.length) return <StatusMessage type="info" text="No tracker records match this filter." />;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {["Company", "Title", "Status", "Next action", "Blockers", "Last updated", "Links"].map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {records.map((record, index) => (
+            <tr key={record.job_id || index}>
+              <td>{record.company || "Unknown company"}</td>
+              <td>{record.title || "Untitled role"}</td>
+              <td><StatusBadge status={normalizeJobStatus(record.status)} label={titleCase(record.status || "new")} /></td>
+              <td>{nextWorkspaceAction(record, null)}</td>
+              <td>{jobBlockerCount(record, null)}</td>
+              <td>{formatDateTime(record.last_updated || record.updated_at || record.created_at)}</td>
+              <td>
+                <div className="link-list">
+                  {record.source_url && <a href={record.source_url}>Source</a>}
+                  {record.apply_url && <a href={record.apply_url}>Apply</a>}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -1277,22 +1656,22 @@ function Traceability({ metadata }: { metadata: ApiRecord }) {
 }
 
 async function saveProfileDraft(path: string, profile: ApiRecord, setProfile: (profile: ApiRecord) => void, setMessage: (message: ApiRecord | null) => void) {
-  await runBusy(() => undefined, setMessage, async () => {
-    const result = await apiRequest<ApiRecord>(path, {
-      method: "PUT",
-      body: JSON.stringify({ profile })
-    });
-    setProfile(result.profile);
-    setMessage({ type: "success", text: result.message || `Saved to ${result.saved_path}.` });
+  const result = await apiRequest<ApiRecord>(path, {
+    method: "PUT",
+    body: JSON.stringify({ profile })
   });
+  setProfile(result.profile);
+  setMessage({ type: "success", text: result.message || `Saved to ${result.saved_path}.` });
 }
 
 async function action(path: string, method: string, body: ApiRecord, setMessage: (message: ApiRecord | null) => void, reload: () => void) {
-  await runBusy(() => undefined, setMessage, async () => {
+  try {
     const result = await apiRequest<ApiRecord>(path, { method, body: JSON.stringify(body) });
     setMessage({ type: "success", text: result.message || "Saved." });
     reload();
-  });
+  } catch (error) {
+    setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 async function runBusy(setBusy: (value: boolean) => void, setMessage: (message: ApiRecord | null) => void, work: () => Promise<void>) {
@@ -1427,6 +1806,120 @@ function formatTimestamp(value: string) {
 function nextActionLabel(actions: string[] = [], labels: ApiRecord = {}) {
   if (!actions.length) return "None";
   return labels[actions[0]] || titleCase(actions[0]);
+}
+
+function profileStatus(workspace: ApiRecord) {
+  const blockers = allWorkspaceBlockers(workspace).filter((item) => /profile|candidate|cv/i.test(item));
+  if (blockers.length) return { status: "blocked", labelText: "Blocked" };
+  return { status: "complete", labelText: "Complete" };
+}
+
+function jobStatus(workspace: ApiRecord) {
+  if (!workspace.job) return { status: "missing", labelText: "Missing" };
+  if (!workspace.job.apply_url) return { status: "needs-review", labelText: "Needs review" };
+  return { status: "complete", labelText: "Complete" };
+}
+
+function requirementsStatus(workspace: ApiRecord) {
+  const requirements = workspace.requirements;
+  if (!requirements) return { status: "missing", labelText: "Missing" };
+  if (requirements.blocked_reason) return { status: "blocked", labelText: "Blocked" };
+  if (requirements.confidence === "low") return { status: "low-confidence", labelText: "Low confidence" };
+  if (requirements.review_status === "reviewed") return { status: "complete", labelText: "Complete" };
+  return { status: "needs-review", labelText: "Needs review" };
+}
+
+function packageStatus(workspace: ApiRecord) {
+  const blockers = workspace.package_blockers || [];
+  if (blockers.length) return { status: "blocked", labelText: "Blocked" };
+  if (!workspace.package) return { status: "missing", labelText: "Missing" };
+  if (["approved", "reviewed", "complete"].includes(workspace.package.status || workspace.package.review_status)) {
+    return { status: "complete", labelText: "Complete" };
+  }
+  return { status: "needs-review", labelText: "Needs review" };
+}
+
+function fillPlanStatus(workspace: ApiRecord) {
+  const blockers = workspace.fill_plan_generation_blockers || [];
+  if (blockers.length) return { status: "blocked", labelText: "Blocked" };
+  if (!workspace.fill_plan) return { status: "missing", labelText: "Missing" };
+  if (workspace.fill_plan.review_status === "reviewed") return { status: "complete", labelText: "Complete" };
+  return { status: "needs-review", labelText: "Needs review" };
+}
+
+function applyStatus(workspace: ApiRecord) {
+  if (workspace.apply_blockers?.length) return { status: "blocked", labelText: "Blocked" };
+  if (workspace.job?.status === "applied") return { status: "complete", labelText: "Complete" };
+  return { status: "ready", labelText: "Ready" };
+}
+
+function reviewSummary(status?: string, confidence?: string) {
+  const statusText = status ? titleCase(status) : "Needs review";
+  return confidence ? `${statusText}, ${confidence} confidence` : statusText;
+}
+
+function allWorkspaceBlockers(workspace: ApiRecord) {
+  return [
+    ...(workspace.package_blockers || []),
+    ...(workspace.fill_plan_generation_blockers || []),
+    ...(workspace.apply_blockers || [])
+  ].filter(Boolean);
+}
+
+function jobBlockerCount(record: ApiRecord, workspace: ApiRecord | null) {
+  if (workspace) return allWorkspaceBlockers(workspace).length;
+  return Number(record.blocker_count ?? record.blockers?.length ?? 0);
+}
+
+function nextWorkspaceAction(record: ApiRecord, workspace: ApiRecord | null) {
+  if (workspace) {
+    if (!workspace.requirements) return "Discover requirements";
+    if (workspace.package_blockers?.length) return "Resolve package blockers";
+    if (!workspace.package) return "Generate package";
+    if (workspace.fill_plan_generation_blockers?.length) return "Resolve fill plan blockers";
+    if (!workspace.fill_plan) return "Generate fill plan";
+    if (workspace.apply_blockers?.length) return "Resolve apply blockers";
+    return "Apply with AI";
+  }
+  const allowedAction = nextActionLabel(record.next_allowed_actions || [], record.action_labels);
+  return record.next_action || record.next_action_label || (allowedAction === "None" ? "Review workflow" : allowedAction);
+}
+
+function normalizeJobStatus(status?: string) {
+  const normalized = String(status || "new").toLowerCase().replace(/\s+/g, "_");
+  if (normalized.includes("applied")) return "complete";
+  if (normalized.includes("ready")) return "ready";
+  if (normalized.includes("block")) return "blocked";
+  if (normalized.includes("progress") || normalized.includes("review")) return "needs-review";
+  return "missing";
+}
+
+function normalizeTrackerStatus(status?: string) {
+  const normalized = String(status || "new").toLowerCase().replace(/[_-]+/g, " ");
+  if (normalized.includes("applied")) return "Applied";
+  if (normalized.includes("ready")) return "Ready";
+  if (normalized.includes("block")) return "Blocked";
+  if (normalized.includes("progress") || normalized.includes("review")) return "In progress";
+  return "New";
+}
+
+function karenActionTarget(actionName: string) {
+  const normalized = actionName.toLowerCase();
+  if (normalized.includes("profile")) return { page: "Candidate Profile", sectionId: "workflow-profile" };
+  if (normalized.includes("intake") || normalized.includes("job")) return { page: "Job Intake" };
+  if (normalized.includes("requirement")) return { page: "Jobs", sectionId: "workflow-requirements" };
+  if (normalized.includes("package") || normalized.includes("cover")) return { page: "Jobs", sectionId: "workflow-package" };
+  if (normalized.includes("fill")) return { page: "Jobs", sectionId: "workflow-fill-plan" };
+  if (normalized.includes("apply") || normalized.includes("browser")) return { page: "Jobs", sectionId: "workflow-apply" };
+  if (normalized.includes("track")) return { page: "Tracker" };
+  return null;
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "Not tracked";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
 
 function titleCase(value: string) {

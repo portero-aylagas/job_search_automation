@@ -13,7 +13,7 @@ test("top-level navigation renders without a backend server", async ({ page }) =
   await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
   for (const name of ["Job Intake", "Jobs", "Tracker", "Agent Karen"]) {
     await page.getByRole("button", { name }).click();
-    await expect(page.getByRole("heading", { name })).toBeVisible();
+    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
     await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
   }
@@ -39,7 +39,7 @@ test("Job Intake happy path extracts, reviews, and saves a job", async ({ page }
   await page.getByLabel("Department").fill("Reliability");
   await page.getByRole("button", { name: "Add To Application Workflow" }).click();
 
-  await expect(page.getByRole("heading", { name: "Jobs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Jobs", exact: true })).toBeVisible();
   expect(saveBodies).toHaveLength(1);
   expect((saveBodies[0] as any).dynamic_fields[0].value).toBe("Reliability");
 });
@@ -51,20 +51,37 @@ test("Jobs workspace shows review gates and blocks Apply until ready", async ({ 
   });
   await page.route("http://127.0.0.1:8001/api/jobs/job-1/requirements/discover", async (route) => {
     workspaceReady = true;
+    await delay(150);
     await route.fulfill({ json: { message: "Requirements saved." } });
   });
 
   await page.goto("/");
   await page.getByRole("button", { name: "Jobs" }).click();
 
+  await expect(page.getByRole("list", { name: "Selected job workflow steps" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Example Co / Automation Engineer" })).toBeVisible();
   await expect(page.getByText("Discover application requirements for this apply URL.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Apply to job with AI" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Discover requirements from apply URL with AI" }).click();
 
+  await expect(page.getByRole("button", { name: "Discovering requirements..." })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Refresh requirements from apply URL with AI" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Regenerate application package with AI" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled();
+});
+
+test("mobile viewport collapses Karen into a bottom drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const karenPanel = page.getByRole("complementary", { name: "Karen chat" });
+  await expect(karenPanel).toHaveClass(/mobile-closed/);
+  await expect(page.getByRole("button", { name: "Open Karen" })).toBeVisible();
+  await page.getByRole("button", { name: "Open Karen" }).click();
+
+  await expect(karenPanel).toHaveClass(/mobile-open/);
+  await expect(page.getByRole("button", { name: "Close Karen" })).toBeVisible();
 });
 
 async function installApiMocks(page: Page) {
@@ -72,6 +89,10 @@ async function installApiMocks(page: Page) {
     const url = route.request().url();
     await route.fulfill({ json: responseFor(url, route) });
   });
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function responseFor(url: string, route: Route) {
