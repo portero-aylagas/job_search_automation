@@ -2,9 +2,7 @@
 
 Job Search Automation is a controlled human-in-the-loop job application workflow.
 The current UI is a React + TypeScript + Vite frontend backed by a FastAPI
-adapter over the existing Python workflow code. The original Streamlit UI is
-kept as a legacy/parity reference while the React UI becomes the primary
-runtime surface.
+adapter over the existing Python workflow code.
 
 The core feature is:
 
@@ -52,8 +50,8 @@ application tracking
   inspection/extraction slice
 - historical deterministic candidate/job match analysis backend, disabled from
   the current known-job apply workflow
-- Agent Karen runtime assistant tab with persisted chat transcripts and audit
-  events, using `assets/karen.png` in the page and browser tab icon
+- Persistent Agent Karen side chat with persisted chat transcripts and audit
+  events, using `assets/karen.png` in the panel, dashboard, and browser tab icon
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -111,7 +109,6 @@ job_search_automation/
 ├── package.json
 ├── vite.config.ts
 ├── index.html
-├── app.py
 ├── frontend/
 │   └── src/
 │       ├── App.tsx
@@ -133,7 +130,7 @@ job_search_automation/
 │   ├── application_requirements.py
 │   ├── application_fill_plan.py
 │   ├── application_package.py
-│   ├── agent_ui.py
+│   ├── job_workspace.py
 │   ├── agents/
 │   │   └── karen/
 │   │       ├── agent_card.yaml
@@ -197,6 +194,10 @@ forms remain structured review forms rather than raw JSON editors.
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
+
+The repository test strategy is documented in `docs/test_strategy.md`. It
+defines the intended Python, FastAPI, React, and Playwright test layers, plus
+the mocking boundaries for AI, Browser Use, and external network behavior.
 
 AI prompt text is stored in `src/prompts.yaml` and loaded through
 `src/prompt_templates.py`; Karen's runtime assistant prompts live with her
@@ -311,12 +312,18 @@ Historical analysis output used `data/runtime/jobs/<job_id>/analysis.json`.
 
 ### Karen Runtime Assistant
 
-Karen is the runtime product assistant inside the app. She appears in the
-top-level `Agent Karen` tab, not in a sidebar or persistent cross-page chat.
-The tab shows Karen's portrait from `assets/karen.png`, the selected job,
-workflow timeline, blockers, pending gate, static next-action guidance, and the
-chat transcript. Karen is separate from `AGENTS.md`, which remains
-development-agent guidance.
+Karen is the runtime product assistant inside the app. Her chat appears as a
+persistent app-level side panel across `Candidate Profile`, `Job Intake`,
+`Jobs`, `Tracker`, and `Agent Karen`. The side panel owns the selected job,
+pending-gate hint, transcript, and compact `Ask Karen` composer. The panel uses
+a stable viewport-relative layout: Karen context, job selection, and pending
+gate stay at the top, the transcript scrolls in the middle and auto-scrolls to
+new replies, and the icon-based message composer remains at the bottom. Its
+width is adjustable from the divider between the page and chat panel. The
+top-level `Agent Karen` tab remains as a dashboard-only page showing
+Karen's portrait from `assets/karen.png`, selected-job workflow status,
+blockers, pending gate, timeline, and static next-action guidance. Karen is
+separate from `AGENTS.md`, which remains development-agent guidance.
 
 Karen transcripts are stored in
 `data/runtime/agent_sessions/<session_id>/chat.jsonl`. Job-scoped copies are
@@ -327,9 +334,9 @@ affected job directory.
 Karen can explain the app and her role, inspect the current workflow state,
 suggest next steps, route users to the right page, and process safe draft/local
 workflow requests after explicit chat intent through the backend policy layer.
-The current Streamlit Agent Karen tab displays next actions as guidance rather
-than direct workflow buttons. She does not duplicate Job Intake or the detailed
-Jobs review forms.
+The Agent Karen dashboard displays next actions as guidance rather than direct
+workflow buttons. She does not duplicate Job Intake or the detailed Jobs review
+forms.
 
 For a selected saved job with a valid `apply_url`, Karen's apply-oriented next
 step is application requirements discovery. She does not propose match analysis
@@ -421,8 +428,8 @@ The top navigation includes a `Jobs` page. It lists opportunities from the track
 opens a per-job workspace. The current version shows saved Job Intake data from
 `data/runtime/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
 summary, requirements, responsibilities, nice-to-have skills, and dynamic
-extracted details. Karen remains available from the separate `Agent Karen` tab
-with the selected job context.
+extracted details. Karen's selected-job context remains available in the
+persistent side chat and the `Agent Karen` dashboard.
 
 ---
 
@@ -461,6 +468,20 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+Install frontend and browser-test dependencies from the repository root:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Python dependencies are tracked in `requirements.txt`. Frontend, Vitest, and
+Playwright test-runner dependencies are tracked in `package.json` and
+`package-lock.json`; do not add Node packages to `requirements.txt`.
+
+If Playwright reports missing Linux system dependencies for browser tests, run
+`npx playwright install --with-deps chromium`.
 
 ### Browser Use Setup
 
@@ -522,6 +543,7 @@ Notes:
   second checkbox verification pass before upload.
 - Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
   runtime setup described here.
+
 ---
 
 ## Run
@@ -531,7 +553,7 @@ Notes:
 Start the FastAPI backend in one terminal:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Start the Vite frontend in another terminal:
@@ -551,24 +573,28 @@ Override this with `VITE_API_BASE_URL` if the API runs elsewhere. A fresh local
 state is valid: when `data/candidate_profile.json` and `data/runtime/` are
 missing, the API returns an empty draft candidate profile.
 
-### Legacy Streamlit UI
-
-```bash
-PATH="$PWD/.conda/bin:$PATH" streamlit run app.py
-```
-
----
-
 ## Verification
 
 ```bash
-make verify
+PATH="$PWD/.conda/bin:$PATH" make verify
 ```
 
 `make verify` runs Ruff linting, including public docstring checks for
 application code, Python compile checks, the pytest suite, frontend typecheck,
-and frontend production build. The command is local and does not require live
-API keys.
+Vitest component tests, frontend production build, and Playwright browser smoke
+tests. The browser smoke tests start Vite and mock backend API routes; they do
+not require a live FastAPI server, live AI services, Browser Use session, or API
+keys.
+
+Verification writes local generated reports to `reports/`, `playwright-report/`,
+and `test-results/`. These paths are ignored by git. In GitHub Actions, they are
+uploaded as the `test-reports` artifact. On pushes to `main`, the latest
+Playwright HTML report is also published to GitHub Pages and linked from the
+`publish-playwright-report` job summary.
+
+If you are using a standard virtual environment instead of the repository-local
+`.conda` environment, activate it first and run `make verify` from the
+repository root.
 
 To reset local private/runtime state while keeping checked-in templates:
 

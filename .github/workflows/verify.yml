@@ -8,6 +8,15 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -21,10 +30,103 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m venv .conda
+          ./.conda/bin/python -m pip install --upgrade pip
+          ./.conda/bin/python -m pip install -r requirements.txt
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
 
       - name: Run verification
-        run: make verify
+        run: PATH="$PWD/.conda/bin:$PATH" make verify
+
+      - name: Upload test reports and browser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          if-no-files-found: ignore
+          retention-days: 30
+          path: |
+            reports/
+            playwright-report/
+            test-results/
+
+      - name: Add verification summary
+        if: always()
+        run: |
+          {
+            echo "## Verification Reports"
+            echo
+            echo "- Downloadable artifact: \`test-reports\`"
+            echo "- Pytest JUnit: \`reports/pytest.xml\`"
+            echo "- Vitest JUnit: \`reports/vitest.xml\`"
+            echo "- Playwright artifact report: \`playwright-report/index.html\`"
+            echo "- Direct Playwright HTML report: published by the \`publish-playwright-report\` job for pushes to \`main\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-playwright-report:
+    needs: verify
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Download test reports artifact
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: test-reports
+          path: downloaded-test-reports
+
+      - name: Prepare Playwright report for GitHub Pages
+        run: |
+          mkdir -p pages-playwright-report
+          if [ -f downloaded-test-reports/playwright-report/index.html ]; then
+            cp -R downloaded-test-reports/playwright-report/. pages-playwright-report/
+          else
+            printf '%s\n' \
+              '<!doctype html>' \
+              '<html lang="en">' \
+              '  <head><meta charset="utf-8"><title>No Playwright Report</title></head>' \
+              '  <body><h1>No Playwright report was generated for this run.</h1></body>' \
+              '</html>' \
+              > pages-playwright-report/index.html
+          fi
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Playwright report to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-playwright-report
+
+      - name: Deploy Playwright report to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Add Playwright report summary
+        env:
+          PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          {
+            echo "## Published Playwright Report"
+            echo
+            echo "- Latest Playwright HTML report: $PAGES_URL"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -43,11 +43,12 @@ Do not start new feature phases with web search, browser automation, or external
   `analysis.json` files are ignored by normal navigation, Karen, package
   generation, and tracker progression.
 - Karen is implemented as the runtime product assistant for the current
-  human-gated workflow. She appears in the top-level `Agent Karen` tab with a
-  portrait asset, chat transcript, selected-job workflow status, static
-  next-action guidance, persisted session transcripts, job-scoped copies, and
-  structured event logs. She stops at requirements, package, fill-plan, and
-  Browser Use launch gates.
+  human-gated workflow. Her chat now appears as a persistent app-level side
+  panel with selected-job context, pending-gate hints, persisted session
+  transcripts, job-scoped copies, and structured event logs. The top-level
+  `Agent Karen` tab remains as a dashboard for workflow status, blockers,
+  timeline, and static next-action guidance. She stops at requirements,
+  package, fill-plan, and Browser Use launch gates.
 - The primary UI has been migrated from Streamlit to React + TypeScript + Vite
   with a thin FastAPI adapter over the existing Python workflow functions. The
   first React version is a parity port: it preserves top-level navigation,
@@ -99,7 +100,8 @@ Create the minimum runnable application structure.
 ### Create
 
 ```text
-app.py
+frontend/src/App.tsx
+src/api.py
 src/__init__.py
 src/schemas.py
 src/storage.py
@@ -117,8 +119,8 @@ tests/
 - sample experience units
 - sample job listing
 - sample tracker records
-- basic Streamlit app
-- app navigation
+- FastAPI app
+- React app navigation
 - Candidate Profile page
 - Tracker page
 
@@ -135,7 +137,8 @@ tests/
 - app runs with:
 
 ```bash
-streamlit run app.py
+uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+npm run frontend:dev
 ```
 
 - sample profile is visible
@@ -651,9 +654,13 @@ job_search_automation/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── requirements.txt
-├── app.py
+├── package.json
+├── vite.config.ts
+├── index.html
+├── frontend/
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
@@ -697,7 +704,8 @@ job_search_automation/
 Initial:
 
 ```text
-streamlit
+fastapi
+uvicorn
 pydantic
 python-dotenv
 pytest
@@ -743,7 +751,7 @@ After each phase:
 
 ```bash
 pytest
-streamlit run app.py
+npm run frontend:typecheck
 git add .
 git commit -m "Implement phase X"
 ```

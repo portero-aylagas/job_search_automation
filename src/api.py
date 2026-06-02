@@ -76,7 +76,7 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.job_intake import create_job_listing, persist_job_listing
-from src.job_workspace_ui import (
+from src.job_workspace import (
     apply_application_package_review_edits,
     apply_application_requirements_review_edits,
     build_application_package_summary,
