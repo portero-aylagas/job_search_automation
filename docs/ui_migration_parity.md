@@ -26,7 +26,6 @@ platform parity, not product redesign.
 | Save CV review changes | `Save CV review changes` local review action | Label preserved. |
 | 4. Optional job-search preferences | Structured editable preferences form | Target roles, locations, remote preference, employment type, career level, availability, salary range, and EU work authorization preserved. |
 | Save manual preferences | `Save manual preferences` local review action | Label preserved. |
-| Save profile | `Save profile` API action | Final save still validates required fields and blocks on missing data. |
 
 ## Job Intake
 
