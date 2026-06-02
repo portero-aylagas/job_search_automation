@@ -22,7 +22,7 @@ from src.app_workflow import (
 from src.application_fill_plan import load_application_fill_plan
 from src.application_package import load_application_package
 from src.candidate_profile import validate_candidate_profile
-from src.tracker_status import tracker_status_label
+from src.tracker_status import purge_job_data, tracker_status_label
 
 AGENT_PAGE_NAME = "Agent Karen"
 PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME, "Agent")
@@ -113,6 +113,12 @@ WORKFLOW_TOOLS = {
         permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
         description="Check whether apply assistance is ready to launch from Jobs.",
         workflow_action="prepare_apply_assistance",
+        needs_job=True,
+    ),
+    "delete_job_data": KarenToolDefinition(
+        name="delete_job_data",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Permanently delete one selected job's local data.",
         needs_job=True,
     ),
 }
@@ -290,7 +296,43 @@ def execute_karen_tool(
             dependencies=dependencies,
         )
 
+    if definition.name == "delete_job_data":
+        return _execute_delete_job_tool(base_dir, definition, active_job_id=active_job_id)
+
     return _execute_read_only_tool(base_dir, context, definition, active_job_id=active_job_id)
+
+
+def _execute_delete_job_tool(
+    base_dir: Path | str,
+    definition: KarenToolDefinition,
+    *,
+    active_job_id: str | None,
+) -> KarenToolResult:
+    if not active_job_id:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_job",
+            message="Select a job before asking Karen to delete job data.",
+            route_hint="Jobs",
+        )
+    tracker_record = next(
+        (record for record in load_jobs_index(base_dir) if record.job_id == active_job_id),
+        None,
+    )
+    if tracker_record is None:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="error",
+            message=f"Karen could not find tracker data for job {active_job_id}.",
+        )
+    purge_job_data(base_dir, active_job_id)
+    label = f"{tracker_record.company} / {tracker_record.title}"
+    return KarenToolResult(
+        tool_name=definition.name,
+        status="executed",
+        message=f"Deleted local data for {label}.",
+        event_details={"deleted_job_id": active_job_id},
+    )
 
 
 def _execute_workflow_tool(

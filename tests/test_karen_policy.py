@@ -39,6 +39,17 @@ def test_karen_policy_requires_explicit_intent_for_local_actions() -> None:
     assert allowed.allowed is True
 
 
+def test_karen_policy_allows_explicit_delete_job_request() -> None:
+    decision = evaluate_karen_tool_request(
+        tool_name="delete_job_data",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Delete this job data now.",
+    )
+
+    assert decision.allowed is True
+
+
 def test_karen_policy_blocks_review_gate_actions_from_chat() -> None:
     decision = evaluate_karen_tool_request(
         tool_name="approve_package",

@@ -287,6 +287,33 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("button", { name: /Data Analyst/ })).toHaveClass("selected");
   });
 
+  it("shows Not interested status wording and separate job management controls", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return {
+          body: {
+            records: [{ ...jobRecord(), status: "rejected_by_user" }],
+            status_options: trackerStatusOptions()
+          }
+        };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      return { body: agentState(1) };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    expect(await screen.findAllByText("Not interested")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Remove from active jobs" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Permanently delete job data" })).toBeInTheDocument();
+  });
+
   it("shows pending feedback while requirements discovery is running", async () => {
     let resolveDiscovery: (value: MockResponse) => void = () => undefined;
     const pendingDiscovery = new Promise<MockResponse>((resolve) => {
@@ -757,6 +784,45 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Closed" }));
 
     expect(screen.getByText("Example Analytics")).toBeInTheDocument();
+    expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
+  });
+
+  it("deletes a job from the tracker after confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const deleteCalls: string[] = [];
+    mockFetch((url, options) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.endsWith("/api/tracker")) {
+        return {
+          body: {
+            records: [jobRecord()],
+            status_options: trackerStatusOptions(),
+            status_filters: trackerStatusFilters()
+          }
+        };
+      }
+      if (url.includes("/api/jobs/job-1") && options?.method === "DELETE") {
+        deleteCalls.push(url);
+        return { body: { message: "Job data permanently deleted." } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete Example Co / Automation Engineer" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Permanently delete local data for Example Co / Automation Engineer?");
+    expect(deleteCalls).toEqual(["http://127.0.0.1:8001/api/jobs/job-1"]);
+    expect(await screen.findByText("Job data permanently deleted.")).toBeInTheDocument();
     expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
   });
 
@@ -1282,7 +1348,7 @@ function trackerStatusOptions() {
     { value: "new", label: "New", badge: "missing", user_editable: true },
     { value: "analyzed", label: "Analyzed", badge: "needs-review", user_editable: false },
     { value: "interesting", label: "Interesting", badge: "needs-review", user_editable: true },
-    { value: "rejected_by_user", label: "Rejected by user", badge: "blocked", user_editable: true },
+    { value: "rejected_by_user", label: "Not interested", badge: "blocked", user_editable: true },
     { value: "application_draft", label: "Application Draft", badge: "needs-review", user_editable: false },
     { value: "ready_to_apply", label: "Ready to Apply", badge: "ready", user_editable: false },
     { value: "agent_assistance_attempted", label: "Agent Assistance Attempted", badge: "needs-review", user_editable: false },
@@ -1305,7 +1371,8 @@ function trackerStatusFilters() {
     { label: "Agent Attempted", statuses: ["agent_assistance_attempted"] },
     { label: "Applied", statuses: ["applied_manually", "applied_with_agent_assistance"] },
     { label: "Interview / Offer", statuses: ["interview", "offer"] },
-    { label: "Closed", statuses: ["rejected_by_user", "rejected", "closed"] }
+    { label: "Closed", statuses: ["rejected", "closed"] },
+    { label: "Not interested", statuses: ["rejected_by_user"] }
   ];
 }
 

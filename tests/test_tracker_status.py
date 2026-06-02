@@ -22,6 +22,14 @@ def test_tracker_status_metadata_covers_every_status_once() -> None:
     assert all(option["badge"] for option in options)
 
 
+def test_rejected_by_user_is_labeled_not_interested() -> None:
+    options = tracker_status_options()
+
+    rejected_by_user = next(option for option in options if option["value"] == "rejected_by_user")
+
+    assert rejected_by_user["label"] == "Not interested"
+
+
 def test_tracker_writes_only_canonical_jobs_index(tmp_path: Path) -> None:
     save_model(tmp_path / "data" / "runtime" / "jobs.json", [_tracker_record()])
 
@@ -64,4 +72,3 @@ def _tracker_record() -> TrackerRecord:
         retrieval_mode="url",
         status="new",
     )
-

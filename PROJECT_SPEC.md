@@ -295,6 +295,10 @@ offer
 closed
 ```
 
+`rejected_by_user` is shown to users as `Not interested`. Use `closed` only when
+the posting is unavailable or no longer accepting applications, and use
+`rejected` only for employer/application outcomes.
+
 The tracker should support:
 
 - filtering by status
@@ -303,6 +307,9 @@ The tracker should support:
 - opening generated application material
 - editing notes
 - updating application state
+- removing jobs from active workflow views without deleting local data
+- permanently deleting one job's local data when the user confirms a destructive
+  privacy cleanup action
 - exporting data
 
 ---
@@ -737,3 +744,5 @@ information prompts.
 - updated_at
 - generated_package_path
 - notes
+- archived_at
+- archive_reason

@@ -254,13 +254,16 @@ def _persist_assistant_node(state: KarenGraphState) -> KarenGraphState:
     intent = state.get("intent")
     tool_result = state.get("tool_result")
     proposed_actions = [intent.proposed_tool] if intent and intent.proposed_tool else []
+    message_job_id = context.selected_job_id
+    if tool_result is not None and tool_result.tool_name == "delete_job_data":
+        message_job_id = None
     append_agent_chat_message(
         state["base_dir"],
         AgentChatMessage(
             session_id=context.session_id,
             role="assistant",
             content=state["assistant_message"],
-            job_id=context.selected_job_id,
+            job_id=message_job_id,
             proposed_actions=proposed_actions,
             executed_action=(
                 tool_result.tool_name

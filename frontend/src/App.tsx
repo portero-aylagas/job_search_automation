@@ -721,6 +721,47 @@ function JobsPage({
     onWorkflowChange(selectedJobId);
   }
 
+  async function reloadJobsAfterRemoval(messageText: string) {
+    const jobsPayload = await apiRequest<ApiRecord>("/api/jobs");
+    const nextRecords = jobsPayload.records || [];
+    setRecords(nextRecords);
+    setStatusOptions(jobsPayload.status_options || []);
+    const nextJobId = nextRecords[0]?.job_id || "";
+    setSelectedJobId(nextJobId);
+    setWorkspace(null);
+    setMessage({ type: "success", text: messageText });
+    onWorkflowChange(nextJobId);
+  }
+
+  async function archiveSelectedJob() {
+    if (!workspace?.job?.id) return;
+    await runBusy((value) => setLoadingWorkspace(value), setMessage, async () => {
+      const result = await apiRequest<ApiRecord>(`/api/jobs/${workspace.job.id}/archive`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      await reloadJobsAfterRemoval(result.message || "Job removed from active jobs.");
+    });
+  }
+
+  async function deleteSelectedJob() {
+    if (!workspace?.job?.id) return;
+    const confirmed = window.confirm(
+      `Permanently delete local data for ${workspace.job.company} / ${workspace.job.title}?`
+    );
+    if (!confirmed) {
+      setMessage({ type: "info", text: "Permanent deletion cancelled." });
+      return;
+    }
+    await runBusy((value) => setLoadingWorkspace(value), setMessage, async () => {
+      const result = await apiRequest<ApiRecord>(`/api/jobs/${workspace.job.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({})
+      });
+      await reloadJobsAfterRemoval(result.message || "Job data permanently deleted.");
+    });
+  }
+
   if (!records.length) {
     return (
       <>
@@ -779,6 +820,12 @@ function JobsPage({
                 </div>
                 <WorkflowStepper workspace={workspace} />
               </section>
+              <JobManagement
+                job={workspace.job}
+                onArchive={archiveSelectedJob}
+                onDelete={deleteSelectedJob}
+                busy={loadingWorkspace}
+              />
               <JobSnapshot job={workspace.job} />
               <RequirementsPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
               <PackagePanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
@@ -807,6 +854,32 @@ function JobSnapshot({ job }: { job: ApiRecord }) {
       {job.description && <><strong>Role Summary</strong><p>{job.description}</p></>}
       <details><summary>Role details</summary><List title="Requirements" values={job.requirements} /><List title="Responsibilities" values={job.responsibilities} /><List title="Nice-to-have Skills" values={job.nice_to_have_skills} /></details>
       <details><summary>Advanced job details</summary><DynamicDetails details={job.job_details || {}} /></details>
+    </section>
+  );
+}
+
+function JobManagement({
+  job,
+  onArchive,
+  onDelete,
+  busy
+}: {
+  job: ApiRecord;
+  onArchive: () => void;
+  onDelete: () => void;
+  busy: boolean;
+}) {
+  return (
+    <section className="panel job-management" aria-label="Job management">
+      <SectionHeader title="Job Management" summary={job.id} />
+      <div className="actions split-actions">
+        <button className="secondary" onClick={onArchive} disabled={busy}>
+          Remove from active jobs
+        </button>
+        <button className="danger" onClick={onDelete} disabled={busy}>
+          Permanently delete job data
+        </button>
+      </div>
     </section>
   );
 }
@@ -1258,6 +1331,26 @@ function TrackerPage({
     }
   }
 
+  async function deleteRecord(jobId: string) {
+    const record = records.find((item) => item.job_id === jobId);
+    const label = record ? `${record.company || "Unknown company"} / ${record.title || "Untitled role"}` : jobId;
+    if (!window.confirm(`Permanently delete local data for ${label}?`)) {
+      setMessage({ type: "info", text: "Permanent deletion cancelled." });
+      return;
+    }
+    try {
+      const payload = await apiRequest<ApiRecord>(`/api/jobs/${jobId}`, {
+        method: "DELETE",
+        body: JSON.stringify({})
+      });
+      setRecords((current) => current.filter((item) => item.job_id !== jobId));
+      setMessage({ type: "success", text: payload.message || "Job data permanently deleted." });
+      onWorkflowChange();
+    } catch (error: any) {
+      setMessage({ type: "error", text: error.message });
+    }
+  }
+
   const filteredRecords = records.filter((record) => {
     if (statusFilter === "All") return true;
     const filter = statusFilters.find((item) => item.label === statusFilter);
@@ -1289,6 +1382,7 @@ function TrackerPage({
             records={filteredRecords}
             statusOptions={statusOptions}
             onStatusChange={updateRecordStatus}
+            onDeleteJob={deleteRecord}
           />
         </>
       )}
@@ -1671,11 +1765,13 @@ function KarenActionShortcut({
 function TrackerTable({
   records,
   statusOptions,
-  onStatusChange
+  onStatusChange,
+  onDeleteJob
 }: {
   records: ApiRecord[];
   statusOptions: ApiRecord[];
   onStatusChange: (jobId: string, status: string) => void;
+  onDeleteJob: (jobId: string) => void;
 }) {
   if (!records.length) return <StatusMessage type="info" text="No tracker records match this filter." />;
   return (
@@ -1683,7 +1779,7 @@ function TrackerTable({
       <table>
         <thead>
           <tr>
-            {["Company", "Title", "Status", "Next action", "Blockers", "Last updated", "Links"].map((column) => (
+            {["Company", "Title", "Status", "Next action", "Blockers", "Last updated", "Links", ""].map((column) => (
               <th key={column}>{column}</th>
             ))}
           </tr>
@@ -1721,6 +1817,17 @@ function TrackerTable({
                   {record.source_url && <a href={record.source_url}>Source</a>}
                   {record.apply_url && <a href={record.apply_url}>Apply</a>}
                 </div>
+              </td>
+              <td>
+                <button
+                  aria-label={`Delete ${record.company || "Unknown company"} / ${record.title || "Untitled role"}`}
+                  className="icon-button danger"
+                  onClick={() => onDeleteJob(record.job_id)}
+                  title="Permanently delete job data"
+                  type="button"
+                >
+                  X
+                </button>
               </td>
             </tr>
           ))}

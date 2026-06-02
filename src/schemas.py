@@ -897,6 +897,8 @@ class TrackerRecord(BaseModel):
     status: TrackerStatus = "new"
     notes: str | None = None
     generated_package_path: str | None = None
+    archived_at: str | None = None
+    archive_reason: str | None = None
 
     @field_validator("job_id")
     @classmethod

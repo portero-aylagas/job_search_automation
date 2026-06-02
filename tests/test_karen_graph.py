@@ -7,7 +7,7 @@ from src.agent_workflow import AgentWorkflowDependencies
 from src.agents.karen.graph import process_karen_chat_turn
 from src.agents.karen.policy import PermissionLevel
 from src.agents.karen.state import KarenContext, KarenIntentResponse
-from src.app_workflow import save_candidate_profile
+from src.app_workflow import load_jobs_index, save_candidate_profile
 from src.job_intake import create_job_listing, persist_job_listing
 from src.schemas import ApplicationPageSnapshot, ApplicationRequirements, CandidateProfile
 
@@ -308,6 +308,32 @@ def test_karen_refuses_final_submission_and_logs_it(tmp_path: Path) -> None:
     assert "Final application submission" in result.assistant_message
     events = load_agent_events(tmp_path, "karen-submit")
     assert events[0].result == "refused"
+
+
+def test_karen_can_delete_selected_job_from_chat(tmp_path: Path) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Agent",
+        selected_job_id=job.id,
+        user_message="Delete this job data now.",
+        session_id="karen-delete-job",
+        intent_classifier=static_intent(
+            KarenIntentResponse(
+                assistant_message="I will delete this job data.",
+                proposed_tool="delete_job_data",
+                permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+                auto_execute=True,
+            )
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "executed"
+    assert "Deleted local data" in result.assistant_message
+    assert load_jobs_index(tmp_path) == []
+    assert not (tmp_path / "data" / "runtime" / "jobs" / job.id).exists()
 
 
 def test_karen_missing_openai_key_preserves_transcript(

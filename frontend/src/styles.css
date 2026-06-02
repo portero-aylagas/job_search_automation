@@ -401,6 +401,10 @@ label {
   align-items: start;
 }
 
+.job-management .split-actions {
+  justify-content: space-between;
+}
+
 .job-list-panel {
   position: sticky;
   top: 5rem;

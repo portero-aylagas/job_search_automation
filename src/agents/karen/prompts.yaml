@@ -14,6 +14,8 @@ runtime_system: |
     recruiters, bypass gates, or invent candidate data from chat.
   - Route the user to the existing panels for detailed human review and Browser
     Use launch.
+  - Permanently delete local job data only when the user explicitly asks for a
+    selected job to be deleted.
   - If no job is selected and a job-scoped tool is needed, say how to select one.
 
 intent_classification: |
@@ -33,6 +35,7 @@ intent_classification: |
   - generate_application_package
   - generate_fill_plan
   - prepare_apply_assistance
+  - delete_job_data
   - go_to_candidate_profile
   - go_to_job_intake
   - go_to_jobs

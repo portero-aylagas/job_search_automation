@@ -100,6 +100,10 @@ from src.schemas import (
     CandidateSupplementalExtracted,
 )
 from src.tracker_status import (
+    active_tracker_records,
+    archive_tracker_record,
+    purge_job_data,
+    restore_tracker_record,
     tracker_status_filters,
     tracker_status_options,
     update_manual_tracker_status,
@@ -473,10 +477,12 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         }
 
     @app.get("/api/tracker")
-    async def tracker() -> dict[str, object]:
+    async def tracker(include_archived: bool = False) -> dict[str, object]:
         """Return tracker records sorted like the Streamlit tracker."""
 
         _, records = load_app_data(app.state.base_dir)
+        if not include_archived:
+            records = active_tracker_records(records)
         sorted_records = sorted(
             records,
             key=lambda record: (record.status, record.company.lower(), record.title.lower()),
@@ -494,6 +500,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Update one tracker status from the Tracker page."""
 
+        ensure_job_is_active(app.state.base_dir, job_id)
         try:
             records = update_manual_tracker_status(app.state.base_dir, job_id, payload.status)
         except ValueError as exc:
@@ -509,16 +516,60 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         }
 
     @app.get("/api/jobs")
-    async def jobs() -> dict[str, object]:
+    async def jobs(include_archived: bool = False) -> dict[str, object]:
         """Return saved jobs for the Jobs page selector."""
 
+        records = load_jobs_index(app.state.base_dir)
+        if not include_archived:
+            records = active_tracker_records(records)
         records = sorted(
-            load_jobs_index(app.state.base_dir),
+            records,
             key=lambda record: (record.company.lower(), record.title.lower(), record.job_id),
         )
         return {
             "records": [record.model_dump(mode="json") for record in records],
             "status_options": tracker_status_options(),
+        }
+
+    @app.post("/api/jobs/{job_id}/archive")
+    async def archive_job(job_id: str) -> dict[str, object]:
+        """Remove one job from active Jobs and Tracker views."""
+
+        try:
+            records = archive_tracker_record(app.state.base_dir, job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        record = next((item for item in records if item.job_id == job_id), None)
+        return {
+            "record": record.model_dump(mode="json") if record else None,
+            "message": "Job removed from active jobs.",
+        }
+
+    @app.post("/api/jobs/{job_id}/restore")
+    async def restore_job(job_id: str) -> dict[str, object]:
+        """Restore one archived job to active Jobs and Tracker views."""
+
+        try:
+            records = restore_tracker_record(app.state.base_dir, job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        record = next((item for item in records if item.job_id == job_id), None)
+        return {
+            "record": record.model_dump(mode="json") if record else None,
+            "message": "Job restored to active jobs.",
+        }
+
+    @app.delete("/api/jobs/{job_id}")
+    async def delete_job(job_id: str) -> dict[str, object]:
+        """Permanently delete one job's local data and tracker entry."""
+
+        try:
+            records = purge_job_data(app.state.base_dir, job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {
+            "records": [record.model_dump(mode="json") for record in records],
+            "message": "Job data permanently deleted.",
         }
 
     @app.get("/api/jobs/{job_id}/workspace")
@@ -585,6 +636,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Save structured requirements review edits."""
 
+        ensure_job_is_active(app.state.base_dir, job_id)
         requirements = require_requirements(app.state.base_dir, job_id)
         try:
             reviewed = apply_application_requirements_review_edits(
@@ -695,6 +747,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def generate_fill_plan(job_id: str) -> dict[str, object]:
         """Generate or refresh the application fill plan."""
 
+        ensure_job_is_active(app.state.base_dir, job_id)
         requirements = load_application_requirements(app.state.base_dir, job_id)
         package = load_application_package(app.state.base_dir, job_id)
         blockers = get_fill_plan_generation_blockers(requirements, package)
@@ -725,6 +778,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def review_fill_plan(job_id: str, payload: FillPlanReviewRequest) -> dict[str, object]:
         """Save structured fill-plan edits and mark the plan reviewed when possible."""
 
+        ensure_job_is_active(app.state.base_dir, job_id)
         fill_plan = require_fill_plan(app.state.base_dir, job_id)
         edited = apply_fill_plan_edits(
             fill_plan,
@@ -932,10 +986,22 @@ def dump_optional(value: BaseModel | None) -> dict[str, object] | None:
 def require_job(base_dir: Path, job_id: str):
     """Load a saved normalized job or raise a 404."""
 
+    ensure_job_is_active(base_dir, job_id)
     job = load_normalized_job(base_dir, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return job
+
+
+def ensure_job_is_active(base_dir: Path, job_id: str) -> None:
+    """Reject direct workflow access for archived jobs."""
+
+    record = next((item for item in load_jobs_index(base_dir) if item.job_id == job_id), None)
+    if record is not None and record.archived_at:
+        raise HTTPException(
+            status_code=400,
+            detail="Restore this archived job before running workflow actions.",
+        )
 
 
 def require_requirements(base_dir: Path, job_id: str) -> ApplicationRequirements:
