@@ -349,6 +349,8 @@ def _execute_action_node(state: AgentGraphState) -> AgentGraphState:
     try:
         if action == "continue":
             events.extend(_execute_continue_until_gate(state))
+        elif action == "continue_to_apply_assistance":
+            events.extend(_execute_continue_to_apply_assistance(state))
         else:
             events.append(_execute_single_action(state, action))
     except (RuntimeError, ValueError) as exc:
@@ -404,6 +406,23 @@ def _execute_continue_until_gate(state: AgentGraphState) -> list[ActionResult]:
         current_state.update(_load_context_node(current_state))
         if event.gate:
             break
+    return events
+
+
+def _execute_continue_to_apply_assistance(state: AgentGraphState) -> list[ActionResult]:
+    events: list[ActionResult] = []
+    current_state = dict(state)
+    for _ in range(12):
+        snapshot = _build_workflow_state(current_state)
+        if snapshot.pending_gate == "browser_use_launch":
+            break
+        if snapshot.blockers and not _has_regeneration_action(snapshot):
+            break
+        next_action = _next_permissioned_apply_action(current_state, snapshot)
+        if next_action is None:
+            break
+        events.append(_execute_single_action(current_state, next_action))
+        current_state.update(_load_context_node(current_state))
     return events
 
 
@@ -838,6 +857,40 @@ def _next_auto_action(
         return "generate_fill_plan"
     if fill_plan.review_status != "reviewed":
         return None
+    return "prepare_apply_assistance"
+
+
+def _next_permissioned_apply_action(
+    state: AgentGraphState,
+    snapshot: AgentWorkflowState,
+) -> str | None:
+    if snapshot.blockers and not _only_regeneration_blockers(snapshot.blockers):
+        return None
+    job = state.get("job")
+    if job is None:
+        return None
+
+    requirements = state.get("requirements")
+    if requirements is None:
+        return "discover_requirements"
+    if requirements.review_status != "reviewed":
+        if requirements.status == "discovered" and requirements.job_preserving:
+            return "review_requirements"
+        return None
+
+    package = state.get("package")
+    if package is None:
+        return "generate_package"
+    if package.status != "approved":
+        if package.status == "draft":
+            return "approve_package"
+        return None
+
+    fill_plan = state.get("fill_plan")
+    if fill_plan is None:
+        return "generate_fill_plan"
+    if fill_plan.review_status != "reviewed":
+        return "review_fill_plan"
     return "prepare_apply_assistance"
 
 

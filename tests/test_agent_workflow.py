@@ -227,6 +227,32 @@ def test_agent_workflow_runs_happy_path_until_browser_launch_gate(tmp_path: Path
     assert "launch_browser_use" in state.next_allowed_actions
 
 
+def test_agent_workflow_permissioned_continue_runs_until_browser_launch_gate(
+    tmp_path: Path,
+) -> None:
+    _, job = setup_job(tmp_path)
+
+    state = run_agent_workflow(
+        tmp_path,
+        session_id="agent-permissioned-apply",
+        selected_job_id=job.id,
+        action="continue_to_apply_assistance",
+        dependencies=workflow_dependencies(),
+    )
+
+    assert state.pending_gate == "browser_use_launch"
+    assert "launch_browser_use" in state.next_allowed_actions
+    events = load_agent_events(tmp_path, "agent-permissioned-apply")
+    assert [event.action for event in events] == [
+        "discover_requirements",
+        "review_requirements",
+        "generate_package",
+        "approve_package",
+        "generate_fill_plan",
+        "review_fill_plan",
+    ]
+
+
 def test_agent_workflow_starts_known_job_at_requirements_discovery(tmp_path: Path) -> None:
     _, job = setup_job(tmp_path)
 

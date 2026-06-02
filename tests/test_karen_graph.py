@@ -9,7 +9,16 @@ from src.agents.karen.policy import PermissionLevel
 from src.agents.karen.state import KarenContext, KarenIntentResponse
 from src.app_workflow import load_jobs_index, save_candidate_profile
 from src.job_intake import create_job_listing, persist_job_listing
-from src.schemas import ApplicationPageSnapshot, ApplicationRequirements, CandidateProfile
+from src.schemas import (
+    ApplicationArtifact,
+    ApplicationFillFieldValue,
+    ApplicationFillPlan,
+    ApplicationPackage,
+    ApplicationPageSnapshot,
+    ApplicationRequirements,
+    CandidateProfile,
+    JobListing,
+)
 from src.services.karen_permission_service import grant_job_session_permission
 
 
@@ -105,6 +114,46 @@ def fake_requirements_discoverer(job):
             job_preserving=True,
         ),
     }
+
+
+def fake_package_generator(
+    _profile: CandidateProfile,
+    _units: list,
+    job: JobListing,
+    _requirements: ApplicationRequirements | None,
+) -> ApplicationPackage:
+    return ApplicationPackage(
+        job_id=job.id,
+        status="draft",
+        artifacts=[
+            ApplicationArtifact(
+                id="application-summary",
+                type="application_summary",
+                label="Application Summary",
+                content="Application summary.",
+            )
+        ],
+    )
+
+
+def fake_fill_plan_generator(
+    _profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    _package: ApplicationPackage,
+    _snapshot: ApplicationPageSnapshot | None,
+) -> ApplicationFillPlan:
+    return ApplicationFillPlan(
+        job_id=requirements.job_id,
+        apply_url=requirements.apply_url,
+        review_status="draft",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="First name",
+                value="Taylor",
+                required=True,
+            )
+        ],
+    )
 
 
 def test_karen_explains_app_without_tool_execution(tmp_path: Path) -> None:
@@ -226,6 +275,46 @@ def test_karen_can_start_requirements_for_known_job(tmp_path: Path) -> None:
     assert result.tool_result is not None
     assert result.tool_result.status == "executed"
     assert "requirements_review" in result.assistant_message
+
+
+def test_karen_broad_apply_command_runs_until_browser_launch_gate(tmp_path: Path) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+    grant_full_permission(tmp_path, "karen-apply-all", job.id)
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Jobs",
+        selected_job_id=job.id,
+        user_message="Do all steps needed to apply.",
+        session_id="karen-apply-all",
+        intent_classifier=static_intent(
+            KarenIntentResponse(
+                assistant_message="I will continue until Browser Use is ready.",
+                proposed_tool="continue_to_apply_assistance",
+                permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+                auto_execute=True,
+            )
+        ),
+        dependencies=AgentWorkflowDependencies(
+            requirements_discoverer=fake_requirements_discoverer,
+            package_generator=fake_package_generator,
+            fill_plan_generator=fake_fill_plan_generator,
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "executed"
+    assert result.context.job_permissions[job.id].allow_app_mutations is True
+    assert "browser_use_launch" in result.assistant_message
+    events = load_agent_events(tmp_path, "karen-apply-all")
+    assert [event.action for event in events] == [
+        "discover_requirements",
+        "review_requirements",
+        "generate_package",
+        "approve_package",
+        "generate_fill_plan",
+        "review_fill_plan",
+    ]
 
 
 def test_karen_permission_tool_grants_selected_job_session(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
 from pydantic import BaseModel
@@ -50,6 +51,7 @@ _EXPLICIT_ACTION_WORDS = {
     "apply",
     "approve",
     "build",
+    "complete",
     "continue",
     "create",
     "delete",
@@ -208,7 +210,8 @@ def user_message_has_explicit_action(message: str) -> bool:
     """Return whether a message clearly asks Karen to do something now."""
 
     normalized = message.casefold()
-    return any(word in normalized.split() for word in _EXPLICIT_ACTION_WORDS) or any(
+    words = set(re.findall(r"[a-z0-9']+", normalized))
+    return bool(words & _EXPLICIT_ACTION_WORDS) or any(
         phrase in normalized for phrase in ("do it", "move me", "take me")
     )
 

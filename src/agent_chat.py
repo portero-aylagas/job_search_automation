@@ -26,6 +26,7 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 ACTION_LABELS = {
     "continue": "Continue workflow",
+    "continue_to_apply_assistance": "Continue to apply assistance",
     "analyze_match": "Analyze candidate/job match",
     "review_match": "Approve match analysis",
     "reject_match": "Reject match",

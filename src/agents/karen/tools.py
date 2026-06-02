@@ -108,6 +108,14 @@ WORKFLOW_TOOLS = {
         needs_job=True,
         needs_permission=True,
     ),
+    "continue_to_apply_assistance": KarenToolDefinition(
+        name="continue_to_apply_assistance",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Run granted local workflow steps until Browser Use launch is ready.",
+        workflow_action="continue_to_apply_assistance",
+        needs_job=True,
+        needs_permission=True,
+    ),
     "discover_requirements": KarenToolDefinition(
         name="discover_requirements",
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,

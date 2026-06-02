@@ -43,6 +43,7 @@ intent_classification: |
   - extract_job_url
   - save_reviewed_job
   - continue_workflow_until_next_gate
+  - continue_to_apply_assistance
   - discover_requirements
   - review_requirements
   - generate_application_package
@@ -89,6 +90,13 @@ intent_classification: |
   will return needs_input with the right route. For final submission, propose
   final_submission only when the user explicitly asks to submit and the selected
   job permission state in KarenContext allows final submission.
+
+  For broad selected-job commands such as "do all steps needed to apply" or
+  "continue everything until I can apply", propose continue_to_apply_assistance.
+  That tool advances through currently allowed local workflow actions and stops
+  at Browser Use launch. Use launch_browser_use only when the user explicitly
+  asks to launch Browser Use, and use final_submission only for explicit submit
+  requests.
 
   Current KarenContext:
   {context_json}
