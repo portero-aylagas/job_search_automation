@@ -146,10 +146,8 @@ job_search_automation/
 │   ├── profile.json
 │   ├── experience_units.json
 │   ├── jobs.json
-│   ├── tracker.json
 │   ├── runtime/
 │   │   ├── jobs.json
-│   │   ├── tracker.json
 │   │   ├── agent_sessions/
 │   │   │   └── <session_id>/
 │   │   │       ├── chat.jsonl
@@ -259,8 +257,9 @@ page contract. The editable Browser Use execution contract is stored separately
 as `application_fill_plan.json`.
 
 `data/runtime/jobs.json` is the shared job index used by both the Tracker page
-and the Jobs page. The tracked `data/jobs.json` and `data/tracker.json` files
-remain templates and bootstrap mirrors.
+and the Jobs page. The tracked `data/jobs.json` file remains the bootstrap
+template. Legacy `tracker.json` files are read only as migration fallback when a
+canonical `jobs.json` index is missing.
 
 The Job Intake screen starts with only a job URL. After AI extraction, the app
 shows a review form with fixed fields and any dynamic extracted details. Dynamic
@@ -444,6 +443,7 @@ interesting
 rejected_by_user
 application_draft
 ready_to_apply
+agent_assistance_attempted
 applied_manually
 applied_with_agent_assistance
 interview

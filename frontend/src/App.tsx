@@ -13,7 +13,6 @@ import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"];
-const trackerStatusFilters = ["All", "New", "In progress", "Application Draft", "Blocked", "Ready", "Applied"];
 const careerLevel = [
   ["internship", "Internship"],
   ["working_student", "Working student"],
@@ -601,6 +600,7 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
 
 function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
+  const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
   const [workspace, setWorkspace] = useState<ApiRecord | null>(null);
   const [message, setMessage] = useState<ApiRecord | null>(null);
@@ -609,6 +609,7 @@ function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
   function loadJobs() {
     apiRequest<ApiRecord>("/api/jobs").then((payload) => {
       setRecords(payload.records || []);
+      setStatusOptions(payload.status_options || []);
       if (!selectedJobId && payload.records?.[0]) setSelectedJobId(payload.records[0].job_id);
     }).catch((error) => setMessage({ type: "error", text: error.message }));
   }
@@ -666,7 +667,7 @@ function JobsPage({ onNavigateToIntake }: { onNavigateToIntake: () => void }) {
                 <span className="job-list-title">{record.title || "Untitled role"}</span>
                 <span className="job-list-company">{record.company || "Unknown company"}</span>
                 <span className="job-list-meta">
-                  <StatusBadge status={normalizeJobStatus(record.status)} label={titleCase(record.status || "new")} />
+                  <StatusBadge status={trackerStatusBadge(record.status, statusOptions)} label={trackerStatusLabel(record.status, statusOptions)} />
                   <span>{jobBlockerCount(record, record.job_id === selectedJobId ? workspace : null)} blockers</span>
                 </span>
                 <span className="job-list-next">{nextWorkspaceAction(record, record.job_id === selectedJobId ? workspace : null)}</span>
@@ -1123,16 +1124,47 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 
 function TrackerPage() {
   const [records, setRecords] = useState<ApiRecord[]>([]);
+  const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
+  const [statusFilters, setStatusFilters] = useState<ApiRecord[]>([]);
   const [message, setMessage] = useState<ApiRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState("All");
-  useEffect(() => {
+
+  function loadTracker() {
     apiRequest<ApiRecord>("/api/tracker")
-      .then((payload) => setRecords(payload.records || []))
+      .then((payload) => {
+        setRecords(payload.records || []);
+        setStatusOptions(payload.status_options || []);
+        setStatusFilters(payload.status_filters || []);
+      })
       .catch((error) => setMessage({ type: "error", text: error.message }));
+  }
+
+  useEffect(() => {
+    loadTracker();
   }, []);
+
+  async function updateRecordStatus(jobId: string, status: string) {
+    try {
+      const payload = await apiRequest<ApiRecord>(`/api/tracker/${jobId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status })
+      });
+      const updatedRecord = payload.record || {};
+      setRecords((current) => current.map((record) => (
+        record.job_id === jobId ? { ...record, ...updatedRecord } : record
+      )));
+      setStatusOptions(payload.status_options || statusOptions);
+      setStatusFilters(payload.status_filters || statusFilters);
+      setMessage({ type: "info", text: payload.message || "Tracker status updated." });
+    } catch (error: any) {
+      setMessage({ type: "error", text: error.message });
+    }
+  }
+
   const filteredRecords = records.filter((record) => {
     if (statusFilter === "All") return true;
-    return normalizeTrackerStatus(record.status) === statusFilter;
+    const filter = statusFilters.find((item) => item.label === statusFilter);
+    return (filter?.statuses || []).includes(record.status);
   });
   return (
     <>
@@ -1146,17 +1178,21 @@ function TrackerPage() {
       ) : (
         <>
           <div className="filter-bar" aria-label="Tracker status filters">
-            {trackerStatusFilters.map((status) => (
+            {statusFilters.map((filter) => (
               <button
-                className={`filter-button ${statusFilter === status ? "active" : ""}`}
-                key={status}
-                onClick={() => setStatusFilter(status)}
+                className={`filter-button ${statusFilter === filter.label ? "active" : ""}`}
+                key={filter.label}
+                onClick={() => setStatusFilter(filter.label)}
               >
-                {status}
+                {filter.label}
               </button>
             ))}
           </div>
-          <TrackerTable records={filteredRecords} />
+          <TrackerTable
+            records={filteredRecords}
+            statusOptions={statusOptions}
+            onStatusChange={updateRecordStatus}
+          />
         </>
       )}
     </>
@@ -1535,7 +1571,15 @@ function KarenActionShortcut({
   );
 }
 
-function TrackerTable({ records }: { records: ApiRecord[] }) {
+function TrackerTable({
+  records,
+  statusOptions,
+  onStatusChange
+}: {
+  records: ApiRecord[];
+  statusOptions: ApiRecord[];
+  onStatusChange: (jobId: string, status: string) => void;
+}) {
   if (!records.length) return <StatusMessage type="info" text="No tracker records match this filter." />;
   return (
     <div className="table-wrap">
@@ -1552,7 +1596,26 @@ function TrackerTable({ records }: { records: ApiRecord[] }) {
             <tr key={record.job_id || index}>
               <td>{record.company || "Unknown company"}</td>
               <td>{record.title || "Untitled role"}</td>
-              <td><StatusBadge status={normalizeJobStatus(record.status)} label={titleCase(record.status || "new")} /></td>
+              <td>
+                <div className="status-cell">
+                  <StatusBadge status={trackerStatusBadge(record.status, statusOptions)} label={trackerStatusLabel(record.status, statusOptions)} />
+                  <select
+                    aria-label={`Status for ${record.company || "Unknown company"} / ${record.title || "Untitled role"}`}
+                    value={record.status || "new"}
+                    onChange={(event) => onStatusChange(record.job_id, event.target.value)}
+                  >
+                    {statusOptions.map((option) => (
+                      <option
+                        disabled={!option.user_editable && option.value !== record.status}
+                        key={option.value}
+                        value={option.value}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </td>
               <td>{nextWorkspaceAction(record, null)}</td>
               <td>{jobBlockerCount(record, null)}</td>
               <td>{formatDateTime(record.last_updated || record.updated_at || record.created_at)}</td>
@@ -1886,24 +1949,22 @@ function nextWorkspaceAction(record: ApiRecord, workspace: ApiRecord | null) {
   return record.next_action || record.next_action_label || (allowedAction === "None" ? "Review workflow" : allowedAction);
 }
 
-function normalizeJobStatus(status?: string) {
-  const normalized = String(status || "new").toLowerCase().replace(/\s+/g, "_");
-  if (normalized.includes("applied")) return "complete";
-  if (normalized.includes("ready")) return "ready";
-  if (normalized.includes("block")) return "blocked";
-  if (normalized.includes("draft")) return "needs-review";
-  if (normalized.includes("progress") || normalized.includes("review")) return "needs-review";
-  return "missing";
+function trackerStatusMeta(status: string | undefined, options: ApiRecord[]) {
+  const value = status || "new";
+  return options.find((option) => option.value === value) || {
+    value,
+    label: titleCase(value),
+    badge: "missing",
+    user_editable: false
+  };
 }
 
-function normalizeTrackerStatus(status?: string) {
-  const normalized = String(status || "new").toLowerCase().replace(/[_-]+/g, " ");
-  if (normalized.includes("applied")) return "Applied";
-  if (normalized.includes("ready")) return "Ready";
-  if (normalized.includes("block")) return "Blocked";
-  if (normalized.includes("application draft")) return "Application Draft";
-  if (normalized.includes("progress") || normalized.includes("review")) return "In progress";
-  return "New";
+function trackerStatusLabel(status: string | undefined, options: ApiRecord[]) {
+  return trackerStatusMeta(status, options).label;
+}
+
+function trackerStatusBadge(status: string | undefined, options: ApiRecord[]) {
+  return trackerStatusMeta(status, options).badge || "missing";
 }
 
 function karenActionTarget(actionName: string) {

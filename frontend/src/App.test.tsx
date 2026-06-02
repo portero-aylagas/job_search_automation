@@ -170,7 +170,7 @@ describe("App workflow pages", () => {
         return { body: { profile: candidateProfile(), options: {} } };
       }
       if (url.endsWith("/api/jobs")) {
-        return { body: { records: [jobRecord()] } };
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
       }
       if (url.includes("/api/jobs/job-1/workspace")) {
         return { body: workspaces.shift() || readyWorkspace() };
@@ -600,8 +600,20 @@ describe("App workflow pages", () => {
             records: [
               jobRecord(),
               { ...jobRecord2(), job_id: "job-3", company: "Draft Labs", status: "application_draft" },
-              { ...jobRecord2(), status: "blocked", blocker_count: 2 }
-            ]
+              { ...jobRecord2(), status: "rejected", blocker_count: 2 }
+            ],
+            status_options: trackerStatusOptions(),
+            status_filters: trackerStatusFilters()
+          }
+        };
+      }
+      if (url.includes("/api/tracker/job-3/status")) {
+        return {
+          body: {
+            record: { ...jobRecord2(), job_id: "job-3", company: "Draft Labs", status: "interview" },
+            status_options: trackerStatusOptions(),
+            status_filters: trackerStatusFilters(),
+            message: "Tracker status updated."
           }
         };
       }
@@ -623,13 +635,24 @@ describe("App workflow pages", () => {
     expect(screen.getByText("Draft Labs")).toBeInTheDocument();
     expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
     expect(screen.queryByText("Example Analytics")).not.toBeInTheDocument();
+    await userEvent.selectOptions(
+      screen.getByLabelText("Status for Draft Labs / Data Analyst"),
+      "interview"
+    );
+
+    expect(await screen.findByText("Tracker status updated.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Interview / Offer" }));
+
+    expect(screen.getByText("Draft Labs")).toBeInTheDocument();
+    expect(screen.getAllByText("Interview").length).toBeGreaterThan(1);
+    expect(screen.getByLabelText("Status for Draft Labs / Data Analyst")).toHaveValue("interview");
 
     await userEvent.click(screen.getByRole("button", { name: "New" }));
 
     expect(screen.getByText("Example Co")).toBeInTheDocument();
     expect(screen.queryByText("Draft Labs")).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Blocked" }));
+    await userEvent.click(screen.getByRole("button", { name: "Closed" }));
 
     expect(screen.getByText("Example Analytics")).toBeInTheDocument();
     expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
@@ -894,7 +917,13 @@ describe("App workflow pages", () => {
         return { body: blockedWorkspace() };
       }
       if (url.endsWith("/api/tracker")) {
-        return { body: { records: [jobRecord()] } };
+        return {
+          body: {
+            records: [jobRecord()],
+            status_options: trackerStatusOptions(),
+            status_filters: trackerStatusFilters()
+          }
+        };
       }
       return { body: {} };
     });
@@ -1053,9 +1082,41 @@ function jobRecord2() {
     source_url: "https://example.com/jobs/2",
     apply_url: "https://example.com/apply/2",
     retrieval_mode: "url",
-    status: "ready",
+    status: "ready_to_apply",
     last_updated: "2026-06-02T09:00:00.000Z"
   };
+}
+
+function trackerStatusOptions() {
+  return [
+    { value: "new", label: "New", badge: "missing", user_editable: true },
+    { value: "analyzed", label: "Analyzed", badge: "needs-review", user_editable: false },
+    { value: "interesting", label: "Interesting", badge: "needs-review", user_editable: true },
+    { value: "rejected_by_user", label: "Rejected by user", badge: "blocked", user_editable: true },
+    { value: "application_draft", label: "Application Draft", badge: "needs-review", user_editable: false },
+    { value: "ready_to_apply", label: "Ready to Apply", badge: "ready", user_editable: false },
+    { value: "agent_assistance_attempted", label: "Agent Assistance Attempted", badge: "needs-review", user_editable: false },
+    { value: "applied_manually", label: "Applied Manually", badge: "complete", user_editable: true },
+    { value: "applied_with_agent_assistance", label: "Applied with Agent Assistance", badge: "complete", user_editable: true },
+    { value: "interview", label: "Interview", badge: "complete", user_editable: true },
+    { value: "rejected", label: "Rejected", badge: "blocked", user_editable: true },
+    { value: "offer", label: "Offer", badge: "complete", user_editable: true },
+    { value: "closed", label: "Closed", badge: "blocked", user_editable: true }
+  ];
+}
+
+function trackerStatusFilters() {
+  return [
+    { label: "All", statuses: trackerStatusOptions().map((option) => option.value) },
+    { label: "New", statuses: ["new"] },
+    { label: "In progress", statuses: ["analyzed", "interesting"] },
+    { label: "Application Draft", statuses: ["application_draft"] },
+    { label: "Ready", statuses: ["ready_to_apply"] },
+    { label: "Agent Attempted", statuses: ["agent_assistance_attempted"] },
+    { label: "Applied", statuses: ["applied_manually", "applied_with_agent_assistance"] },
+    { label: "Interview / Offer", statuses: ["interview", "offer"] },
+    { label: "Closed", statuses: ["rejected_by_user", "rejected", "closed"] }
+  ];
 }
 
 function blockedWorkspace() {

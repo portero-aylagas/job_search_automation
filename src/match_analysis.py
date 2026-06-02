@@ -14,9 +14,7 @@ from pydantic import BaseModel
 
 from src.paths import (
     match_analysis_paths,
-    runtime_jobs_index_path,
     runtime_match_analysis_path,
-    runtime_tracker_path,
 )
 from src.schemas import (
     CandidateProfile,
@@ -27,6 +25,7 @@ from src.schemas import (
     TrackerRecord,
 )
 from src.storage import load_model, save_model
+from src.tracker_status import update_tracker_record
 
 ROLE_WEIGHT = 30.0
 SKILL_WEIGHT = 35.0
@@ -177,23 +176,18 @@ def update_tracker_for_match_analysis(
 ) -> list[TrackerRecord]:
     """Apply reviewed or rejected match decisions to the runtime tracker."""
 
-    jobs_index_path = runtime_jobs_index_path(base_dir)
-    tracker_path = runtime_tracker_path(base_dir)
-    tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
-
-    for record in tracker_records:
-        if record.job_id != analysis.job_id:
-            continue
-        record.match_score = analysis.match_score
-        if analysis.review_status == "reviewed":
-            record.status = "analyzed"
-        elif analysis.review_status == "rejected":
-            record.status = "rejected_by_user"
-        break
-
-    save_model(jobs_index_path, tracker_records)
-    save_model(tracker_path, tracker_records)
-    return tracker_records
+    if analysis.review_status == "reviewed":
+        status = "analyzed"
+    elif analysis.review_status == "rejected":
+        status = "rejected_by_user"
+    else:
+        status = None
+    return update_tracker_record(
+        base_dir,
+        analysis.job_id,
+        status=status,
+        match_score=analysis.match_score,
+    )
 
 
 def review_match_analysis(

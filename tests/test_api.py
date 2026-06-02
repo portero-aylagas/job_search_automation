@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from src.api import create_app
-from src.app_workflow import load_candidate_profile
+from src.app_workflow import load_candidate_profile, load_jobs_index
 from src.application_fill_plan import load_application_fill_plan, save_application_fill_plan
 from src.application_package_storage import load_application_package, save_application_package
 from src.application_requirements import save_application_requirements
@@ -119,6 +119,43 @@ def test_job_intake_save_rejects_invalid_apply_url(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     assert "http or https" in response.json()["detail"]
+
+
+def test_tracker_returns_status_metadata_and_updates_manual_status(tmp_path: Path) -> None:
+    job = save_job(tmp_path)
+
+    tracker = asyncio.run(api_request(tmp_path, "GET", "/api/tracker"))
+
+    assert tracker.status_code == 200
+    payload = tracker.json()
+    assert payload["records"][0]["status"] == "new"
+    assert any(option["value"] == "interview" for option in payload["status_options"])
+    assert any(item["label"] == "Application Draft" for item in payload["status_filters"])
+
+    updated = asyncio.run(api_request(
+        tmp_path,
+        "PATCH",
+        f"/api/tracker/{job.id}/status",
+        json={"status": "interview"},
+    ))
+
+    assert updated.status_code == 200
+    assert updated.json()["record"]["status"] == "interview"
+    assert load_jobs_index(tmp_path)[0].status == "interview"
+
+
+def test_tracker_manual_status_rejects_workflow_owned_status(tmp_path: Path) -> None:
+    job = save_job(tmp_path)
+
+    response = asyncio.run(api_request(
+        tmp_path,
+        "PATCH",
+        f"/api/tracker/{job.id}/status",
+        json={"status": "ready_to_apply"},
+    ))
+
+    assert response.status_code == 400
+    assert "cannot be set manually" in response.json()["detail"]
 
 
 def test_requirements_discovery_uses_graph_and_persists_artifacts(
@@ -298,6 +335,7 @@ def test_fill_plan_generation_and_review_enforce_gates(
     assert load_application_fill_plan(tmp_path, job.id).field_values[0].value == (
         "Taylor Edited"
     )
+    assert load_jobs_index(tmp_path)[0].status == "ready_to_apply"
 
 
 def test_apply_route_blocks_until_reviews_are_complete(tmp_path: Path) -> None:
@@ -341,6 +379,7 @@ def test_apply_route_launches_browser_without_api_startup_wait(
     assert response.status_code == 200
     assert response.json()["pid"] == 12345
     assert captured["kwargs"]["startup_wait_seconds"] == 0.0
+    assert load_jobs_index(tmp_path)[0].status == "agent_assistance_attempted"
 
 
 def test_agent_routes_return_stable_json_shapes(
