@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 from src.agents.karen.policy import PermissionLevel
+from src.schemas import AgentJobPermissionGrant
 
 
 class KarenIntentResponse(BaseModel):
@@ -40,6 +41,7 @@ class KarenContext(BaseModel):
     pending_gate: str | None = None
     next_allowed_actions: list[str] = Field(default_factory=list)
     recent_transcript_summary: str = ""
+    job_permissions: dict[str, AgentJobPermissionGrant] = Field(default_factory=dict)
 
     @field_validator("selected_job_id", mode="before")
     @classmethod
@@ -68,4 +70,3 @@ class KarenChatTurnResult(BaseModel):
     intent: KarenIntentResponse | None = None
     tool_result: KarenToolResult | None = None
     context: KarenContext
-

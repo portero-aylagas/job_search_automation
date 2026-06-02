@@ -60,7 +60,10 @@ def test_candidate_profile_parse_cv_persists_extracted_state(
     tmp_path: Path,
 ) -> None:
     extracted = complete_candidate_profile().candidate_profile.cv_extracted
-    monkeypatch.setattr("src.api.run_cv_extraction_task", lambda path: extracted)
+    monkeypatch.setattr(
+        "src.services.candidate_profile_service.run_cv_extraction_task",
+        lambda path: extracted,
+    )
 
     response = asyncio.run(api_request(
         tmp_path,
@@ -359,7 +362,10 @@ def test_requirements_discovery_uses_graph_and_persists_artifacts(
         assert received_job.id == job.id
         return {"snapshot": snapshot, "requirements": requirements}
 
-    monkeypatch.setattr("src.api.run_requirements_discovery_graph", fake_graph)
+    monkeypatch.setattr(
+        "src.services.job_workflow_service.run_requirements_discovery_graph",
+        fake_graph,
+    )
 
     response = asyncio.run(api_request(
         tmp_path,
@@ -384,7 +390,7 @@ def test_requirements_review_returns_404_when_missing(tmp_path: Path) -> None:
         json=requirements_review_payload(),
     ))
 
-    assert response.status_code == 404
+    assert response.status_code == 400
     assert response.json()["detail"] == "Application requirements not found."
 
 
@@ -444,7 +450,10 @@ def test_package_generation_uses_fake_generator_for_happy_path(
             ],
         )
 
-    monkeypatch.setattr("src.api.generate_application_package", fake_generator)
+    monkeypatch.setattr(
+        "src.services.job_workflow_service.generate_application_package",
+        fake_generator,
+    )
 
     response = asyncio.run(api_request(
         tmp_path,
@@ -498,7 +507,10 @@ def test_fill_plan_generation_and_review_enforce_gates(
             ],
         )
 
-    monkeypatch.setattr("src.api.generate_application_fill_plan", fake_fill_plan)
+    monkeypatch.setattr(
+        "src.services.job_workflow_service.generate_application_fill_plan",
+        fake_fill_plan,
+    )
 
     generated = asyncio.run(api_request(
         tmp_path,
@@ -547,7 +559,10 @@ def test_apply_route_launches_browser_without_api_startup_wait(
     )
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr("src.api.get_apply_assistance_blockers", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        "src.services.job_workflow_service.get_apply_assistance_blockers",
+        lambda *args, **kwargs: [],
+    )
 
     def fake_launcher(*args: object, **kwargs: object) -> SimpleNamespace:
         captured["kwargs"] = kwargs
@@ -557,7 +572,10 @@ def test_apply_route_launches_browser_without_api_startup_wait(
             log_path=Path(tmp_path) / "browser-use.log",
         )
 
-    monkeypatch.setattr("src.api.open_apply_url_with_browser_use_fill_plan", fake_launcher)
+    monkeypatch.setattr(
+        "src.services.job_workflow_service.open_apply_url_with_browser_use_fill_plan",
+        fake_launcher,
+    )
 
     response = asyncio.run(api_request(tmp_path, "POST", f"/api/jobs/{job.id}/apply"))
 

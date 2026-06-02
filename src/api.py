@@ -2,87 +2,44 @@
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from src.agent_chat import ACTION_LABELS, load_agent_chat_messages
 from src.agent_workflow import run_agent_workflow
 from src.agents.karen.graph import process_karen_chat_turn
 from src.agents.karen.tools import build_karen_context
 from src.app_workflow import (
-    apply_resolution_details,
     apply_url_review_messages,
-    extract_job_intake_data,
     get_application_package_blockers,
-    lines_from_text,
     load_app_data,
-    load_application_page_snapshot,
     load_application_requirements,
     load_candidate_profile,
-    load_experience_units,
     load_jobs_index,
     load_normalized_job,
     resolved_apply_url,
-    save_candidate_profile,
-    validate_reviewed_apply_url,
-    workflow_trace_payload,
 )
 from src.application_fill_plan import (
-    apply_fill_plan_edits,
     fill_plan_blocked_field_edit_key,
     fill_plan_field_edit_key,
     fill_plan_needs_answer_edit_key,
     fill_plan_upload_edit_key,
-    generate_application_fill_plan,
     load_application_fill_plan,
-    map_application_fields_with_llm,
-    mark_application_fill_plan_reviewed,
-    save_application_fill_plan,
 )
 from src.application_package import (
-    export_cover_letter_artifact,
-    generate_application_package,
     load_application_package,
-    save_application_package,
-    update_tracker_for_application_package,
-)
-from src.application_requirements import (
-    run_requirements_discovery_graph,
-    save_application_page_snapshot,
-    save_application_requirements,
 )
 from src.browser_use_launcher import (
-    BrowserUseLaunchError,
     count_browser_use_runner_processes,
     get_active_browser_use_session,
-    open_apply_url_with_browser_use_fill_plan,
-    stop_all_browser_use_processes,
-    stop_browser_use_session,
 )
-from src.candidate_profile import (
-    is_valid_email,
-    merge_supplemental_extracted_data,
-    normalize_candidate_profile_documents,
-    validate_candidate_profile,
-)
-from src.cv_extraction import (
-    run_cv_extraction_task,
-    run_optional_document_extraction_task,
-    save_uploaded_cv,
-    save_uploaded_optional_document,
-)
-from src.job_intake import create_job_listing, persist_job_listing
 from src.job_workspace import (
-    apply_application_package_review_edits,
-    apply_application_requirements_review_edits,
     build_application_package_summary,
     get_apply_assistance_blockers,
     get_fill_plan_generation_blockers,
-    mark_application_package_reviewed,
 )
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.paths import RUNTIME_DATA_DIR
@@ -93,21 +50,62 @@ from src.schemas import (
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
-    CandidateCVExtracted,
-    CandidateOptionalDocument,
     CandidateProfile,
-    CandidateSourceCV,
-    CandidateSupplementalExtracted,
+)
+from src.services.candidate_profile_service import (
+    CandidateProfileServiceError,
+    decode_uploaded_file,
+    parse_uploaded_cv,
+    parse_uploaded_optional_document,
+    save_candidate_review_fields,
+    save_reviewed_candidate_profile,
+)
+from src.services.candidate_profile_service import (
+    delete_candidate_document as service_delete_candidate_document,
+)
+from src.services.candidate_profile_service import (
+    save_candidate_preferences as service_save_candidate_preferences,
+)
+from src.services.job_workflow_service import (
+    JobWorkflowServiceError,
+    ReviewedJobInput,
+    discover_application_requirements,
+    extract_job_url,
+    generate_reviewable_application_package,
+    generate_reviewable_fill_plan,
+    launch_apply_assistance,
+    review_application_package,
+    review_application_requirements,
+    stop_active_browser_session,
+)
+from src.services.job_workflow_service import (
+    archive_job as service_archive_job,
+)
+from src.services.job_workflow_service import (
+    delete_job_data as service_delete_job_data,
+)
+from src.services.job_workflow_service import (
+    export_cover_letter as service_export_cover_letter,
+)
+from src.services.job_workflow_service import (
+    kill_browser_processes as service_kill_browser_processes,
+)
+from src.services.job_workflow_service import (
+    restore_job as service_restore_job,
+)
+from src.services.job_workflow_service import (
+    review_fill_plan as service_review_fill_plan,
+)
+from src.services.job_workflow_service import (
+    save_reviewed_job as service_save_reviewed_job,
+)
+from src.services.job_workflow_service import (
+    update_tracker_status as service_update_tracker_status,
 )
 from src.tracker_status import (
     active_tracker_records,
-    archive_tracker_record,
-    purge_job_data,
-    restore_tracker_record,
     tracker_status_filters,
     tracker_status_options,
-    update_manual_tracker_status,
-    update_tracker_record,
 )
 
 PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"]
@@ -254,22 +252,17 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def save_candidate_review(payload: CandidateProfilePayload) -> dict[str, object]:
         """Persist edited CV review fields as the current candidate draft."""
 
-        profile = normalize_candidate_profile_documents(payload.profile)
-        email = profile.candidate_profile.cv_extracted.identity.email
-        if email and not is_valid_email(email):
-            raise HTTPException(
-                status_code=400,
-                detail="Email must be a valid address before saving CV review changes.",
-            )
-        save_candidate_profile(app.state.base_dir, profile)
+        try:
+            profile = save_candidate_review_fields(app.state.base_dir, payload.profile)
+        except CandidateProfileServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"profile": profile.model_dump(mode="json"), "message": "CV review fields updated."}
 
     @app.put("/api/candidate-profile/preferences")
     async def save_candidate_preferences(payload: CandidateProfilePayload) -> dict[str, object]:
         """Persist manual candidate preference edits as the current draft."""
 
-        profile = normalize_candidate_profile_documents(payload.profile)
-        save_candidate_profile(app.state.base_dir, profile)
+        profile = service_save_candidate_preferences(app.state.base_dir, payload.profile)
         return {
             "profile": profile.model_dump(mode="json"),
             "message": "Manual preferences updated.",
@@ -279,41 +272,26 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def save_profile(payload: CandidateProfilePayload) -> dict[str, object]:
         """Validate and save the reviewed candidate profile."""
 
-        profile = normalize_candidate_profile_documents(payload.profile)
-        validation_errors = validate_candidate_profile(profile)
-        if validation_errors:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing required fields: " + ", ".join(validation_errors),
-            )
-        saved_path = save_candidate_profile(app.state.base_dir, profile)
+        try:
+            profile = save_reviewed_candidate_profile(app.state.base_dir, payload.profile)
+        except CandidateProfileServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        saved_path = Path(app.state.base_dir) / "data" / "candidate_profile.json"
         return {"profile": profile.model_dump(mode="json"), "saved_path": str(saved_path)}
 
     @app.post("/api/candidate-profile/parse-cv")
     async def parse_cv(payload: FilePayload) -> dict[str, object]:
         """Save an uploaded CV and parse it through the existing AI task."""
 
-        content = decode_file_payload(payload)
-        saved_path = save_uploaded_cv(app.state.base_dir, payload.filename, content)
         try:
-            extracted = run_cv_extraction_task(saved_path)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"CV upload was saved to {saved_path}, but AI parsing failed: {exc}. "
-                    "Check that the API process has OPENAI_API_KEY and network access, "
-                    "then click Parse CV with AI again."
-                ),
-            ) from exc
-
-        profile = load_candidate_profile(app.state.base_dir).model_copy(deep=True)
-        profile.candidate_profile.source_documents.cv.file_path = str(saved_path)
-        profile.candidate_profile.source_documents.cv.parsed = True
-        profile.candidate_profile.source_documents.cv.extracted_data = extracted
-        profile.candidate_profile.cv_extracted = extracted
-        profile = normalize_candidate_profile_documents(profile)
-        save_candidate_profile(app.state.base_dir, profile)
+            content = decode_uploaded_file(payload.content_base64)
+            profile = parse_uploaded_cv(
+                app.state.base_dir,
+                filename=payload.filename,
+                content=content,
+            )
+        except CandidateProfileServiceError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {
             "profile": profile.model_dump(mode="json"),
             "message": "CV parsed and loaded into the review form.",
@@ -323,35 +301,16 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def parse_optional_document(payload: FilePayload) -> dict[str, object]:
         """Save and parse one optional supporting document."""
 
-        content = decode_file_payload(payload)
-        saved_path = save_uploaded_optional_document(
-            app.state.base_dir,
-            payload.filename,
-            content,
-        )
-        profile = load_candidate_profile(app.state.base_dir).model_copy(deep=True)
-        document = CandidateOptionalDocument(
-            file_path=str(saved_path),
-            file_name=payload.filename,
-            document_type=payload.document_type,
-            parsed=False,
-        )
         try:
-            extracted = run_optional_document_extraction_task(saved_path)
-        except Exception as exc:
-            profile.candidate_profile.source_documents.optional_documents.append(document)
-            save_candidate_profile(
+            content = decode_uploaded_file(payload.content_base64)
+            profile = parse_uploaded_optional_document(
                 app.state.base_dir,
-                normalize_candidate_profile_documents(profile),
+                filename=payload.filename,
+                document_type=payload.document_type,
+                content=content,
             )
+        except CandidateProfileServiceError as exc:
             raise HTTPException(status_code=500, detail=f"{payload.filename}: {exc}") from exc
-
-        merge_supplemental_extracted_data(profile.candidate_profile.cv_extracted, extracted)
-        document.parsed = True
-        document.extracted_data = extracted
-        profile.candidate_profile.source_documents.optional_documents.append(document)
-        profile = normalize_candidate_profile_documents(profile)
-        save_candidate_profile(app.state.base_dir, profile)
         return {
             "profile": profile.model_dump(mode="json"),
             "message": "Parsed 1 optional document into the review fields.",
@@ -363,38 +322,14 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Delete one uploaded candidate document and rebuild review data."""
 
-        profile = load_candidate_profile(app.state.base_dir).model_copy(deep=True)
-        document_type = payload.document_type.strip().casefold()
-        target_path = payload.file_path.strip()
-        if document_type == "cv":
-            if (
-                profile.candidate_profile.source_documents.cv.file_path.strip()
-                != target_path
-            ):
-                raise HTTPException(status_code=404, detail="Candidate CV not found.")
-            delete_runtime_candidate_file(app.state.base_dir, target_path)
-            profile.candidate_profile.source_documents.cv.file_path = ""
-            profile.candidate_profile.source_documents.cv.parsed = False
-            profile.candidate_profile.source_documents.cv.extracted_data = None
-        else:
-            kept_documents: list[CandidateOptionalDocument] = []
-            deleted = False
-            for document in profile.candidate_profile.source_documents.optional_documents:
-                if document.file_path.strip() == target_path:
-                    delete_runtime_candidate_file(app.state.base_dir, target_path)
-                    deleted = True
-                    continue
-                kept_documents.append(document)
-            if not deleted:
-                raise HTTPException(status_code=404, detail="Candidate document not found.")
-            profile.candidate_profile.source_documents.optional_documents = kept_documents
-
-        profile.candidate_profile.cv_extracted = rebuild_candidate_cv_extracted(
-            app.state.base_dir,
-            profile,
-        )
-        profile = normalize_candidate_profile_documents(profile)
-        save_candidate_profile(app.state.base_dir, profile)
+        try:
+            profile = service_delete_candidate_document(
+                app.state.base_dir,
+                file_path=payload.file_path,
+                document_type=payload.document_type,
+            )
+        except CandidateProfileServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {
             "profile": profile.model_dump(mode="json"),
             "message": "Uploaded document deleted.",
@@ -405,8 +340,8 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Extract a job URL and resolve its apply URL."""
 
         try:
-            extraction_result = extract_job_intake_data(payload.source_url)
-        except (RuntimeError, ValueError) as exc:
+            extraction_result = extract_job_url(payload.source_url)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         final_apply_url = resolved_apply_url(
@@ -431,45 +366,29 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Persist reviewed job intake data and update the tracker."""
 
         try:
-            validate_reviewed_apply_url(
-                payload.apply_url,
-                payload.source_url,
-                payload.apply_resolution,
+            job, job_path = service_save_reviewed_job(
+                app.state.base_dir,
+                ReviewedJobInput(
+                    source_url=payload.source_url,
+                    extracted_data=payload.extracted_data,
+                    apply_resolution=payload.apply_resolution,
+                    title=payload.title,
+                    company=payload.company,
+                    location=payload.location,
+                    remote_policy=payload.remote_policy,
+                    apply_url=payload.apply_url,
+                    salary=payload.salary,
+                    posted_date=payload.posted_date,
+                    source_job_id=payload.source_job_id,
+                    description=payload.description,
+                    requirements=payload.requirements,
+                    responsibilities=payload.responsibilities,
+                    nice_to_have_skills=payload.nice_to_have_skills,
+                    dynamic_fields=payload.dynamic_fields,
+                ),
             )
-            job = create_job_listing(
-                title=payload.title,
-                company=payload.company,
-                source_url=payload.source_url,
-                location=payload.location,
-                remote_policy=payload.remote_policy,
-                apply_url=payload.apply_url,
-                description=payload.description,
-                requirements=lines_from_text(payload.requirements),
-                responsibilities=lines_from_text(payload.responsibilities),
-                nice_to_have_skills=lines_from_text(payload.nice_to_have_skills),
-                salary=payload.salary,
-                posted_date=payload.posted_date,
-                source_job_id=payload.source_job_id,
-                job_details={
-                    "extraction_confidence": payload.extracted_data.confidence,
-                    "job_extraction_trace": workflow_trace_payload(
-                        payload.extracted_data.workflow_trace
-                    ),
-                    "apply_url_resolution": apply_resolution_details(
-                        payload.apply_url,
-                        payload.source_url,
-                        payload.apply_resolution,
-                    ),
-                    "dynamic_fields": [
-                        field
-                        for field in payload.dynamic_fields
-                        if field.get("name") or field.get("value")
-                    ],
-                },
-            )
-        except (ValueError, ValidationError) as exc:
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        job_path = persist_job_listing(app.state.base_dir, job)
         return {
             "job": job.model_dump(mode="json"),
             "job_path": str(job_path),
@@ -500,14 +419,10 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Update one tracker status from the Tracker page."""
 
-        ensure_job_is_active(app.state.base_dir, job_id)
         try:
-            records = update_manual_tracker_status(app.state.base_dir, job_id, payload.status)
-        except ValueError as exc:
+            record = service_update_tracker_status(app.state.base_dir, job_id, payload.status)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        record = next((item for item in records if item.job_id == job_id), None)
-        if record is None:
-            raise HTTPException(status_code=404, detail="Tracker record not found.")
         return {
             "record": record.model_dump(mode="json"),
             "status_options": tracker_status_options(),
@@ -536,10 +451,9 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Remove one job from active Jobs and Tracker views."""
 
         try:
-            records = archive_tracker_record(app.state.base_dir, job_id)
-        except ValueError as exc:
+            record = service_archive_job(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        record = next((item for item in records if item.job_id == job_id), None)
         return {
             "record": record.model_dump(mode="json") if record else None,
             "message": "Job removed from active jobs.",
@@ -550,10 +464,9 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Restore one archived job to active Jobs and Tracker views."""
 
         try:
-            records = restore_tracker_record(app.state.base_dir, job_id)
-        except ValueError as exc:
+            record = service_restore_job(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        record = next((item for item in records if item.job_id == job_id), None)
         return {
             "record": record.model_dump(mode="json") if record else None,
             "message": "Job restored to active jobs.",
@@ -564,8 +477,8 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Permanently delete one job's local data and tracker entry."""
 
         try:
-            records = purge_job_data(app.state.base_dir, job_id)
-        except ValueError as exc:
+            records = service_delete_job_data(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return {
             "records": [record.model_dump(mode="json") for record in records],
@@ -616,13 +529,9 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def discover_requirements(job_id: str) -> dict[str, object]:
         """Discover application requirements from the reviewed apply URL."""
 
-        job = require_job(app.state.base_dir, job_id)
         try:
-            discovery_state = run_requirements_discovery_graph(job)
-            requirements = discovery_state["requirements"]
-            save_application_page_snapshot(app.state.base_dir, job.id, discovery_state["snapshot"])
-            save_application_requirements(app.state.base_dir, requirements)
-        except (RuntimeError, ValueError) as exc:
+            requirements = discover_application_requirements(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "requirements": requirements.model_dump(mode="json"),
@@ -636,16 +545,14 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Save structured requirements review edits."""
 
-        ensure_job_is_active(app.state.base_dir, job_id)
-        requirements = require_requirements(app.state.base_dir, job_id)
         try:
-            reviewed = apply_application_requirements_review_edits(
-                requirements,
+            reviewed = review_application_requirements(
+                app.state.base_dir,
+                job_id,
                 **payload.model_dump(),
             )
-        except ValidationError as exc:
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        save_application_requirements(app.state.base_dir, reviewed)
         message = (
             "Requirements review saved."
             if reviewed.review_status == "reviewed"
@@ -660,25 +567,12 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def generate_package(job_id: str) -> dict[str, object]:
         """Generate or regenerate an application package."""
 
-        job = require_job(app.state.base_dir, job_id)
-        requirements = load_application_requirements(app.state.base_dir, job.id)
-        candidate_profile = load_candidate_profile(app.state.base_dir)
-        blockers = get_application_package_blockers(candidate_profile, job, requirements)
-        if blockers:
-            raise HTTPException(
-                status_code=400,
-                detail="Complete all package prerequisites before generating application material.",
-            )
         try:
-            package = generate_application_package(
-                candidate_profile,
-                load_experience_units(app.state.base_dir),
-                job,
-                requirements,
+            package, json_path, markdown_path = generate_reviewable_application_package(
+                app.state.base_dir,
+                job_id,
             )
-            json_path, markdown_path = save_application_package(app.state.base_dir, package, job)
-            update_tracker_for_application_package(app.state.base_dir, job.id, json_path)
-        except RuntimeError as exc:
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "package": package.model_dump(mode="json"),
@@ -691,12 +585,14 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def review_package(job_id: str, payload: PackageReviewRequest) -> dict[str, object]:
         """Save artifact text edits and mark the package reviewed."""
 
-        job = require_job(app.state.base_dir, job_id)
-        package = require_package(app.state.base_dir, job_id)
-        edited = apply_application_package_review_edits(package, payload.edits_by_artifact_id)
-        reviewed = mark_application_package_reviewed(edited)
-        json_path, markdown_path = save_application_package(app.state.base_dir, reviewed, job)
-        update_tracker_for_application_package(app.state.base_dir, job.id, json_path)
+        try:
+            reviewed, json_path, markdown_path = review_application_package(
+                app.state.base_dir,
+                job_id,
+                payload.edits_by_artifact_id,
+            )
+        except JobWorkflowServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "package": reviewed.model_dump(mode="json"),
             "json_path": str(json_path),
@@ -711,31 +607,14 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     ) -> dict[str, object]:
         """Export the cover-letter artifact to the requested folder."""
 
-        job = require_job(app.state.base_dir, job_id)
-        package = require_package(app.state.base_dir, job_id)
-        destination_text = payload.destination_folder.strip()
-        if not destination_text:
-            raise HTTPException(
-                status_code=400,
-                detail="Choose a destination folder before exporting the cover letter.",
-            )
         try:
-            exported_path = export_cover_letter_artifact(
-                package,
-                Path(destination_text).expanduser(),
+            exported_path, json_path, markdown_path = service_export_cover_letter(
+                app.state.base_dir,
+                job_id,
+                payload.destination_folder,
             )
-            json_path, markdown_path = save_application_package(app.state.base_dir, package, job)
-            update_tracker_for_application_package(app.state.base_dir, job.id, json_path)
-        except OSError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Could not export cover letter artifact: {exc}",
-            ) from exc
-        if exported_path is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No cover letter artifact is available to export.",
-            )
+        except JobWorkflowServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "exported_path": str(exported_path),
             "json_path": str(json_path),
@@ -747,25 +626,12 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def generate_fill_plan(job_id: str) -> dict[str, object]:
         """Generate or refresh the application fill plan."""
 
-        ensure_job_is_active(app.state.base_dir, job_id)
-        requirements = load_application_requirements(app.state.base_dir, job_id)
-        package = load_application_package(app.state.base_dir, job_id)
-        blockers = get_fill_plan_generation_blockers(requirements, package)
-        if blockers or requirements is None or package is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Complete fill plan prerequisites before generating.",
-            )
         try:
-            fill_plan = generate_application_fill_plan(
-                load_candidate_profile(app.state.base_dir),
-                requirements,
-                package,
-                page_snapshot=load_application_page_snapshot(app.state.base_dir, job_id),
-                semantic_mapper=map_application_fields_with_llm,
+            fill_plan, saved_path = generate_reviewable_fill_plan(
+                app.state.base_dir,
+                job_id,
             )
-            saved_path = save_application_fill_plan(app.state.base_dir, fill_plan)
-        except RuntimeError as exc:
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {
             "fill_plan": fill_plan.model_dump(mode="json"),
@@ -778,22 +644,17 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def review_fill_plan(job_id: str, payload: FillPlanReviewRequest) -> dict[str, object]:
         """Save structured fill-plan edits and mark the plan reviewed when possible."""
 
-        ensure_job_is_active(app.state.base_dir, job_id)
-        fill_plan = require_fill_plan(app.state.base_dir, job_id)
-        edited = apply_fill_plan_edits(
-            fill_plan,
-            payload.edited_values,
-            upload_paths_by_key=payload.upload_paths_by_key,
-            needs_answer_values_by_key=payload.needs_answer_values_by_key,
-            blocked_values_by_key=payload.blocked_values_by_key,
-        )
         try:
-            reviewed = mark_application_fill_plan_reviewed(edited)
-        except ValueError as exc:
-            save_application_fill_plan(app.state.base_dir, edited)
+            reviewed = service_review_fill_plan(
+                app.state.base_dir,
+                job_id,
+                edited_values=payload.edited_values,
+                upload_paths_by_key=payload.upload_paths_by_key,
+                needs_answer_values_by_key=payload.needs_answer_values_by_key,
+                blocked_values_by_key=payload.blocked_values_by_key,
+            )
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        save_application_fill_plan(app.state.base_dir, reviewed)
-        update_tracker_record(app.state.base_dir, job_id, status="ready_to_apply")
         return {
             "fill_plan": reviewed.model_dump(mode="json"),
             "fill_plan_review": build_fill_plan_review_payload(reviewed),
@@ -804,42 +665,14 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def apply_to_job(job_id: str) -> dict[str, object]:
         """Start Browser Use apply assistance for a reviewed job."""
 
-        job = require_job(app.state.base_dir, job_id)
-        candidate_profile = load_candidate_profile(app.state.base_dir)
-        requirements = load_application_requirements(app.state.base_dir, job.id)
-        package = load_application_package(app.state.base_dir, job.id)
-        fill_plan = load_application_fill_plan(app.state.base_dir, job.id)
-        blockers = get_apply_assistance_blockers(
-            job,
-            requirements,
-            package,
-            fill_plan,
-            candidate_profile=candidate_profile,
-        )
-        if blockers:
-            raise HTTPException(
-                status_code=400,
-                detail="Complete the required review steps before opening the apply flow.",
-            )
-        if fill_plan is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Generate and review the application fill plan before applying.",
-            )
-        browser_use_log_dir = Path(app.state.base_dir) / RUNTIME_DATA_DIR / "browser_use"
         try:
-            result = open_apply_url_with_browser_use_fill_plan(
-                str(job.apply_url),
-                fill_plan=fill_plan,
-                log_dir=browser_use_log_dir,
+            result = launch_apply_assistance(
+                app.state.base_dir,
+                job_id,
                 startup_wait_seconds=API_BROWSER_USE_STARTUP_WAIT_SECONDS,
-                candidate_profile=candidate_profile,
-                requirements=requirements,
-                package=package,
             )
-        except BrowserUseLaunchError as exc:
+        except JobWorkflowServiceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        update_tracker_record(app.state.base_dir, job.id, status="agent_assistance_attempted")
         return {
             "url": result.url,
             "pid": result.pid,
@@ -851,9 +684,11 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def stop_browser_session(job_id: str) -> dict[str, object]:
         """Stop the active Browser Use session."""
 
-        _ = require_job(app.state.base_dir, job_id)
-        browser_use_log_dir = Path(app.state.base_dir) / RUNTIME_DATA_DIR / "browser_use"
-        stopped = stop_browser_use_session(browser_use_log_dir)
+        try:
+            _ = require_job(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        stopped = stop_active_browser_session(app.state.base_dir)
         message = (
             "Stopped the active Browser Use session."
             if stopped
@@ -865,9 +700,11 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def kill_browser_processes(job_id: str) -> dict[str, object]:
         """Kill all Browser Use process groups."""
 
-        _ = require_job(app.state.base_dir, job_id)
-        browser_use_log_dir = Path(app.state.base_dir) / RUNTIME_DATA_DIR / "browser_use"
-        stopped_count = stop_all_browser_use_processes(browser_use_log_dir)
+        try:
+            _ = require_job(app.state.base_dir, job_id)
+        except JobWorkflowServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        stopped_count = service_kill_browser_processes(app.state.base_dir)
         return {
             "stopped_count": stopped_count,
             "message": f"Killed {stopped_count} Browser Use process group(s).",
@@ -961,18 +798,6 @@ def candidate_options() -> dict[str, object]:
             ["manager", "Manager"],
         ],
     }
-
-
-def decode_file_payload(payload: FilePayload) -> bytes:
-    """Decode a base64 file payload or raise a request error."""
-
-    try:
-        return base64.b64decode(payload.content_base64)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded file content is not valid base64.",
-        ) from exc
 
 
 def dump_optional(value: BaseModel | None) -> dict[str, object] | None:
@@ -1124,94 +949,6 @@ def fill_plan_row_payload(
         "source": field.source,
         "confidence": field.confidence,
     }
-
-
-def delete_runtime_candidate_file(base_dir: Path | str, file_path: str) -> None:
-    """Delete one runtime candidate upload when it points inside the candidate area."""
-
-    candidate_path = file_path.strip()
-    if not candidate_path:
-        return
-
-    root = Path(base_dir).resolve()
-    path = Path(candidate_path)
-    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
-    allowed_root = (root / RUNTIME_DATA_DIR / "candidate_profile").resolve()
-    if not resolved.is_relative_to(allowed_root):
-        return
-    resolved.unlink(missing_ok=True)
-
-
-def rebuild_candidate_cv_extracted(
-    base_dir: Path | str,
-    profile: CandidateProfile,
-) -> CandidateCVExtracted:
-    """Rebuild merged review data from the remaining uploaded candidate documents."""
-
-    source_documents = profile.candidate_profile.source_documents
-    cv_extracted = load_or_extract_cv_data(base_dir, source_documents.cv)
-    for document in source_documents.optional_documents:
-        supplemental = load_or_extract_optional_document_data(base_dir, document)
-        if supplemental is None:
-            continue
-        merge_supplemental_extracted_data(cv_extracted, supplemental)
-        document.parsed = True
-        document.extracted_data = supplemental
-    return cv_extracted
-
-
-def load_or_extract_cv_data(
-    base_dir: Path | str,
-    source_cv: CandidateSourceCV,
-) -> CandidateCVExtracted:
-    """Return stored CV extraction data or recompute it from the uploaded file."""
-
-    if source_cv.extracted_data is not None:
-        source_cv.parsed = True
-        return source_cv.extracted_data.model_copy(deep=True)
-    file_path = source_cv.file_path.strip()
-    if not file_path:
-        return CandidateCVExtracted()
-    ensure_runtime_candidate_file_exists(base_dir, file_path)
-    extracted = run_cv_extraction_task(file_path)
-    source_cv.parsed = True
-    source_cv.extracted_data = extracted
-    return extracted.model_copy(deep=True)
-
-
-def load_or_extract_optional_document_data(
-    base_dir: Path | str,
-    document: CandidateOptionalDocument,
-) -> CandidateSupplementalExtracted | None:
-    """Return stored supplemental extraction data or recompute it from the file."""
-
-    if document.extracted_data is not None:
-        document.parsed = True
-        return document.extracted_data.model_copy(deep=True)
-    file_path = document.file_path.strip()
-    if not file_path:
-        return None
-    ensure_runtime_candidate_file_exists(base_dir, file_path)
-    extracted = run_optional_document_extraction_task(file_path)
-    document.parsed = True
-    document.extracted_data = extracted
-    return extracted
-
-
-def ensure_runtime_candidate_file_exists(base_dir: Path | str, file_path: str) -> None:
-    """Raise a clear error when a referenced runtime candidate file no longer exists."""
-
-    root = Path(base_dir).resolve()
-    path = Path(file_path)
-    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
-    if not resolved.exists():
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Uploaded file is missing: {resolved}. Re-upload the remaining candidate "
-                "documents before deleting this item."
-            ),
-        )
 
 
 app = create_app()

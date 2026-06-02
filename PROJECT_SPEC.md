@@ -340,7 +340,11 @@ This is an import path, not a required runtime dependency.
 
 The app may open the application URL and provide prepared answers.
 
-The app must not automatically submit applications.
+By default, Browser Use remains fill-only and must stop before final
+submission. Karen may launch an explicit final-submit mode only for a selected
+job with a per-job session permission grant that enables final submission.
+Login, MFA, captcha, account creation, missing required unreviewed fields, and
+recruiter messaging remain manual-intervention boundaries.
 
 ### Job Proposal Agent
 
@@ -354,7 +358,7 @@ The user must approve which jobs enter the application pipeline.
 
 The first version should not implement:
 
-- autonomous final submission
+- autonomous final submission without a per-job Karen session grant
 - LinkedIn scraping
 - login/session automation
 - email sending
@@ -545,11 +549,14 @@ Boundaries:
 - detailed job intake review stays on Job Intake
 - match analysis is not proposed or reviewed by Karen in the current known-job
   workflow
-- requirements review, package review, fill-plan review, and Browser Use launch
-  stay on Jobs
-- Karen cannot approve gates, launch Browser Use, submit applications, automate
-  login or captchas, message recruiters, bypass review gates, or invent
-  candidate data from free-form chat
+- requirements review, package review, and fill-plan review stay on Jobs when
+  structured reviewed fields are required
+- Karen can run job-scoped mutations, Browser Use launch, and final-submit mode
+  only for the selected job after an explicit per-job session grant
+- destructive job deletion still requires explicit delete intent even when a
+  session grant exists
+- Karen cannot automate login, MFA, captchas, account creation, recruiter
+  messaging, bypass review gates, or invent candidate data from free-form chat
 
 ---
 
@@ -570,8 +577,11 @@ The workflow graph should manage:
 The full graph will later cover job discovery, job detail extraction, apply URL
 resolution, application data generation, human review, and assisted
 upload/apply coordination through the webpage. Assisted upload/apply remains
-human-gated; graph nodes must not submit, upload, log in, or enter personal data
-without explicit human action.
+human-gated; graph nodes must not upload, enter personal data, or submit
+without explicit human action. Final submission is allowed only in Karen's
+explicit final-submit mode for a granted selected job. Graph nodes must stop
+and report manual intervention when login, MFA, captcha, account creation, or
+missing required unreviewed fields are encountered.
 
 ---
 

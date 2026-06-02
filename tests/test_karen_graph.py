@@ -10,6 +10,7 @@ from src.agents.karen.state import KarenContext, KarenIntentResponse
 from src.app_workflow import load_jobs_index, save_candidate_profile
 from src.job_intake import create_job_listing, persist_job_listing
 from src.schemas import ApplicationPageSnapshot, ApplicationRequirements, CandidateProfile
+from src.services.karen_permission_service import grant_job_session_permission
 
 
 def make_profile() -> CandidateProfile:
@@ -75,6 +76,17 @@ def static_intent(intent: KarenIntentResponse):
         return intent
 
     return classify
+
+
+def grant_full_permission(tmp_path: Path, session_id: str, job_id: str) -> None:
+    grant_job_session_permission(
+        tmp_path,
+        session_id=session_id,
+        job_id=job_id,
+        allow_app_mutations=True,
+        allow_browser_launch=True,
+        allow_final_submission=True,
+    )
 
 
 def fake_requirements_discoverer(job):
@@ -160,6 +172,7 @@ def test_karen_lists_next_actions_from_current_state(tmp_path: Path) -> None:
 
 def test_karen_continue_runs_safe_workflow_until_next_gate(tmp_path: Path) -> None:
     _, job = setup_profile_and_job(tmp_path)
+    grant_full_permission(tmp_path, "karen-continue", job.id)
 
     result = process_karen_chat_turn(
         tmp_path,
@@ -189,6 +202,7 @@ def test_karen_continue_runs_safe_workflow_until_next_gate(tmp_path: Path) -> No
 
 def test_karen_can_start_requirements_for_known_job(tmp_path: Path) -> None:
     _, job = setup_profile_and_job(tmp_path)
+    grant_full_permission(tmp_path, "karen-help-apply", job.id)
 
     result = process_karen_chat_turn(
         tmp_path,
@@ -212,6 +226,50 @@ def test_karen_can_start_requirements_for_known_job(tmp_path: Path) -> None:
     assert result.tool_result is not None
     assert result.tool_result.status == "executed"
     assert "requirements_review" in result.assistant_message
+
+
+def test_karen_permission_tool_grants_selected_job_session(tmp_path: Path) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+
+    granted = process_karen_chat_turn(
+        tmp_path,
+        current_page="Agent",
+        selected_job_id=job.id,
+        user_message="Grant Karen permission for this job now.",
+        session_id="karen-grant",
+        intent_classifier=static_intent(
+            KarenIntentResponse(
+                assistant_message="I will grant this session permission.",
+                proposed_tool="grant_job_session_permission",
+                permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+                auto_execute=True,
+            )
+        ),
+    )
+
+    assert granted.tool_result is not None
+    assert granted.tool_result.status == "executed"
+    assert "final submission" in granted.assistant_message
+
+    inspected = process_karen_chat_turn(
+        tmp_path,
+        current_page="Agent",
+        selected_job_id=job.id,
+        user_message="Inspect Karen permission.",
+        session_id="karen-grant",
+        intent_classifier=static_intent(
+            KarenIntentResponse(
+                assistant_message="I will inspect permission.",
+                proposed_tool="inspect_job_session_permission",
+                permission_level=PermissionLevel.READ_ONLY,
+                auto_execute=True,
+            )
+        ),
+    )
+
+    assert inspected.tool_result is not None
+    assert inspected.tool_result.status == "answered"
+    assert "final submission=True" in inspected.assistant_message
 
 
 def test_karen_explains_match_analysis_is_not_active_workflow(tmp_path: Path) -> None:
@@ -281,7 +339,7 @@ def test_karen_refuses_direct_package_approval_tool_from_chat(tmp_path: Path) ->
 
     assert result.tool_result is not None
     assert result.tool_result.status == "refused"
-    assert "Jobs page" in result.assistant_message
+    assert "session grant" in result.assistant_message
 
 
 def test_karen_refuses_final_submission_and_logs_it(tmp_path: Path) -> None:
@@ -305,13 +363,14 @@ def test_karen_refuses_final_submission_and_logs_it(tmp_path: Path) -> None:
 
     assert result.tool_result is not None
     assert result.tool_result.status == "refused"
-    assert "Final application submission" in result.assistant_message
+    assert "final submission enabled" in result.assistant_message
     events = load_agent_events(tmp_path, "karen-submit")
     assert events[0].result == "refused"
 
 
 def test_karen_can_delete_selected_job_from_chat(tmp_path: Path) -> None:
     _, job = setup_profile_and_job(tmp_path)
+    grant_full_permission(tmp_path, "karen-delete-job", job.id)
 
     result = process_karen_chat_turn(
         tmp_path,

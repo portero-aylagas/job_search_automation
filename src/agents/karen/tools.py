@@ -22,7 +22,26 @@ from src.app_workflow import (
 from src.application_fill_plan import load_application_fill_plan
 from src.application_package import load_application_package
 from src.candidate_profile import validate_candidate_profile
-from src.tracker_status import purge_job_data, tracker_status_label
+from src.services.job_workflow_service import (
+    JobWorkflowServiceError,
+    archive_job,
+    delete_job_data,
+    kill_browser_processes,
+    launch_apply_assistance,
+    restore_job,
+    run_karen_workflow_action,
+    stop_active_browser_session,
+)
+from src.services.karen_permission_service import (
+    grant_job_session_permission as service_grant_job_session_permission,
+)
+from src.services.karen_permission_service import (
+    inspect_job_session_permission as service_inspect_job_session_permission,
+)
+from src.services.karen_permission_service import (
+    revoke_job_session_permission as service_revoke_job_session_permission,
+)
+from src.tracker_status import tracker_status_label
 
 AGENT_PAGE_NAME = "Agent Karen"
 PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME, "Agent")
@@ -38,6 +57,7 @@ class KarenToolDefinition:
     workflow_action: str | None = None
     route_page: str | None = None
     needs_job: bool = False
+    needs_permission: bool = False
 
 
 READ_ONLY_TOOLS = {
@@ -86,6 +106,7 @@ WORKFLOW_TOOLS = {
         description="Run safe workflow steps until the next human gate.",
         workflow_action="continue",
         needs_job=True,
+        needs_permission=True,
     ),
     "discover_requirements": KarenToolDefinition(
         name="discover_requirements",
@@ -93,6 +114,7 @@ WORKFLOW_TOOLS = {
         description="Discover application requirements from the reviewed apply URL.",
         workflow_action="discover_requirements",
         needs_job=True,
+        needs_permission=True,
     ),
     "generate_application_package": KarenToolDefinition(
         name="generate_application_package",
@@ -100,6 +122,7 @@ WORKFLOW_TOOLS = {
         description="Generate a draft application package.",
         workflow_action="generate_package",
         needs_job=True,
+        needs_permission=True,
     ),
     "generate_fill_plan": KarenToolDefinition(
         name="generate_fill_plan",
@@ -107,6 +130,7 @@ WORKFLOW_TOOLS = {
         description="Generate a draft Browser Use fill plan.",
         workflow_action="generate_fill_plan",
         needs_job=True,
+        needs_permission=True,
     ),
     "prepare_apply_assistance": KarenToolDefinition(
         name="prepare_apply_assistance",
@@ -114,11 +138,120 @@ WORKFLOW_TOOLS = {
         description="Check whether apply assistance is ready to launch from Jobs.",
         workflow_action="prepare_apply_assistance",
         needs_job=True,
+        needs_permission=True,
+    ),
+    "launch_browser_use": KarenToolDefinition(
+        name="launch_browser_use",
+        permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
+        description="Launch fill-only Browser Use apply assistance.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "final_submission": KarenToolDefinition(
+        name="final_submission",
+        permission_level=PermissionLevel.FINAL_SUBMISSION,
+        description="Launch final-submit Browser Use mode for a reviewed job.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "stop_browser_use_session": KarenToolDefinition(
+        name="stop_browser_use_session",
+        permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
+        description="Stop the active Browser Use session.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "kill_browser_use_processes": KarenToolDefinition(
+        name="kill_browser_use_processes",
+        permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
+        description="Kill Browser Use process groups started by this app.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "archive_job": KarenToolDefinition(
+        name="archive_job",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Archive one selected job.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "restore_job": KarenToolDefinition(
+        name="restore_job",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Restore one selected archived job.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "update_tracker_status": KarenToolDefinition(
+        name="update_tracker_status",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Route to Tracker when a concrete status value is needed.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+    "export_cover_letter": KarenToolDefinition(
+        name="export_cover_letter",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Route to Jobs when an export destination folder is needed.",
+        needs_job=True,
+        needs_permission=True,
     ),
     "delete_job_data": KarenToolDefinition(
         name="delete_job_data",
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         description="Permanently delete one selected job's local data.",
+        needs_job=True,
+        needs_permission=True,
+    ),
+}
+
+PROFILE_TOOLS = {
+    name: KarenToolDefinition(
+        name=name,
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Candidate Profile action that needs uploaded files or reviewed form data.",
+        route_page="Candidate Profile",
+    )
+    for name in (
+        "parse_uploaded_cv",
+        "parse_optional_document",
+        "save_candidate_review_fields",
+        "save_candidate_preferences",
+        "save_reviewed_candidate_profile",
+        "delete_candidate_document",
+    )
+}
+
+JOB_INTAKE_TOOLS = {
+    name: KarenToolDefinition(
+        name=name,
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Job Intake action that needs URL or reviewed form data.",
+        route_page="Job Intake",
+    )
+    for name in (
+        "extract_job_url",
+        "save_reviewed_job",
+    )
+}
+
+PERMISSION_TOOLS = {
+    "grant_job_session_permission": KarenToolDefinition(
+        name="grant_job_session_permission",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Grant Karen full permission for the selected job in this session.",
+        needs_job=True,
+    ),
+    "revoke_job_session_permission": KarenToolDefinition(
+        name="revoke_job_session_permission",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        description="Revoke Karen permissions for the selected job in this session.",
+        needs_job=True,
+    ),
+    "inspect_job_session_permission": KarenToolDefinition(
+        name="inspect_job_session_permission",
+        permission_level=PermissionLevel.READ_ONLY,
+        description="Inspect Karen permissions for the selected job in this session.",
         needs_job=True,
     ),
 }
@@ -161,15 +294,23 @@ REVIEW_GATE_TOOLS = {
         name=name,
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         description="Review-gate action that must be handled in the Jobs review panels.",
+        needs_job=True,
+        needs_permission=True,
     )
     for name in (
         "review_requirements",
         "approve_package",
-        "reject_package",
         "review_fill_plan",
-        "launch_browser_use",
     )
 }
+
+REVIEW_GATE_TOOLS["reject_package"] = KarenToolDefinition(
+    name="reject_package",
+    permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+    description="Package rejection must be handled in the Jobs review panel.",
+    needs_job=True,
+    needs_permission=True,
+)
 
 BLOCKED_TOOLS = {
     name: KarenToolDefinition(
@@ -178,7 +319,6 @@ BLOCKED_TOOLS = {
         description="Blocked unsafe action.",
     )
     for name in (
-        "final_submission",
         "login_automation",
         "captcha_handling",
         "recruiter_messaging",
@@ -190,6 +330,9 @@ BLOCKED_TOOLS = {
 KAREN_TOOL_REGISTRY = {
     **READ_ONLY_TOOLS,
     **WORKFLOW_TOOLS,
+    **PROFILE_TOOLS,
+    **JOB_INTAKE_TOOLS,
+    **PERMISSION_TOOLS,
     **ROUTE_TOOLS,
     **REVIEW_GATE_TOOLS,
     **BLOCKED_TOOLS,
@@ -241,6 +384,7 @@ def build_karen_context(
         pending_gate=workflow_state.pending_gate,
         next_allowed_actions=workflow_state.next_allowed_actions,
         recent_transcript_summary=_recent_transcript_summary(recent_messages),
+        job_permissions=session.job_permissions,
     )
 
 
@@ -275,6 +419,34 @@ def execute_karen_tool(
             route_hint="Jobs",
         )
 
+    if definition.name in {
+        "grant_job_session_permission",
+        "revoke_job_session_permission",
+        "inspect_job_session_permission",
+    }:
+        return _execute_permission_tool(
+            base_dir,
+            context,
+            definition,
+            active_job_id=active_job_id,
+        )
+
+    permission_result = _check_execution_permission(context, definition, active_job_id)
+    if permission_result is not None:
+        return permission_result
+
+    if definition.name in PROFILE_TOOLS or definition.name in JOB_INTAKE_TOOLS:
+        page = definition.route_page or "Jobs"
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_input",
+            message=(
+                f"Open {page} to provide the required file upload, URL, or "
+                "reviewed form fields for this action."
+            ),
+            route_hint=page,
+        )
+
     if definition.route_page:
         page = route_page or definition.route_page
         if page not in PAGE_NAMES:
@@ -299,7 +471,148 @@ def execute_karen_tool(
     if definition.name == "delete_job_data":
         return _execute_delete_job_tool(base_dir, definition, active_job_id=active_job_id)
 
+    if definition.name in {
+        "archive_job",
+        "restore_job",
+        "update_tracker_status",
+        "export_cover_letter",
+        "launch_browser_use",
+        "final_submission",
+        "stop_browser_use_session",
+        "kill_browser_use_processes",
+    }:
+        return _execute_service_tool(base_dir, definition, active_job_id=active_job_id)
+
+    if definition.name in REVIEW_GATE_TOOLS:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_input",
+            message=(
+                "Open the Jobs review panel to provide the required reviewed fields "
+                "for this action."
+            ),
+            route_hint="Jobs",
+        )
+
     return _execute_read_only_tool(base_dir, context, definition, active_job_id=active_job_id)
+
+
+def _execute_permission_tool(
+    base_dir: Path | str,
+    context: KarenContext,
+    definition: KarenToolDefinition,
+    *,
+    active_job_id: str | None,
+) -> KarenToolResult:
+    if not active_job_id:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_job",
+            message="Select a job before changing Karen session permissions.",
+            route_hint="Jobs",
+        )
+    if definition.name == "grant_job_session_permission":
+        session = service_grant_job_session_permission(
+            base_dir,
+            session_id=context.session_id,
+            job_id=active_job_id,
+            allow_app_mutations=True,
+            allow_browser_launch=True,
+            allow_final_submission=True,
+        )
+        grant = session.job_permissions[active_job_id]
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="executed",
+            message=(
+                "Granted Karen app mutations, Browser Use launch, and final "
+                f"submission for job {active_job_id} in this session."
+            ),
+            event_details={"job_id": active_job_id, **grant.model_dump(mode="json")},
+        )
+    if definition.name == "revoke_job_session_permission":
+        service_revoke_job_session_permission(
+            base_dir,
+            session_id=context.session_id,
+            job_id=active_job_id,
+        )
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="executed",
+            message=f"Revoked Karen permissions for job {active_job_id}.",
+            event_details={"job_id": active_job_id},
+        )
+
+    grant = service_inspect_job_session_permission(
+        base_dir,
+        session_id=context.session_id,
+        job_id=active_job_id,
+    )
+    return KarenToolResult(
+        tool_name=definition.name,
+        status="answered",
+        message=(
+            f"Permissions for job {active_job_id}: app mutations="
+            f"{grant.allow_app_mutations}, Browser Use launch="
+            f"{grant.allow_browser_launch}, final submission="
+            f"{grant.allow_final_submission}."
+        ),
+        event_details={"job_id": active_job_id, **grant.model_dump(mode="json")},
+    )
+
+
+def _check_execution_permission(
+    context: KarenContext,
+    definition: KarenToolDefinition,
+    active_job_id: str | None,
+) -> KarenToolResult | None:
+    if not definition.needs_permission:
+        return None
+    if not active_job_id:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_job",
+            message="Select a job before running this job-scoped action.",
+            route_hint="Jobs",
+        )
+    grant = context.job_permissions.get(active_job_id)
+    if grant is None:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="refused",
+            message=(
+                "This job-scoped action requires a per-job Karen session grant."
+            ),
+            route_hint="Agent Karen",
+        )
+    if definition.permission_level in {
+        PermissionLevel.DRAFT_ONLY,
+        PermissionLevel.MUTATES_LOCAL_STATE,
+    } and not grant.allow_app_mutations:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="refused",
+            message="This action requires app mutation permission for the selected job.",
+        )
+    if (
+        definition.permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION
+        and not grant.allow_browser_launch
+    ):
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="refused",
+            message="This action requires Browser Use launch permission for the selected job.",
+        )
+    if (
+        definition.permission_level == PermissionLevel.FINAL_SUBMISSION
+        and not grant.allow_final_submission
+    ):
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="refused",
+            message="This action requires final submission permission for the selected job.",
+        )
+    return None
 
 
 def _execute_delete_job_tool(
@@ -325,13 +638,116 @@ def _execute_delete_job_tool(
             status="error",
             message=f"Karen could not find tracker data for job {active_job_id}.",
         )
-    purge_job_data(base_dir, active_job_id)
+    delete_job_data(base_dir, active_job_id)
     label = f"{tracker_record.company} / {tracker_record.title}"
     return KarenToolResult(
         tool_name=definition.name,
         status="executed",
         message=f"Deleted local data for {label}.",
         event_details={"deleted_job_id": active_job_id},
+    )
+
+
+def _execute_service_tool(
+    base_dir: Path | str,
+    definition: KarenToolDefinition,
+    *,
+    active_job_id: str | None,
+) -> KarenToolResult:
+    if not active_job_id:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="needs_job",
+            message="Select a job before running this action.",
+            route_hint="Jobs",
+        )
+    try:
+        if definition.name == "archive_job":
+            record = archive_job(base_dir, active_job_id)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message="Job archived.",
+                event_details={"job_id": active_job_id, "record": _dump_model(record)},
+            )
+        if definition.name == "restore_job":
+            record = restore_job(base_dir, active_job_id)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message="Job restored.",
+                event_details={"job_id": active_job_id, "record": _dump_model(record)},
+            )
+        if definition.name == "update_tracker_status":
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="needs_input",
+                message=(
+                    "Open Tracker to choose the exact status value to save for this job."
+                ),
+                route_hint="Tracker",
+            )
+        if definition.name == "export_cover_letter":
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="needs_input",
+                message="Open Jobs to choose a destination folder for the cover letter export.",
+                route_hint="Jobs",
+            )
+        if definition.name == "launch_browser_use":
+            result = launch_apply_assistance(base_dir, active_job_id, final_submit=False)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message=f"Started Browser Use apply assistance for {result.url}.",
+                artifact_paths=[str(result.log_path)],
+                event_details={"job_id": active_job_id, "pid": result.pid},
+            )
+        if definition.name == "final_submission":
+            result = launch_apply_assistance(base_dir, active_job_id, final_submit=True)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message=f"Started Browser Use final-submit mode for {result.url}.",
+                artifact_paths=[str(result.log_path)],
+                event_details={
+                    "job_id": active_job_id,
+                    "pid": result.pid,
+                    "final_submit": True,
+                },
+            )
+        if definition.name == "stop_browser_use_session":
+            stopped = stop_active_browser_session(base_dir)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message=(
+                    "Stopped the active Browser Use session."
+                    if stopped
+                    else "No active Browser Use session was found."
+                ),
+                event_details={"job_id": active_job_id, "stopped": stopped},
+            )
+        if definition.name == "kill_browser_use_processes":
+            stopped_count = kill_browser_processes(base_dir)
+            return KarenToolResult(
+                tool_name=definition.name,
+                status="executed",
+                message=f"Killed {stopped_count} Browser Use process group(s).",
+                event_details={"job_id": active_job_id, "stopped_count": stopped_count},
+            )
+    except JobWorkflowServiceError as exc:
+        return KarenToolResult(
+            tool_name=definition.name,
+            status="error",
+            message=str(exc),
+            event_details={"job_id": active_job_id},
+        )
+
+    return KarenToolResult(
+        tool_name=definition.name,
+        status="error",
+        message=f"Karen does not have an implementation for {definition.name}.",
     )
 
 
@@ -343,7 +759,7 @@ def _execute_workflow_tool(
     active_job_id: str | None,
     dependencies: AgentWorkflowDependencies | None,
 ) -> KarenToolResult:
-    state = run_agent_workflow(
+    state = run_karen_workflow_action(
         base_dir,
         session_id=context.session_id,
         selected_job_id=active_job_id,
@@ -401,9 +817,10 @@ def _execute_read_only_tool(
         message = (
             "I am Karen, the runtime assistant for this app. I can explain the "
             "workflow, inspect state, suggest next steps, route you to panels, and "
-            "run safe draft workflow steps after you explicitly ask. I cannot submit "
-            "applications, automate login or captchas, message recruiters, approve "
-            "review gates from chat, or invent candidate data."
+            "run workflow steps after you explicitly ask and grant per-job session "
+            "permission. Final submission is available only for a granted selected "
+            "job. I cannot automate login, MFA, captchas, account creation, "
+            "recruiter messaging, or invent candidate data."
         )
     elif definition.name == "inspect_profile_status":
         message = context.profile_status_summary
@@ -501,3 +918,12 @@ def _list_or_none(label: str, items: list[str]) -> str:
     if not items:
         return f"{label}: none."
     return f"{label}: " + "; ".join(items) + "."
+
+
+def _dump_model(value: object) -> dict[str, object] | None:
+    if value is None:
+        return None
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return None

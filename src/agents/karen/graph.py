@@ -211,6 +211,10 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
         permission_level=actual_permission,
         auto_execute=intent.auto_execute,
         user_message=state["user_message"],
+        selected_job_id=context.selected_job_id,
+        target_job_id=intent.target_job_id,
+        job_permissions=context.job_permissions,
+        requires_job_permission=bool(definition and definition.needs_permission),
     )
     if not decision.allowed:
         safety_reason = intent.safety_reason or decision.reason

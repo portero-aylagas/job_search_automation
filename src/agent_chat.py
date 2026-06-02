@@ -163,8 +163,9 @@ def build_agent_response(
 
     if _asks_for_safety_boundary(user_message):
         lines.append(
-            "Safety boundary: I will not submit applications, automate login or captcha "
-            "handling, message recruiters, or launch Browser Use without explicit approval."
+            "Safety boundary: Browser launch and final submission require explicit "
+            "per-job session permission. I will not automate login, MFA, captcha "
+            "handling, account creation, recruiter messaging, or invented candidate data."
         )
 
     return AgentChatMessage(
