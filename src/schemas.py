@@ -335,6 +335,7 @@ class CandidateSourceCV(BaseModel):
 
     file_path: str = ""
     parsed: bool = False
+    extracted_data: CandidateCVExtracted | None = None
 
 
 class CandidateOptionalDocument(BaseModel):
@@ -344,6 +345,7 @@ class CandidateOptionalDocument(BaseModel):
     file_name: str = ""
     document_type: str = "other"
     parsed: bool = False
+    extracted_data: CandidateSupplementalExtracted | None = None
 
 
 class CandidateSourceDocuments(BaseModel):

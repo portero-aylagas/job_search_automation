@@ -9,7 +9,7 @@ import httpx
 import pytest
 
 from src.api import create_app
-from src.app_workflow import load_candidate_profile, load_jobs_index
+from src.app_workflow import load_candidate_profile, load_jobs_index, save_candidate_profile
 from src.application_fill_plan import load_application_fill_plan, save_application_fill_plan
 from src.application_package_storage import load_application_package, save_application_package
 from src.application_requirements import save_application_requirements
@@ -23,6 +23,7 @@ from src.schemas import (
     ApplicationPageSnapshot,
     ApplicationRequirementFinding,
     ApplicationRequirements,
+    CandidateOptionalDocument,
     CandidateProfile,
     JobListing,
 )
@@ -80,6 +81,107 @@ def test_candidate_profile_parse_cv_persists_extracted_state(
     saved = load_candidate_profile(tmp_path)
     assert saved.candidate_profile.source_documents.cv.file_path.endswith("cv.txt")
     assert saved.candidate_profile.cv_extracted.identity.first_name == "Taylor"
+
+
+def test_candidate_profile_delete_cv_removes_file_and_clears_review_state(
+    tmp_path: Path,
+) -> None:
+    profile = complete_candidate_profile()
+    cv_path = tmp_path / "data" / "runtime" / "candidate_profile" / "cv" / "cv.pdf"
+    cv_path.parent.mkdir(parents=True, exist_ok=True)
+    cv_path.write_bytes(b"%PDF cv")
+    profile.candidate_profile.source_documents.cv.file_path = str(cv_path)
+    profile.candidate_profile.source_documents.cv.extracted_data = (
+        profile.candidate_profile.cv_extracted.model_copy(deep=True)
+    )
+    save_candidate_profile(tmp_path, profile)
+
+    response = asyncio.run(
+        api_request(
+            tmp_path,
+            "DELETE",
+            "/api/candidate-profile/document",
+            json={"file_path": str(cv_path), "document_type": "cv"},
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["profile"]["candidate_profile"]["source_documents"]["cv"] == {
+        "file_path": "",
+        "parsed": False,
+        "extracted_data": None,
+    }
+    assert payload["profile"]["candidate_profile"]["cv_extracted"]["identity"]["first_name"] == ""
+    assert not cv_path.exists()
+    saved = load_candidate_profile(tmp_path)
+    assert saved.candidate_profile.source_documents.cv.file_path == ""
+    assert saved.candidate_profile.cv_extracted.references == []
+
+
+def test_candidate_profile_delete_optional_document_removes_only_selected_file(
+    tmp_path: Path,
+) -> None:
+    profile = complete_candidate_profile()
+    reference_path = (
+        tmp_path / "data" / "runtime" / "candidate_profile" / "optional_documents" / "reference.pdf"
+    )
+    certificate_path = (
+        tmp_path
+        / "data"
+        / "runtime"
+        / "candidate_profile"
+        / "optional_documents"
+        / "certificate.pdf"
+    )
+    reference_path.parent.mkdir(parents=True, exist_ok=True)
+    reference_path.write_text("reference", encoding="utf-8")
+    certificate_path.write_text("certificate", encoding="utf-8")
+    profile.candidate_profile.source_documents.optional_documents = [
+        CandidateOptionalDocument(
+            file_path=str(reference_path),
+            file_name="reference.pdf",
+            document_type="reference",
+            parsed=True,
+            extracted_data={"references": ["Former manager reference"]},
+        ),
+        CandidateOptionalDocument(
+            file_path=str(certificate_path),
+            file_name="certificate.pdf",
+            document_type="certificate",
+            parsed=True,
+            extracted_data={"certifications": ["AWS Cloud Practitioner"]},
+        ),
+    ]
+    profile.candidate_profile.source_documents.cv.extracted_data = (
+        profile.candidate_profile.cv_extracted.model_copy(deep=True)
+    )
+    profile.candidate_profile.cv_extracted.references = ["Former manager reference"]
+    profile.candidate_profile.cv_extracted.certifications = ["AWS Cloud Practitioner"]
+    save_candidate_profile(tmp_path, profile)
+
+    response = asyncio.run(
+        api_request(
+            tmp_path,
+            "DELETE",
+            "/api/candidate-profile/document",
+            json={"file_path": str(reference_path), "document_type": "reference"},
+        )
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    remaining_documents = payload["profile"]["candidate_profile"]["source_documents"][
+        "optional_documents"
+    ]
+    assert len(remaining_documents) == 1
+    assert remaining_documents[0]["document_type"] == "certificate"
+    assert payload["profile"]["candidate_profile"]["cv_extracted"]["references"] == []
+    assert payload["profile"]["candidate_profile"]["cv_extracted"]["certifications"] == [
+        "AWS Cloud Practitioner"
+    ]
+    assert not reference_path.exists()
+    assert certificate_path.exists()
 
 
 def test_job_intake_save_persists_reviewed_dynamic_fields(tmp_path: Path) -> None:

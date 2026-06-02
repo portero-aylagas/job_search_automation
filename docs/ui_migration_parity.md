@@ -20,8 +20,10 @@ platform parity, not product redesign.
 | --- | --- | --- |
 | 1. CV Upload | CV upload section | Mandatory CV upload is preserved. |
 | Parse CV with AI | `Parse CV with AI` button calling API extraction endpoint | Label and AI gate preserved. |
+| Delete uploaded CV | Inline `x` control on the current CV row | Per-document deletion preserves row-level control instead of a bulk action. |
 | 2. Optional documents | Optional document upload groups | Reference, certificate, and other document uploads preserved. |
 | Parse optional documents with AI | `Parse optional documents with AI` button calling API extraction endpoint | Label and AI gate preserved. |
+| Delete uploaded optional document | Inline `x` control on each uploaded document row | Each uploaded reference, certificate, or other document can be deleted individually. |
 | 3. Extracted data review | Structured editable CV review form | Identity and professional data fields preserved. |
 | Save CV review changes | `Save CV review changes` local review action | Label preserved. |
 | 4. Optional job-search preferences | Structured editable preferences form | Target roles, locations, remote preference, employment type, career level, availability, salary range, and EU work authorization preserved. |
