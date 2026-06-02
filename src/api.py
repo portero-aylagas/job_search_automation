@@ -96,6 +96,12 @@ from src.schemas import (
     CandidateOptionalDocument,
     CandidateProfile,
 )
+from src.tracker_status import (
+    tracker_status_filters,
+    tracker_status_options,
+    update_manual_tracker_status,
+    update_tracker_record,
+)
 
 PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"]
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -182,6 +188,12 @@ class FillPlanReviewRequest(BaseModel):
     upload_paths_by_key: dict[str, str] = Field(default_factory=dict)
     needs_answer_values_by_key: dict[str, str] = Field(default_factory=dict)
     blocked_values_by_key: dict[str, str] = Field(default_factory=dict)
+
+
+class TrackerStatusUpdateRequest(BaseModel):
+    """Manual tracker status update request."""
+
+    status: str
 
 
 class KarenChatRequest(BaseModel):
@@ -414,7 +426,32 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             records,
             key=lambda record: (record.status, record.company.lower(), record.title.lower()),
         )
-        return {"records": [record.model_dump(mode="json") for record in sorted_records]}
+        return {
+            "records": [record.model_dump(mode="json") for record in sorted_records],
+            "status_options": tracker_status_options(),
+            "status_filters": tracker_status_filters(),
+        }
+
+    @app.patch("/api/tracker/{job_id}/status")
+    async def update_tracker_status(
+        job_id: str,
+        payload: TrackerStatusUpdateRequest,
+    ) -> dict[str, object]:
+        """Update one tracker status from the Tracker page."""
+
+        try:
+            records = update_manual_tracker_status(app.state.base_dir, job_id, payload.status)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        record = next((item for item in records if item.job_id == job_id), None)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Tracker record not found.")
+        return {
+            "record": record.model_dump(mode="json"),
+            "status_options": tracker_status_options(),
+            "status_filters": tracker_status_filters(),
+            "message": "Tracker status updated.",
+        }
 
     @app.get("/api/jobs")
     async def jobs() -> dict[str, object]:
@@ -424,7 +461,10 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             load_jobs_index(app.state.base_dir),
             key=lambda record: (record.company.lower(), record.title.lower(), record.job_id),
         )
-        return {"records": [record.model_dump(mode="json") for record in records]}
+        return {
+            "records": [record.model_dump(mode="json") for record in records],
+            "status_options": tracker_status_options(),
+        }
 
     @app.get("/api/jobs/{job_id}/workspace")
     async def job_workspace(job_id: str) -> dict[str, object]:
@@ -644,6 +684,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             save_application_fill_plan(app.state.base_dir, edited)
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         save_application_fill_plan(app.state.base_dir, reviewed)
+        update_tracker_record(app.state.base_dir, job_id, status="ready_to_apply")
         return {
             "fill_plan": reviewed.model_dump(mode="json"),
             "fill_plan_review": build_fill_plan_review_payload(reviewed),
@@ -689,6 +730,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             )
         except BrowserUseLaunchError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        update_tracker_record(app.state.base_dir, job.id, status="agent_assistance_attempted")
         return {
             "url": result.url,
             "pid": result.pid,

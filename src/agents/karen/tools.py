@@ -22,6 +22,7 @@ from src.app_workflow import (
 from src.application_fill_plan import load_application_fill_plan
 from src.application_package import load_application_package
 from src.candidate_profile import validate_candidate_profile
+from src.tracker_status import tracker_status_label
 
 AGENT_PAGE_NAME = "Agent Karen"
 PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME, "Agent")
@@ -397,7 +398,8 @@ def _tracker_summary(tracker_records: list[object]) -> dict[str, int | str]:
     summary: dict[str, int | str] = {"total": len(tracker_records)}
     for record in tracker_records:
         status = getattr(record, "status", "unknown")
-        summary[status] = int(summary.get(status, 0)) + 1
+        label = tracker_status_label(status) if status != "unknown" else "Unknown"
+        summary[label] = int(summary.get(label, 0)) + 1
     return summary
 
 
@@ -425,12 +427,20 @@ def _selected_job_summary(base_dir: Path | str, job_id: str | None) -> str:
     requirements = load_application_requirements(base_dir, job_id)
     package = load_application_package(base_dir, job_id)
     fill_plan = load_application_fill_plan(base_dir, job_id)
+    tracker_record = next(
+        (record for record in load_jobs_index(base_dir) if record.job_id == job_id),
+        None,
+    )
+    tracker_status = (
+        tracker_status_label(tracker_record.status) if tracker_record is not None else "missing"
+    )
     pieces = [
         f"{job.company} / {job.title}",
+        f"Application tracker status: {tracker_status}",
         f"Apply URL: {'present' if job.apply_url else 'missing'}",
-        f"Requirements: {requirements.review_status if requirements else 'missing'}",
-        f"Package: {package.status if package else 'missing'}",
-        f"Fill plan: {fill_plan.review_status if fill_plan else 'missing'}",
+        f"Requirements review: {requirements.review_status if requirements else 'missing'}",
+        f"Package review: {package.status if package else 'missing'}",
+        f"Fill plan review: {fill_plan.review_status if fill_plan else 'missing'}",
     ]
     return ". ".join(pieces) + "."
 

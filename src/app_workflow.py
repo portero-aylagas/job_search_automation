@@ -19,7 +19,6 @@ from src.paths import (
     application_requirements_paths,
     candidate_profile_path,
     experience_units_paths,
-    jobs_index_paths,
     legacy_profile_path,
     normalized_job_paths,
     runtime_candidate_profile_path,
@@ -35,6 +34,7 @@ from src.schemas import (
     TrackerRecord,
 )
 from src.storage import load_model, save_model
+from src.tracker_status import load_tracker_records
 
 
 class ApplyUrlResolver(Protocol):
@@ -165,18 +165,7 @@ def load_experience_units(base_dir: Path | str) -> list[ExperienceUnit]:
 def load_jobs_index(base_dir: Path | str) -> list[TrackerRecord]:
     """Load tracker records using the runtime-first lookup order."""
 
-    runtime_jobs_index, runtime_tracker, template_jobs_index, template_tracker = jobs_index_paths(
-        base_dir
-    )
-    if runtime_jobs_index.exists():
-        return load_model(runtime_jobs_index, list[TrackerRecord], default=[])
-    if runtime_tracker.exists():
-        return load_model(runtime_tracker, list[TrackerRecord], default=[])
-    if template_jobs_index.exists():
-        return load_model(template_jobs_index, list[TrackerRecord], default=[])
-    if template_tracker.exists():
-        return load_model(template_tracker, list[TrackerRecord], default=[])
-    return []
+    return load_tracker_records(base_dir)
 
 
 def get_application_package_blockers(

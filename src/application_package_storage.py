@@ -16,11 +16,10 @@ from src.paths import (
     application_package_markdown_path,
     application_package_paths,
     runtime_application_package_path,
-    runtime_jobs_index_path,
-    runtime_tracker_path,
 )
 from src.schemas import ApplicationArtifact, ApplicationPackage, JobListing, TrackerRecord
 from src.storage import load_model, save_model
+from src.tracker_status import update_tracker_record
 
 __all__ = [
     "APPLICATION_PACKAGE_MARKDOWN_FILENAME",
@@ -186,18 +185,9 @@ def update_tracker_for_application_package(
 ) -> list[TrackerRecord]:
     """Mark the tracker record as having an application draft package."""
 
-    jobs_index_path = runtime_jobs_index_path(base_dir)
-    tracker_path = runtime_tracker_path(base_dir)
-    tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
-    package_path_text = str(package_path)
-
-    for record in tracker_records:
-        if record.job_id != job_id:
-            continue
-        record.status = "application_draft"
-        record.generated_package_path = package_path_text
-        break
-
-    save_model(jobs_index_path, tracker_records)
-    save_model(tracker_path, tracker_records)
-    return tracker_records
+    return update_tracker_record(
+        base_dir,
+        job_id,
+        status="application_draft",
+        generated_package_path=package_path,
+    )

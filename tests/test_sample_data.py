@@ -10,15 +10,13 @@ def test_bootstrap_sample_data_creates_empty_first_run_files(tmp_path: Path) -> 
     assert (tmp_path / "data/candidate_profile.json").is_file()
     assert (tmp_path / "data/experience_units.json").is_file()
     assert (tmp_path / "data/jobs.json").is_file()
-    assert (tmp_path / "data/tracker.json").is_file()
     assert (tmp_path / "data/runtime/jobs.json").is_file()
-    assert (tmp_path / "data/runtime/tracker.json").is_file()
     assert (tmp_path / "data/jobs").is_dir()
     assert load_json(tmp_path / "data/experience_units.json") == []
     assert load_json(tmp_path / "data/jobs.json") == []
-    assert load_json(tmp_path / "data/tracker.json") == []
     assert load_json(tmp_path / "data/runtime/jobs.json") == []
-    assert load_json(tmp_path / "data/runtime/tracker.json") == []
+    assert not (tmp_path / "data/tracker.json").exists()
+    assert not (tmp_path / "data/runtime/tracker.json").exists()
     assert not (tmp_path / "data/runtime/jobs/job-001/normalized_job.json").exists()
     assert not (tmp_path / "data/jobs/job-001/normalized_job.json").exists()
     assert not (tmp_path / "data/applications").exists()

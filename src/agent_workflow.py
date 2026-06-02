@@ -50,9 +50,7 @@ from src.paths import (
     runtime_application_fill_plan_path,
     runtime_application_package_path,
     runtime_application_requirements_path,
-    runtime_jobs_index_path,
     runtime_match_analysis_path,
-    runtime_tracker_path,
 )
 from src.schemas import (
     AgentGate,
@@ -68,7 +66,7 @@ from src.schemas import (
     MatchAnalysis,
     TrackerRecord,
 )
-from src.storage import load_model, save_model
+from src.tracker_status import TrackerStatus, update_tracker_record
 
 AgentAction = str
 
@@ -937,13 +935,5 @@ def _require_fill_plan(state: AgentGraphState) -> ApplicationFillPlan:
     return fill_plan
 
 
-def _update_tracker_status(base_dir: Path | str, job_id: str, status: str) -> None:
-    jobs_index_path = runtime_jobs_index_path(base_dir)
-    tracker_path = runtime_tracker_path(base_dir)
-    tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
-    for record in tracker_records:
-        if record.job_id == job_id:
-            record.status = status  # type: ignore[assignment]
-            break
-    save_model(jobs_index_path, tracker_records)
-    save_model(tracker_path, tracker_records)
+def _update_tracker_status(base_dir: Path | str, job_id: str, status: TrackerStatus) -> None:
+    update_tracker_record(base_dir, job_id, status=status)

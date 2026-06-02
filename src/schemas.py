@@ -10,20 +10,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-TrackerStatus = Literal[
-    "new",
-    "analyzed",
-    "interesting",
-    "rejected_by_user",
-    "application_draft",
-    "ready_to_apply",
-    "applied_manually",
-    "applied_with_agent_assistance",
-    "interview",
-    "rejected",
-    "offer",
-    "closed",
-]
+from src.tracker_status import TrackerStatus
 
 EmploymentType = Literal[
     "full_time",

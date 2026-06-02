@@ -286,6 +286,7 @@ interesting
 rejected_by_user
 application_draft
 ready_to_apply
+agent_assistance_attempted
 applied_manually
 applied_with_agent_assistance
 interview
@@ -578,7 +579,6 @@ data/
 ├── profile.json
 ├── experience_units.json
 ├── jobs.json
-├── tracker.json
 ├── jobs/
 │   └── job_001/
 │       ├── raw_input.txt
@@ -605,8 +605,9 @@ mock, example, and template-style artifacts belong in `tests/fixtures/`, not in
 runtime `data/`.
 
 `data/runtime/jobs.json` is the shared job index and the canonical source for
-the Jobs and Tracker views. `data/jobs.json` and `data/tracker.json` may be
-kept as templates, but the app reads the runtime index first.
+the Jobs and Tracker views. `data/jobs.json` is the bootstrap template. Legacy
+`tracker.json` files may be read as fallback only when the canonical index is
+missing.
 
 A database can be added later if JSON files become limiting.
 

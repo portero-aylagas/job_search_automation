@@ -7,13 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from src.paths import (
-    runtime_jobs_index_path,
-    runtime_normalized_job_path,
-    runtime_tracker_path,
-)
+from src.paths import runtime_normalized_job_path
 from src.schemas import JobListing, TrackerRecord
-from src.storage import load_model, save_model
+from src.storage import save_model
+from src.tracker_status import upsert_tracker_record as upsert_canonical_tracker_record
 
 
 def require_text(value: str, field_name: str) -> str:
@@ -181,39 +178,9 @@ def save_normalized_job(base_dir: Path | str, job_listing: JobListing) -> Path:
 
 
 def upsert_tracker_record(base_dir: Path | str, job_listing: JobListing) -> list[TrackerRecord]:
-    """Create or replace the tracker entry for a saved job listing.
+    """Create or replace the canonical tracker entry for a saved job listing."""
 
-    Args:
-        base_dir: Repository or test root where runtime tracker files are stored.
-        job_listing: Reviewed job listing used to populate tracker fields.
-    """
-
-    jobs_index_path = runtime_jobs_index_path(base_dir)
-    tracker_path = runtime_tracker_path(base_dir)
-    tracker_records = load_model(jobs_index_path, list[TrackerRecord], default=[])
-
-    new_record = TrackerRecord(
-        job_id=job_listing.id,
-        title=job_listing.title,
-        company=job_listing.company,
-        source_url=job_listing.source_url,
-        location=job_listing.location,
-        retrieval_mode=job_listing.retrieval_mode,
-        status="new",
-    )
-
-    existing_index = next(
-        (index for index, record in enumerate(tracker_records) if record.job_id == job_listing.id),
-        None,
-    )
-    if existing_index is None:
-        tracker_records.append(new_record)
-    else:
-        tracker_records[existing_index] = new_record
-
-    save_model(jobs_index_path, tracker_records)
-    save_model(tracker_path, tracker_records)
-    return tracker_records
+    return upsert_canonical_tracker_record(base_dir, job_listing)
 
 
 def persist_job_listing(base_dir: Path | str, job_listing: JobListing) -> Path:

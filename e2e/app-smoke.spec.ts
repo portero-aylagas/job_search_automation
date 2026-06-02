@@ -106,10 +106,14 @@ function responseFor(url: string, route: Route) {
     return { message: "Added job.", job: normalizedJob() };
   }
   if (url.endsWith("/api/jobs")) {
-    return { records: [jobRecord()] };
+    return { records: [jobRecord()], status_options: trackerStatusOptions() };
   }
   if (url.endsWith("/api/tracker")) {
-    return { records: [jobRecord()] };
+    return {
+      records: [jobRecord()],
+      status_options: trackerStatusOptions(),
+      status_filters: trackerStatusFilters()
+    };
   }
   if (url.includes("/api/jobs/job-1/workspace")) {
     return blockedWorkspace();
@@ -217,6 +221,34 @@ function jobRecord() {
     retrieval_mode: "url",
     status: "new"
   };
+}
+
+function trackerStatusOptions() {
+  return [
+    { value: "new", label: "New", badge: "missing", user_editable: true },
+    { value: "application_draft", label: "Application Draft", badge: "needs-review", user_editable: false },
+    { value: "ready_to_apply", label: "Ready to Apply", badge: "ready", user_editable: false },
+    { value: "agent_assistance_attempted", label: "Agent Assistance Attempted", badge: "needs-review", user_editable: false },
+    { value: "applied_manually", label: "Applied Manually", badge: "complete", user_editable: true },
+    { value: "applied_with_agent_assistance", label: "Applied with Agent Assistance", badge: "complete", user_editable: true },
+    { value: "interview", label: "Interview", badge: "complete", user_editable: true },
+    { value: "rejected", label: "Rejected", badge: "blocked", user_editable: true },
+    { value: "offer", label: "Offer", badge: "complete", user_editable: true },
+    { value: "closed", label: "Closed", badge: "blocked", user_editable: true }
+  ];
+}
+
+function trackerStatusFilters() {
+  return [
+    { label: "All", statuses: trackerStatusOptions().map((option) => option.value) },
+    { label: "New", statuses: ["new"] },
+    { label: "Application Draft", statuses: ["application_draft"] },
+    { label: "Ready", statuses: ["ready_to_apply"] },
+    { label: "Agent Attempted", statuses: ["agent_assistance_attempted"] },
+    { label: "Applied", statuses: ["applied_manually", "applied_with_agent_assistance"] },
+    { label: "Interview / Offer", statuses: ["interview", "offer"] },
+    { label: "Closed", statuses: ["rejected", "closed"] }
+  ];
 }
 
 function blockedWorkspace() {
