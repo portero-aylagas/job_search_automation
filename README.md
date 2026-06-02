@@ -43,6 +43,8 @@ application tracking
 - React + TypeScript + Vite UI with a FastAPI adapter over the existing Python
   workflow functions
 - candidate profile management
+- per-document candidate upload deletion with individual `x` controls for the
+  CV and each optional uploaded document
 - reusable experience units
 - URL-only job intake with LLM-assisted extraction and manual review
 - job normalization

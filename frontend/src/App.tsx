@@ -327,6 +327,34 @@ function CandidateProfilePage({
     });
   }
 
+  async function deleteUploadedDocument(filePath: string, documentType: string, label: string) {
+    if (!filePath.trim()) {
+      setMessage({ type: "error", text: "The selected document is missing a file path." });
+      return;
+    }
+    if (!window.confirm(`Delete ${label}?`)) return;
+    await runBusy((value) => setPendingAction(value ? `delete:${filePath}` : null), setMessage, async () => {
+      const result = await apiRequest<ApiRecord>("/api/candidate-profile/document", {
+        method: "DELETE",
+        body: JSON.stringify({
+          file_path: filePath,
+          document_type: documentType
+        })
+      });
+      setProfile(result.profile);
+      if (documentType === "cv") {
+        setCvFile(null);
+      } else {
+        setOptionalFiles((current) => ({
+          ...current,
+          [documentType]: []
+        }));
+      }
+      setMessage({ type: "success", text: result.message });
+      onWorkflowChange();
+    });
+  }
+
   if (message?.type === "error" && (!profile || !extracted || !preferences || !sourceDocuments)) {
     return <StatusMessage type="error" text={message.text} />;
   }
@@ -345,7 +373,24 @@ function CandidateProfilePage({
           <SectionHeader title="1. CV Upload" summary={sourceDocuments.cv?.parsed ? "CV parsed" : "CV needs parsing"} />
           <p className="muted">The CV is the source of truth for professional data.</p>
           {sourceDocuments.cv?.file_path && (
-            <p className="muted">Current CV: {basename(sourceDocuments.cv.file_path)} ({sourceDocuments.cv.parsed ? "parsed" : "uploaded, not parsed"})</p>
+            <div className="uploaded-document-row">
+              <p className="muted">Current CV: {basename(sourceDocuments.cv.file_path)} ({sourceDocuments.cv.parsed ? "parsed" : "uploaded, not parsed"})</p>
+              <button
+                aria-label={`Delete ${basename(sourceDocuments.cv.file_path)}`}
+                className="icon-button danger"
+                disabled={isAiPending}
+                onClick={() =>
+                  deleteUploadedDocument(
+                    sourceDocuments.cv.file_path,
+                    "cv",
+                    basename(sourceDocuments.cv.file_path)
+                  )
+                }
+                type="button"
+              >
+                x
+              </button>
+            </div>
           )}
           <label>
             Upload CV *
@@ -370,7 +415,24 @@ function CandidateProfilePage({
             <>
               <strong>Uploaded optional documents</strong>
               {sourceDocuments.optional_documents.map((doc: ApiRecord, index: number) => (
-                <p className="muted" key={`${doc.file_name}-${index}`}>{doc.file_name} - {doc.document_type}, {doc.parsed ? "parsed" : "not parsed"}</p>
+                <div className="uploaded-document-row" key={`${doc.file_name}-${index}`}>
+                  <p className="muted">{doc.file_name} - {doc.document_type}, {doc.parsed ? "parsed" : "not parsed"}</p>
+                  <button
+                    aria-label={`Delete ${doc.file_name}`}
+                    className="icon-button danger"
+                    disabled={isAiPending}
+                    onClick={() =>
+                      deleteUploadedDocument(
+                        doc.file_path || "",
+                        doc.document_type || "other",
+                        doc.file_name || "document"
+                      )
+                    }
+                    type="button"
+                  >
+                    x
+                  </button>
+                </div>
               ))}
             </>
           )}

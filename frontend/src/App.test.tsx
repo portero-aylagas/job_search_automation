@@ -97,6 +97,71 @@ describe("App workflow pages", () => {
     expect(await screen.findByRole("button", { name: "Parse CV with AI" })).toBeEnabled();
   });
 
+  it("deletes the uploaded CV from the Candidate Profile UI", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    let currentProfile = candidateProfile();
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: currentProfile, options: {} } };
+      }
+      if (url.endsWith("/api/candidate-profile/document")) {
+        currentProfile = candidateProfileWithoutCv();
+        return {
+          body: {
+            profile: currentProfile,
+            message: "Uploaded document deleted."
+          }
+        };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [] } };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText(/Current CV: cv\.pdf/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Delete cv.pdf" }));
+
+    expect(await screen.findByText("Uploaded document deleted.")).toBeInTheDocument();
+    expect(screen.queryByText(/Current CV: cv\.pdf/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/First name/)).toHaveValue("");
+  });
+
+  it("deletes one uploaded optional document from the Candidate Profile UI", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    let currentProfile = candidateProfileWithReferenceUploads();
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: currentProfile, options: {} } };
+      }
+      if (url.endsWith("/api/candidate-profile/document")) {
+        currentProfile = candidateProfileWithoutReferences();
+        return {
+          body: {
+            profile: currentProfile,
+            message: "Uploaded document deleted."
+          }
+        };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [] } };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText(/manager-reference\.pdf - reference, parsed/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Delete manager-reference.pdf" }));
+
+    expect(await screen.findByText("Uploaded document deleted.")).toBeInTheDocument();
+    expect(screen.queryByText(/manager-reference\.pdf - reference, parsed/)).not.toBeInTheDocument();
+    expect(screen.getByText(/cert\.pdf - certificate, parsed/)).toBeInTheDocument();
+    expect(screen.getByLabelText("References")).toHaveValue("");
+  });
+
   it("extracts Job Intake data, saves reviewed edits, and navigates to Jobs", async () => {
     const saveBodies: unknown[] = [];
     mockFetch((url, init) => {
@@ -1044,6 +1109,94 @@ function candidateProfile() {
         remote_preference: [],
         employment_type: [],
         seniority_level: []
+      }
+    }
+  };
+}
+
+function candidateProfileWithoutCv() {
+  return {
+    ...candidateProfile(),
+    candidate_profile: {
+      ...candidateProfile().candidate_profile,
+      source_documents: {
+        ...candidateProfile().candidate_profile.source_documents,
+        cv: { file_path: "", parsed: false }
+      },
+      cv_extracted: {
+        ...candidateProfile().candidate_profile.cv_extracted,
+        identity: {
+          ...candidateProfile().candidate_profile.cv_extracted.identity,
+          first_name: "",
+          last_name: "",
+          gender: null,
+          email: "",
+          phone: "",
+          street_address: "",
+          street_number: "",
+          postal_code: "",
+          city: "",
+          country: "",
+          nationality: ""
+        },
+        work_experience: [],
+        skills: [],
+        languages: [],
+        references: []
+      }
+    }
+  };
+}
+
+function candidateProfileWithReferenceUploads() {
+  return {
+    ...candidateProfile(),
+    candidate_profile: {
+      ...candidateProfile().candidate_profile,
+      source_documents: {
+        ...candidateProfile().candidate_profile.source_documents,
+        optional_documents: [
+          {
+            file_path: "/tmp/manager-reference.pdf",
+            file_name: "manager-reference.pdf",
+            document_type: "reference",
+            parsed: true
+          },
+          {
+            file_path: "/tmp/cert.pdf",
+            file_name: "cert.pdf",
+            document_type: "certificate",
+            parsed: true
+          }
+        ]
+      },
+      cv_extracted: {
+        ...candidateProfile().candidate_profile.cv_extracted,
+        references: ["Former manager reference"]
+      }
+    }
+  };
+}
+
+function candidateProfileWithoutReferences() {
+  return {
+    ...candidateProfile(),
+    candidate_profile: {
+      ...candidateProfile().candidate_profile,
+      source_documents: {
+        ...candidateProfile().candidate_profile.source_documents,
+        optional_documents: [
+          {
+            file_path: "/tmp/cert.pdf",
+            file_name: "cert.pdf",
+            document_type: "certificate",
+            parsed: true
+          }
+        ]
+      },
+      cv_extracted: {
+        ...candidateProfile().candidate_profile.cv_extracted,
+        references: []
       }
     }
   };

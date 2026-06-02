@@ -93,8 +93,11 @@ from src.schemas import (
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
+    CandidateCVExtracted,
     CandidateOptionalDocument,
     CandidateProfile,
+    CandidateSourceCV,
+    CandidateSupplementalExtracted,
 )
 from src.tracker_status import (
     tracker_status_filters,
@@ -120,6 +123,13 @@ class CandidateProfilePayload(BaseModel):
     """Candidate profile payload edited by the React UI."""
 
     profile: CandidateProfile
+
+
+class CandidateDocumentDeleteRequest(BaseModel):
+    """One uploaded candidate document selected for deletion."""
+
+    file_path: str
+    document_type: str
 
 
 class JobExtractionRequest(BaseModel):
@@ -296,6 +306,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         profile = load_candidate_profile(app.state.base_dir).model_copy(deep=True)
         profile.candidate_profile.source_documents.cv.file_path = str(saved_path)
         profile.candidate_profile.source_documents.cv.parsed = True
+        profile.candidate_profile.source_documents.cv.extracted_data = extracted
         profile.candidate_profile.cv_extracted = extracted
         profile = normalize_candidate_profile_documents(profile)
         save_candidate_profile(app.state.base_dir, profile)
@@ -333,12 +344,56 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
 
         merge_supplemental_extracted_data(profile.candidate_profile.cv_extracted, extracted)
         document.parsed = True
+        document.extracted_data = extracted
         profile.candidate_profile.source_documents.optional_documents.append(document)
         profile = normalize_candidate_profile_documents(profile)
         save_candidate_profile(app.state.base_dir, profile)
         return {
             "profile": profile.model_dump(mode="json"),
             "message": "Parsed 1 optional document into the review fields.",
+        }
+
+    @app.delete("/api/candidate-profile/document")
+    async def delete_candidate_document(
+        payload: CandidateDocumentDeleteRequest,
+    ) -> dict[str, object]:
+        """Delete one uploaded candidate document and rebuild review data."""
+
+        profile = load_candidate_profile(app.state.base_dir).model_copy(deep=True)
+        document_type = payload.document_type.strip().casefold()
+        target_path = payload.file_path.strip()
+        if document_type == "cv":
+            if (
+                profile.candidate_profile.source_documents.cv.file_path.strip()
+                != target_path
+            ):
+                raise HTTPException(status_code=404, detail="Candidate CV not found.")
+            delete_runtime_candidate_file(app.state.base_dir, target_path)
+            profile.candidate_profile.source_documents.cv.file_path = ""
+            profile.candidate_profile.source_documents.cv.parsed = False
+            profile.candidate_profile.source_documents.cv.extracted_data = None
+        else:
+            kept_documents: list[CandidateOptionalDocument] = []
+            deleted = False
+            for document in profile.candidate_profile.source_documents.optional_documents:
+                if document.file_path.strip() == target_path:
+                    delete_runtime_candidate_file(app.state.base_dir, target_path)
+                    deleted = True
+                    continue
+                kept_documents.append(document)
+            if not deleted:
+                raise HTTPException(status_code=404, detail="Candidate document not found.")
+            profile.candidate_profile.source_documents.optional_documents = kept_documents
+
+        profile.candidate_profile.cv_extracted = rebuild_candidate_cv_extracted(
+            app.state.base_dir,
+            profile,
+        )
+        profile = normalize_candidate_profile_documents(profile)
+        save_candidate_profile(app.state.base_dir, profile)
+        return {
+            "profile": profile.model_dump(mode="json"),
+            "message": "Uploaded document deleted.",
         }
 
     @app.post("/api/job-intake/extract")
@@ -1003,6 +1058,94 @@ def fill_plan_row_payload(
         "source": field.source,
         "confidence": field.confidence,
     }
+
+
+def delete_runtime_candidate_file(base_dir: Path | str, file_path: str) -> None:
+    """Delete one runtime candidate upload when it points inside the candidate area."""
+
+    candidate_path = file_path.strip()
+    if not candidate_path:
+        return
+
+    root = Path(base_dir).resolve()
+    path = Path(candidate_path)
+    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
+    allowed_root = (root / RUNTIME_DATA_DIR / "candidate_profile").resolve()
+    if not resolved.is_relative_to(allowed_root):
+        return
+    resolved.unlink(missing_ok=True)
+
+
+def rebuild_candidate_cv_extracted(
+    base_dir: Path | str,
+    profile: CandidateProfile,
+) -> CandidateCVExtracted:
+    """Rebuild merged review data from the remaining uploaded candidate documents."""
+
+    source_documents = profile.candidate_profile.source_documents
+    cv_extracted = load_or_extract_cv_data(base_dir, source_documents.cv)
+    for document in source_documents.optional_documents:
+        supplemental = load_or_extract_optional_document_data(base_dir, document)
+        if supplemental is None:
+            continue
+        merge_supplemental_extracted_data(cv_extracted, supplemental)
+        document.parsed = True
+        document.extracted_data = supplemental
+    return cv_extracted
+
+
+def load_or_extract_cv_data(
+    base_dir: Path | str,
+    source_cv: CandidateSourceCV,
+) -> CandidateCVExtracted:
+    """Return stored CV extraction data or recompute it from the uploaded file."""
+
+    if source_cv.extracted_data is not None:
+        source_cv.parsed = True
+        return source_cv.extracted_data.model_copy(deep=True)
+    file_path = source_cv.file_path.strip()
+    if not file_path:
+        return CandidateCVExtracted()
+    ensure_runtime_candidate_file_exists(base_dir, file_path)
+    extracted = run_cv_extraction_task(file_path)
+    source_cv.parsed = True
+    source_cv.extracted_data = extracted
+    return extracted.model_copy(deep=True)
+
+
+def load_or_extract_optional_document_data(
+    base_dir: Path | str,
+    document: CandidateOptionalDocument,
+) -> CandidateSupplementalExtracted | None:
+    """Return stored supplemental extraction data or recompute it from the file."""
+
+    if document.extracted_data is not None:
+        document.parsed = True
+        return document.extracted_data.model_copy(deep=True)
+    file_path = document.file_path.strip()
+    if not file_path:
+        return None
+    ensure_runtime_candidate_file_exists(base_dir, file_path)
+    extracted = run_optional_document_extraction_task(file_path)
+    document.parsed = True
+    document.extracted_data = extracted
+    return extracted
+
+
+def ensure_runtime_candidate_file_exists(base_dir: Path | str, file_path: str) -> None:
+    """Raise a clear error when a referenced runtime candidate file no longer exists."""
+
+    root = Path(base_dir).resolve()
+    path = Path(file_path)
+    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
+    if not resolved.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Uploaded file is missing: {resolved}. Re-upload the remaining candidate "
+                "documents before deleting this item."
+            ),
+        )
 
 
 app = create_app()
