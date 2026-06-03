@@ -10,20 +10,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-TrackerStatus = Literal[
-    "new",
-    "analyzed",
-    "interesting",
-    "rejected_by_user",
-    "application_draft",
-    "ready_to_apply",
-    "applied_manually",
-    "applied_with_agent_assistance",
-    "interview",
-    "rejected",
-    "offer",
-    "closed",
-]
+from src.tracker_status import TrackerStatus
 
 EmploymentType = Literal[
     "full_time",
@@ -348,6 +335,7 @@ class CandidateSourceCV(BaseModel):
 
     file_path: str = ""
     parsed: bool = False
+    extracted_data: CandidateCVExtracted | None = None
 
 
 class CandidateOptionalDocument(BaseModel):
@@ -357,6 +345,7 @@ class CandidateOptionalDocument(BaseModel):
     file_name: str = ""
     document_type: str = "other"
     parsed: bool = False
+    extracted_data: CandidateSupplementalExtracted | None = None
 
 
 class CandidateSourceDocuments(BaseModel):
@@ -498,6 +487,7 @@ class ExperienceUnit(BaseModel):
 
 
 ConfidenceLevel = Literal["high", "medium", "low"]
+ReviewStatus = Literal["draft", "reviewed", "rejected"]
 
 _STORAGE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -610,6 +600,42 @@ def _normalized_url_identity(value: str) -> tuple[str, str, str]:
     parsed = urlsplit(value.strip())
     path = parsed.path.rstrip("/") or "/"
     return parsed.scheme.lower(), parsed.netloc.lower(), path
+
+
+class MatchScoreComponents(BaseModel):
+    """Weighted deterministic match-score component values."""
+
+    role_match: float = 0.0
+    skill_match: float = 0.0
+    location_match: float = 0.0
+    constraint_match: float = 0.0
+    completeness: float = 0.0
+
+
+class MatchAnalysis(BaseModel):
+    """Deterministic candidate/job match analysis saved for human review."""
+
+    job_id: str
+    generated_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    match_score: float = 0.0
+    score_components: MatchScoreComponents = Field(default_factory=MatchScoreComponents)
+    matched_skills: list[str] = Field(default_factory=list)
+    missing_skills: list[str] = Field(default_factory=list)
+    relevant_evidence: list[str] = Field(default_factory=list)
+    strong_experience_units: list[str] = Field(default_factory=list)
+    weak_points: list[str] = Field(default_factory=list)
+    positioning: str = ""
+    strategy: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list)
+    source_fingerprints: dict[str, str] = Field(default_factory=dict)
+    review_status: ReviewStatus = "draft"
+
+    @field_validator("job_id")
+    @classmethod
+    def _validate_job_id(cls, value: str) -> str:
+        return _validate_storage_identifier(value, "Job ID")
 
 
 ApplicationArtifactStatus = Literal[
@@ -871,8 +897,116 @@ class TrackerRecord(BaseModel):
     status: TrackerStatus = "new"
     notes: str | None = None
     generated_package_path: str | None = None
+    archived_at: str | None = None
+    archive_reason: str | None = None
 
     @field_validator("job_id")
     @classmethod
     def _validate_job_id(cls, value: str) -> str:
         return _validate_storage_identifier(value, "Job ID")
+
+
+AgentGate = Literal[
+    "select_job",
+    "match_review",
+    "requirements_review",
+    "package_review",
+    "fill_plan_review",
+    "browser_use_launch",
+]
+AgentChatRole = Literal["user", "assistant", "system"]
+
+
+class AgentWorkflowState(BaseModel):
+    """Current in-memory status returned by the agent workflow controller."""
+
+    session_id: str
+    selected_job_id: str | None = None
+    artifacts_present: dict[str, bool] = Field(default_factory=dict)
+    blockers: list[str] = Field(default_factory=list)
+    next_allowed_actions: list[str] = Field(default_factory=list)
+    pending_gate: AgentGate | None = None
+    errors: list[str] = Field(default_factory=list)
+    last_user_intent: str | None = None
+
+    @field_validator("selected_job_id")
+    @classmethod
+    def _validate_selected_job_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_storage_identifier(value, "Job ID")
+
+
+class AgentWorkflowEvent(BaseModel):
+    """Structured audit event emitted by the agent workflow controller."""
+
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    session_id: str
+    job_id: str | None = None
+    action: str
+    result: str
+    gate: AgentGate | None = None
+    artifact_paths: list[str] = Field(default_factory=list)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("job_id")
+    @classmethod
+    def _validate_event_job_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_storage_identifier(value, "Job ID")
+
+
+class AgentChatMessage(BaseModel):
+    """One persisted agent chat transcript message."""
+
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    session_id: str
+    role: AgentChatRole
+    content: str
+    job_id: str | None = None
+    proposed_actions: list[str] = Field(default_factory=list)
+    executed_action: str | None = None
+
+    @field_validator("job_id")
+    @classmethod
+    def _validate_message_job_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_storage_identifier(value, "Job ID")
+
+
+class AgentSession(BaseModel):
+    """Metadata for one persisted agent chat session."""
+
+    session_id: str
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    selected_job_id: str | None = None
+    job_permissions: dict[str, "AgentJobPermissionGrant"] = Field(default_factory=dict)
+
+    @field_validator("selected_job_id")
+    @classmethod
+    def _validate_session_job_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_storage_identifier(value, "Job ID")
+
+    @field_validator("job_permissions")
+    @classmethod
+    def _validate_job_permission_ids(
+        cls,
+        value: dict[str, "AgentJobPermissionGrant"],
+    ) -> dict[str, "AgentJobPermissionGrant"]:
+        for job_id in value:
+            _validate_storage_identifier(job_id, "Job ID")
+        return value
+
+
+class AgentJobPermissionGrant(BaseModel):
+    """Per-job permission grant for one Karen session."""
+
+    allow_app_mutations: bool = False
+    allow_browser_launch: bool = False
+    granted_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

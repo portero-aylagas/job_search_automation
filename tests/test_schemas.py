@@ -223,11 +223,11 @@ def test_tracker_record_accepts_known_statuses() -> None:
         location="Berlin",
         retrieval_mode="url",
         match_score=88.5,
-        status="application_draft",
+        status="agent_assistance_attempted",
         notes="Ready for package generation.",
     )
 
-    assert record.status == "application_draft"
+    assert record.status == "agent_assistance_attempted"
 
 
 def test_job_listing_rejects_apply_url_that_matches_source_url() -> None:

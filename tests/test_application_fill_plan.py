@@ -20,8 +20,14 @@ from src.application_fill_plan import (
     mark_application_fill_plan_reviewed,
     save_application_fill_plan,
 )
+from src.application_fill_plan_review import (
+    apply_fill_plan_review_submission,
+    build_fill_plan_review_submission_from_defaults,
+)
 from src.schemas import (
     ApplicationArtifact,
+    ApplicationFillBlockedField,
+    ApplicationFillPlan,
     ApplicationFormField,
     ApplicationPackage,
     ApplicationPageControl,
@@ -1114,6 +1120,43 @@ def test_mark_fill_plan_reviewed_blocks_unresolved_needs_answer_fields() -> None
 
     with pytest.raises(ValueError, match="Save reviewed values"):
         mark_application_fill_plan_reviewed(fill_plan)
+
+
+def test_default_fill_plan_review_promotes_reviewable_blocked_fields() -> None:
+    fill_plan = ApplicationFillPlan(
+        job_id="job-123",
+        apply_url="https://example.com/apply/automation-engineer",
+        blocked_fields=[
+            ApplicationFillBlockedField(
+                label="Voluntary disability disclosure",
+                reason="Requires a personal user decision.",
+            ),
+            ApplicationFillBlockedField(
+                label="Privacy acknowledgement",
+                reason="Required checkbox before continuing.",
+                required=True,
+                input_type="checkbox",
+                options=["true", "false"],
+            ),
+        ],
+    )
+
+    submission = build_fill_plan_review_submission_from_defaults(fill_plan)
+    blocked_values = submission["blocked_values_by_key"]
+    voluntary_key = fill_plan_blocked_field_edit_key(fill_plan.blocked_fields[0], 0)
+    privacy_key = fill_plan_blocked_field_edit_key(fill_plan.blocked_fields[1], 1)
+
+    assert blocked_values[voluntary_key] == ""
+    assert blocked_values[privacy_key] == "true"
+
+    edited = apply_fill_plan_review_submission(fill_plan, submission)
+    reviewed = mark_application_fill_plan_reviewed(edited)
+    values_by_label = {field.label: field for field in reviewed.field_values}
+
+    assert reviewed.review_status == "reviewed"
+    assert reviewed.blocked_fields == []
+    assert values_by_label["Voluntary disability disclosure"].value == ""
+    assert values_by_label["Privacy acknowledgement"].value == "true"
 
 
 def test_reviewed_fill_plan_becomes_stale_when_package_gains_generated_file_path() -> None:

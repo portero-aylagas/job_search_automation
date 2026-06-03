@@ -34,6 +34,13 @@ Default to beginner/intermediate-friendly code. Use clear names, simple control
 flow, explicit side effects, understandable module boundaries, and comments
 where they reduce cognitive load.
 
+When touching Karen, preserve the same-capability principle: Karen has the same
+workflow capabilities as the user, mediated by permission. Karen triggers the
+same backend actions that UI buttons trigger. Karen is a controller over the
+existing workflow, not a second implementation of workflow business logic. Do
+not add Karen-only review logic, a parallel source of truth, custom Browser Use
+behavior, blocker bypasses, or invented candidate data.
+
 Public modules, classes, functions, and relevant public methods should have
 concise Google-style docstrings unless they are clearly private or internal.
 

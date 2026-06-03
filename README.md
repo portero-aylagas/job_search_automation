@@ -1,6 +1,8 @@
 # Job Search Automation
 
-Job Search Automation is a Python application for a controlled human-in-the-loop job application workflow.
+Job Search Automation is a controlled human-in-the-loop job application workflow.
+The current UI is a React + TypeScript + Vite frontend backed by a FastAPI
+adapter over the existing Python workflow code.
 
 The core feature is:
 
@@ -10,7 +12,14 @@ candidate profile + job position -> validated application package
 
 The application helps transform candidate data and a specific job position into structured application material such as cover letters, CV tailoring notes, recruiter messages, form answers, and application summaries.
 
-The system is designed to keep the user in control. AI can assist with extraction, analysis, generation, job discovery, and application preparation, but the user validates the important steps.
+The system is designed to keep the user in control. AI can assist with extraction, requirements discovery, generation, future job discovery, and application preparation, but the user validates the important steps.
+
+Karen follows the same workflow capabilities as the user, mediated by permission.
+She triggers the same backend actions that UI buttons trigger. Karen is a
+controller over the existing workflow, not a second workflow engine or a
+parallel source of truth. She must not duplicate business logic, create
+Karen-only review logic, bypass blockers, invent candidate data, or decide how
+Browser Use behaves after launch.
 
 ---
 
@@ -27,8 +36,6 @@ normalized job listing
     ↓
 application requirements discovery when apply_url is available
     ↓
-candidate/job match analysis
-    ↓
 application package generation
     ↓
 human review and approval
@@ -40,12 +47,20 @@ application tracking
 
 ## Delivered Features
 
+- React + TypeScript + Vite UI with a FastAPI adapter over the existing Python
+  workflow functions
 - candidate profile management
+- per-document candidate upload deletion with individual `x` controls for the
+  CV and each optional uploaded document
 - reusable experience units
 - URL-only job intake with LLM-assisted extraction and manual review
 - job normalization
 - working apply-page requirements discovery from `apply_url` through a LangGraph
   inspection/extraction slice
+- historical deterministic candidate/job match analysis backend, disabled from
+  the current known-job apply workflow
+- Persistent Agent Karen side chat with persisted chat transcripts and audit
+  events, using `assets/karen.png` in the panel, dashboard, and browser tab icon
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -56,9 +71,9 @@ application tracking
 
 ## Planned Core Workflow Items
 
-- deterministic candidate/job match analysis
-- explicit package approval and ready-to-apply workflow
-- tracker transitions driven by approved package state
+- broader duplicate handling
+- applied-jobs view and final manual status updates
+- optional web job discovery
 
 ---
 
@@ -79,7 +94,7 @@ These are optional input or assistance layers. The core workflow is independent 
 
 The application does not aim to implement:
 
-- autonomous final job submission
+- autonomous or ungranted final job submission
 - LinkedIn scraping
 - login/session automation
 - recruiter messaging automation
@@ -100,9 +115,18 @@ job_search_automation/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── requirements.txt
-├── app.py
+├── package.json
+├── vite.config.ts
+├── index.html
+├── frontend/
+│   └── src/
+│       ├── App.tsx
+│       ├── api.ts
+│       ├── main.tsx
+│       └── styles.css
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
@@ -115,19 +139,35 @@ job_search_automation/
 │   ├── application_requirements.py
 │   ├── application_fill_plan.py
 │   ├── application_package.py
+│   ├── job_workspace.py
+│   ├── agents/
+│   │   └── karen/
+│   │       ├── agent_card.yaml
+│   │       ├── prompts.yaml
+│   │       ├── policy.py
+│   │       ├── tools.py
+│   │       ├── state.py
+│   │       └── graph.py
 │   └── ...
+├── assets/
+│   └── karen.png
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
 │   ├── jobs.json
-│   ├── tracker.json
 │   ├── runtime/
 │   │   ├── jobs.json
-│   │   ├── tracker.json
+│   │   ├── agent_sessions/
+│   │   │   └── <session_id>/
+│   │   │       ├── chat.jsonl
+│   │   │       ├── events.jsonl
+│   │   │       └── session.json
 │   │   └── jobs/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
 │   │           ├── analysis.json
+│   │           ├── agent_chat.jsonl
+│   │           ├── events.jsonl
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
 │   │           ├── application_fill_plan.json
@@ -148,15 +188,38 @@ job_search_automation/
 └── skills/
 ```
 
-The `skills/` directory contains development-support skills used during implementation and project improvement. It is not part of the runtime application unless explicitly integrated.
+The `skills/` directory contains development-support skills used during
+implementation and project improvement. It is not part of the runtime
+application unless explicitly integrated.
+
+The React UI in `frontend/src/` is intentionally a workflow-parity port of the
+historical Streamlit workflow, not a product redesign. It preserves the top
+navigation pages:
+`Candidate Profile`, `Job Intake`, `Jobs`, `Tracker`, and `Agent Karen`.
+AI-triggering buttons keep the visible `with AI` labels. Structured review
+forms remain structured review forms rather than raw JSON editors.
+
+Karen is expected to stay within that workflow parity. When the UI can discover
+requirements, generate application material, save a review gate, or launch
+Browser Use, Karen may request the same backend action when user intent,
+permissions, and backend blockers allow it. Karen-specific code should handle
+intent classification, permission checks, workflow planning, action dispatch,
+result reporting, and route hints, while the underlying workflow services stay
+the source of truth for validation and blockers.
 
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
 
+The repository test strategy is documented in `docs/test_strategy.md`. It
+defines the intended Python, FastAPI, React, and Playwright test layers, plus
+the mocking boundaries for AI, Browser Use, and external network behavior.
+
 AI prompt text is stored in `src/prompts.yaml` and loaded through
-`src/prompt_templates.py`. Live OpenAI calls remain behind `src/llm_client.py`,
-so prompt edits and provider-boundary changes stay reviewable and separate.
+`src/prompt_templates.py`; Karen's runtime assistant prompts live with her
+package in `src/agents/karen/prompts.yaml`. Live OpenAI calls remain behind
+`src/llm_client.py`, so prompt edits and provider-boundary changes stay
+reviewable and separate.
 LLM-facing structured response schemas for CV and job extraction live next to
 their extraction modules and are normalized into the persisted application
 models before anything is stored or shown in the UI.
@@ -173,12 +236,12 @@ Stores structured candidate information:
 - required gender value: `Male`, `Female`, or `Diverse`
 - normalized address fields including street number, city, postal code, country,
   and nationality when available
-- target roles
-- locations
+- optional target roles
+- optional target locations
 - skills
 - languages
 - constraints
-- salary expectation
+- optional salary expectation
 - source documents used
 - optional supporting documents such as references and certificates
 
@@ -212,8 +275,9 @@ page contract. The editable Browser Use execution contract is stored separately
 as `application_fill_plan.json`.
 
 `data/runtime/jobs.json` is the shared job index used by both the Tracker page
-and the Jobs page. The tracked `data/jobs.json` and `data/tracker.json` files
-remain templates and bootstrap mirrors.
+and the Jobs page. The tracked `data/jobs.json` file remains the bootstrap
+template. Legacy `tracker.json` files are read only as migration fallback when a
+canonical `jobs.json` index is missing.
 
 The Job Intake screen starts with only a job URL. After AI extraction, the app
 shows a review form with fixed fields and any dynamic extracted details. Dynamic
@@ -245,14 +309,79 @@ upload files, log in, or enter personal data.
 
 ### Job Analysis
 
-Candidate/job comparison:
+Job analysis is not part of the current user-facing known-job apply workflow.
+Existing `analysis.json` files are treated as ignored historical artifacts.
+Backend code can remain for now, but Karen, normal app navigation, package
+generation, and tracker progression do not require match analysis.
+
+Future job discovery or ranking may reintroduce candidate/job comparison:
 
 - match score
+- weighted score components
 - matched skills
 - missing skills
-- strong experience units
+- relevant evidence and strong experience units
 - weak points
+- recommended positioning
 - application strategy
+
+Historical analysis output used `data/runtime/jobs/<job_id>/analysis.json`.
+
+### Karen Runtime Assistant
+
+Karen is the runtime product assistant inside the app. Her chat appears as a
+persistent app-level side panel across `Candidate Profile`, `Job Intake`,
+`Jobs`, `Tracker`, and `Agent Karen`. The side panel owns the selected job,
+pending-gate hint, transcript, and compact `Ask Karen` composer. The panel uses
+a stable viewport-relative layout: Karen context, job selection, and pending
+gate stay at the top, the transcript scrolls in the middle and auto-scrolls to
+new replies, and the icon-based message composer remains at the bottom. Its
+width is adjustable from the divider between the page and chat panel. The
+top-level `Agent Karen` tab remains as a dashboard-only page showing
+Karen's portrait from `assets/karen.png`, selected-job workflow status,
+blockers, pending gate, timeline, and static next-action guidance. Karen is
+separate from `AGENTS.md`, which remains development-agent guidance.
+
+Karen transcripts are stored in
+`data/runtime/agent_sessions/<session_id>/chat.jsonl`. Job-scoped copies are
+stored in `data/runtime/jobs/<job_id>/agent_chat.jsonl`. Structured workflow
+events are stored as `events.jsonl` in both the session directory and the
+affected job directory.
+
+Karen can explain the app and her role, inspect the current workflow state,
+suggest next steps, route users to the right page, and run selected workflow
+actions after structured intent parsing. The LLM classifies the user's goal and
+permission scope; deterministic LangGraph controller code then loads persisted
+workflow state, checks blockers, plans the next action, and executes only
+registered shared actions.
+
+Karen's workflow controller lives in `src/workflow/`. Its action registry calls
+the same service-layer functions used by the FastAPI/UI buttons for requirements
+discovery, requirements review, package generation/review, fill-plan
+generation/review, and Browser Use launch. She does not duplicate Job Intake,
+the detailed Jobs review forms, package generation logic, fill-plan validation,
+or Browser Use execution policy.
+
+For a selected saved job with a valid `apply_url`, Karen can continue the
+workflow through requirements discovery, structured review gates, application
+package generation, fill-plan generation, manual-application preparation, and
+Browser Use launch when the classified intent gives the required permission.
+She does not propose match analysis or match review actions in the current
+known-job workflow.
+
+Karen's permission model is deliberately gated:
+
+- read-only explanation, status inspection, blockers, and routing are allowed directly
+- draft generation requires explicit draft-generation intent
+- requirements review, package approval, and fill-plan review require explicit
+  review-gate permission
+- Browser Use launch requires explicit Browser Use intent and launch permission
+- unresolved edited fields, selected upload paths, sensitive values, or missing
+  candidate data route the user to the appropriate UI page
+
+Karen never automates login, MFA, captcha handling, account creation, recruiter
+messaging, review-gate bypasses, or invented candidate data from free-form chat.
+Final submission is not a Karen-executable workflow action.
 
 ### Application Package
 
@@ -331,11 +460,12 @@ Application tracking information:
 
 ### Jobs View
 
-The sidebar includes a `Jobs` page. It lists opportunities from the tracker and
+The top navigation includes a `Jobs` page. It lists opportunities from the tracker and
 opens a per-job workspace. The current version shows saved Job Intake data from
 `data/runtime/jobs/<job_id>/normalized_job.json`: status, source and apply URLs, role
 summary, requirements, responsibilities, nice-to-have skills, and dynamic
-extracted details.
+extracted details. Karen's selected-job context remains available in the
+persistent side chat and the `Agent Karen` dashboard.
 
 ---
 
@@ -350,6 +480,7 @@ interesting
 rejected_by_user
 application_draft
 ready_to_apply
+agent_assistance_attempted
 applied_manually
 applied_with_agent_assistance
 interview
@@ -362,7 +493,14 @@ closed
 
 ## Installation
 
-Create and activate a Python environment.
+Use the repository-local Python environment when available:
+
+```bash
+PATH="$PWD/.conda/bin:$PATH"
+```
+
+If you are setting up from scratch without the repository-local environment,
+create and activate a Python environment.
 
 ```bash
 python -m venv .venv
@@ -374,6 +512,22 @@ Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
+
+Install frontend and browser-test dependencies from the repository root:
+
+```bash
+npm install
+npx playwright install chromium
+```
+
+Python dependencies are tracked in `requirements.txt`. Frontend, Vitest, and
+Playwright test-runner dependencies are tracked in `package.json` and
+`package-lock.json`; do not add Node packages to `requirements.txt`.
+LangGraph must remain `>1.0,<2.0`; the current verified local version is
+`1.2.2`.
+
+If Playwright reports missing Linux system dependencies for browser tests, run
+`npx playwright install --with-deps chromium`.
 
 ### Browser Use Setup
 
@@ -425,35 +579,77 @@ Notes:
 - Each apply-assistance run starts a fresh Browser Use process, uses an
   isolated Chromium profile, and exposes `Stop Browser Use Session` plus
   `Kill All Browser Use Processes` controls in the Jobs page.
-- The current Browser Use pilot opens the reviewed apply URL and executes only
-  the reviewed `application_fill_plan.json`: explicit reviewed field values,
-  reviewed upload paths, and submit guard labels. Unresolved fill-plan items
-  block the flow before Browser Use starts. It stops before any review or
-  submission action.
+- The default Browser Use apply-assistance run opens the reviewed apply URL and
+  executes only the reviewed `application_fill_plan.json`: explicit reviewed
+  field values, reviewed upload paths, and submit guard labels. Unresolved
+  fill-plan items block the flow before Browser Use starts. The default mode
+  stops before any review or submission action.
+- Karen can launch the same Browser Use apply-assistance action exposed by the
+  Jobs UI when explicit Browser Use permission exists, but she does not own or
+  trigger final submission.
 - The Browser Use task fills reviewed fields first, processes mandatory
   checkboxes once, then uploads reviewed files last. It does not run a separate
   second checkbox verification pass before upload.
 - Browser Use agent runs require `OPENAI_API_KEY` in addition to the Chromium
   runtime setup described here.
+
 ---
 
 ## Run
 
+### React + FastAPI UI
+
+Start the FastAPI backend in one terminal:
+
 ```bash
-streamlit run app.py
+PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
----
+Start the Vite frontend in another terminal:
+
+```bash
+npm run frontend:dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+During Vite development, the frontend calls `http://127.0.0.1:8001` by default.
+Override this with `VITE_API_BASE_URL` if the API runs elsewhere. A fresh local
+state is valid: when `data/candidate_profile.json` and `data/runtime/` are
+missing, the API returns an empty draft candidate profile.
 
 ## Verification
 
 ```bash
-make verify
+PATH="$PWD/.conda/bin:$PATH" make verify
 ```
 
 `make verify` runs Ruff linting, including public docstring checks for
-application code, Python compile checks, and the pytest suite. The command is
-local and does not require live API keys.
+application code, Python compile checks, the pytest suite, frontend typecheck,
+Vitest component tests, frontend production build, and Playwright browser smoke
+tests. The browser smoke tests start Vite and mock backend API routes; they do
+not require a live FastAPI server, live AI services, Browser Use session, or API
+keys.
+
+Verification writes local generated reports to `reports/`, `playwright-report/`,
+and `test-results/`. These paths are ignored by git. In GitHub Actions, they are
+uploaded as the `test-reports` artifact. On pushes to `main`, the latest
+Playwright HTML report is also published to GitHub Pages and linked from the
+`publish-playwright-report` job summary.
+
+If you are using a standard virtual environment instead of the repository-local
+`.conda` environment, activate it first and run `make verify` from the
+repository root.
+
+To reset local private/runtime state while keeping checked-in templates:
+
+```bash
+make clean-local-state
+```
 
 ---
 
@@ -502,6 +698,8 @@ request, and unsupported-model failures fail immediately.
 
 ## Current Follow-ups
 
+- #100: add one-command React/FastAPI startup and decide the production hosting
+  path for the React build.
 - #35: validate Apply URL reachability and job-identity preservation before downstream workflow steps.
 - #36: validate AI-extracted content against the source to reduce hallucinated or unsupported fields, including rejected apply-link candidates.
 - #37: add duplicate management and a proper applied-jobs view.
@@ -514,10 +712,11 @@ Development is organized in phases:
 
 1. project scaffold
 2. job intake and normalization
-3. deterministic match analysis (pending)
+3. deterministic match analysis (implemented)
 4. application requirements discovery and package generation (implemented)
 5. human review and approval
-6. expand LangGraph workflow orchestration
+6. expand LangGraph workflow orchestration (implemented for the current
+   human-gated workflow)
 7. optional web search
 8. optional assisted application
 
@@ -528,3 +727,23 @@ See `IMPLEMENTATION_PLAN.md` for detailed implementation phases and acceptance c
 ## Specification
 
 See `PROJECT_SPEC.md` for product scope, workflow design, data entities, UI pages, and boundaries.
+
+### Optional LangSmith tracing
+
+The application can send normal app LLM calls and Browser Use agent LLM calls
+to LangSmith for debugging and observability. Repo-local `.env` values are
+loaded automatically, but exported shell values take precedence.
+
+Set the following environment variables:
+
+```env
+LANGSMITH_API_KEY=your_langsmith_api_key
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=job-search-automation
+LANGSMITH_DASHBOARD_URL=https://smith.langchain.com/...
+```
+
+The React `Monitoring` tab reads aggregate LangSmith data for
+`LANGSMITH_PROJECT` and opens `LANGSMITH_DASHBOARD_URL` when that optional
+dashboard link is configured. The dashboard link is shown as an external link
+rather than embedded in the app.

@@ -168,17 +168,15 @@ def bootstrap_sample_data(base_dir: Path | str = ".") -> None:
     _, template_experience_units_path = experience_units_paths(root)
     (
         runtime_jobs_index_path,
-        runtime_tracker_path,
+        _runtime_tracker_path,
         template_jobs_index_path,
-        template_tracker_path,
+        _template_tracker_path,
     ) = jobs_index_paths(root)
     files_to_seed = {
         candidate_profile_path(root): get_sample_candidate_profile(),
         template_experience_units_path: [],
         template_jobs_index_path: get_sample_tracker_records(),
-        template_tracker_path: get_sample_tracker_records(),
         runtime_jobs_index_path: get_sample_tracker_records(),
-        runtime_tracker_path: get_sample_tracker_records(),
     }
 
     for path, payload in files_to_seed.items():

@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
+from src.observability import wrap_openai_client
 from src.schemas import AIWorkflowTrace
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-5.4")
@@ -82,6 +83,12 @@ APPLICATION_FIELD_MAPPING_PROFILE = LLMCallProfile(
     max_output_tokens=5000,
     timeout_seconds=60,
 )
+KAREN_INTENT_PROFILE = LLMCallProfile(
+    name="karen_intent",
+    temperature=0.0,
+    max_output_tokens=1200,
+    timeout_seconds=30,
+)
 FILE_UPLOAD_TIMEOUT_SECONDS = 60
 FILE_UPLOAD_MAX_RETRIES = 1
 FILE_UPLOAD_BACKOFF_SECONDS = (1.0,)
@@ -97,6 +104,7 @@ class RetryOutcome:
 
 def get_openai_client() -> Any:
     """Return a configured OpenAI client for live AI calls."""
+
     if not os.getenv("OPENAI_API_KEY"):
         raise RuntimeError("Set OPENAI_API_KEY before using AI-assisted workflows.")
 
@@ -105,8 +113,8 @@ def get_openai_client() -> Any:
     except ImportError as exc:
         raise RuntimeError("Install the OpenAI Python package before using AI extraction.") from exc
 
-    # We keep SDK retries off so retry behavior stays visible in this module.
-    return OpenAI(max_retries=0)
+    client = OpenAI(max_retries=0)
+    return wrap_openai_client(client)
 
 
 def parse_structured_response(

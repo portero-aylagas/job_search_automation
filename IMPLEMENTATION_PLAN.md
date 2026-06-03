@@ -38,12 +38,35 @@ Do not start new feature phases with web search, browser automation, or external
 - Application package generation is implemented with manifest-driven artifacts,
   requirement traceability, package quality checks, JSON persistence, Markdown
   export, and manual edit/reject recovery actions.
+- Deterministic match analysis exists as historical backend code, but it is
+  removed from the active user-facing known-job apply workflow. Existing
+  `analysis.json` files are ignored by normal navigation, Karen, package
+  generation, and tracker progression.
+- Karen is implemented as the runtime product assistant for the current
+  human-gated workflow. Her chat now appears as a persistent app-level side
+  panel with selected-job context, pending-gate hints, persisted session
+  transcripts, job-scoped copies, structured event logs, and explicit workflow
+  permission flags. The top-level `Agent Karen` tab remains as a dashboard for
+  workflow status, blockers, timeline, and static next-action guidance. With
+  explicit permission, Karen can run registered job-scoped workflow actions and
+  launch Browser Use apply assistance; final submission, login, MFA, captcha,
+  account creation, recruiter messaging, and invented candidate data remain out
+  of scope.
+- The primary UI has been migrated from Streamlit to React + TypeScript + Vite
+  with a thin FastAPI adapter over the existing Python workflow functions. The
+  first React version is a parity port: it preserves top-level navigation,
+  button labels, structured review forms, review gates, and Browser Use launch
+  semantics.
+- The React UI uses `assets/karen.png` for Karen's page portrait and browser
+  tab icon. Fresh local state is supported through the API returning an empty
+  draft candidate profile when private runtime files have been cleaned.
 
 ### Not Delivered Yet
 
-- Deterministic match analysis is still pending.
-- Explicit package approval, ready-to-apply status, and downstream final review
-  workflow are still pending.
+- Public web job discovery is still pending.
+- Broader duplicate handling and a proper applied-jobs view are still pending.
+- One-command local startup for FastAPI + Vite is still pending.
+- A production hosting decision for the React build is still pending.
 - Complex nested CV editors, multiple CV versions, excluded roles, excluded
   companies, profile scoring, passport/ID upload, and job matching from the
   Candidate Profile page remain out of scope.
@@ -52,9 +75,10 @@ Do not start new feature phases with web search, browser automation, or external
 
 - Candidate professional data now comes from `cv_extracted`, populated by CV
   extraction and editable by the user.
-- Manual candidate preferences are limited to fields not reliably present in a
-  CV: target roles, target locations, remote preference, employment type, career
-  level, availability, annual EUR salary range, and EU work authorization.
+- Manual candidate preferences are optional job-search metadata and are not
+  required for known-job applications: target roles, target locations, remote
+  preference, employment type, career level, availability, annual EUR salary
+  range, and EU work authorization.
 - `remote_preference` no longer includes `no_preference`; users select all
   concrete modes when they are open to all.
 - `employment_type` is separate from career level and contains only work
@@ -79,7 +103,8 @@ Create the minimum runnable application structure.
 ### Create
 
 ```text
-app.py
+frontend/src/App.tsx
+src/api.py
 src/__init__.py
 src/schemas.py
 src/storage.py
@@ -97,8 +122,8 @@ tests/
 - sample experience units
 - sample job listing
 - sample tracker records
-- basic Streamlit app
-- sidebar navigation
+- FastAPI app
+- React app navigation
 - Candidate Profile page
 - Tracker page
 
@@ -115,7 +140,8 @@ tests/
 - app runs with:
 
 ```bash
-streamlit run app.py
+PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+npm run frontend:dev
 ```
 
 - sample profile is visible
@@ -130,8 +156,8 @@ streamlit run app.py
 
 ### Goal
 
-Let the user create a candidate profile from a CV plus only the missing
-job-search preferences that are not reliably extractable from the CV.
+Let the user create a candidate profile from a CV, with optional job-search
+preferences that are not required for known-job applications.
 
 ### Implemented
 
@@ -158,7 +184,7 @@ job-search preferences that are not reliably extractable from the CV.
   is migrated into reviewed gender
 - optional supporting documents are parsed through the same review workflow and
   merged into the reviewable candidate profile state
-- manual candidate preferences:
+- optional manual candidate preferences:
   - target roles
   - target locations
   - remote preference
@@ -167,8 +193,8 @@ job-search preferences that are not reliably extractable from the CV.
   - availability
   - annual EUR salary range
   - EU work authorization
-- profile validation before final save
-- single final `Save profile` action
+- section-level save actions for reviewed CV fields and optional preferences
+- workflow readiness validation through downstream blockers
 - JSON persistence to `data/candidate_profile.json`
 
 ### Data Output
@@ -184,13 +210,16 @@ data/runtime/candidate_profile/cv/<timestamp>-<uploaded-file>
 - CV extraction is triggered through the agent layer, not by UI regex parsing
 - extracted CV data is visible and editable before saving
 - reviewed identity data must include gender before the profile can be saved
-- user can fill only missing job-search preferences manually
-- employment type is a checkbox list with at least one selected value
+- user can fill job-search preferences manually, but they are optional
+- employment type is an optional checkbox list
 - career level is a checkbox list with hover help for each option
-- work authorization is a mutually exclusive EU radio choice
-- salary is a yearly EUR min/max range and max must be greater than or equal to
-  min
-- final save validates all required fields and writes one candidate profile JSON
+- work authorization is an optional mutually exclusive EU radio choice
+- salary is an optional yearly EUR min/max range and max must be greater than
+  or equal to min when both values are present
+- reviewed CV fields and optional preferences are saved through their own
+  section actions
+- downstream workflow readiness is validated by blockers against the persisted
+  candidate profile data
 - local personal profile artifacts are not committed to git
 - optional supporting documents can be saved and merged into the reviewable
   candidate profile data
@@ -259,9 +288,11 @@ data/runtime/jobs.json
 
 ### Goal
 
-Compare a job against the candidate profile using simple deterministic logic.
+Disabled from the current known-job workflow. Existing backend code and saved
+`analysis.json` files may remain temporarily, but match analysis is no longer a
+gate before requirements discovery or package generation.
 
-### Implement
+### Future/Disabled Scope
 
 - skill overlap detection
 - role/title match
@@ -291,11 +322,11 @@ data/jobs/<job_id>/analysis.json
 
 ### Acceptance Criteria
 
-- user can select a job
-- app calculates match analysis
-- analysis is displayed
-- analysis is saved
-- tracker status can move to `analyzed`
+- current app navigation does not require match analysis
+- Karen does not propose `analyze_match`, `review_match`, or `reject_match`
+- package generation can proceed from reviewed requirements without reviewed
+  match analysis
+- existing saved `analysis.json` files remain compatible historical artifacts
 
 ---
 
@@ -336,8 +367,8 @@ units + job data guided by those requirements.
 - application package save/load
 - apply URL validation that rejects source-page URLs, non-http(s) targets, and
   other invalid application destinations before jobs are saved
-- package generation gate that requires a complete candidate profile, parsed
-  CV, parsed job description, and discovered job-preserving application
+- package generation gate that requires a complete known-job candidate profile,
+  parsed CV, parsed job description, and reviewed job-preserving application
   requirements before generating application material
 
 ### Generated Outputs
@@ -366,7 +397,7 @@ read-only requirements contract.
 
 ### Acceptance Criteria
 
-- user can select an analyzed job
+- user can select a saved reviewed job with a valid `apply_url`
 - app can record application requirements when an apply URL is available
 - unreachable, missing, email-only, same-page, or generic career-page apply URLs
   block requirements discovery
@@ -472,8 +503,6 @@ Expand the existing graph pattern into the full workflow state machine.
   - receive_job_input
   - normalize_job
   - human_validate_job
-  - analyze_match
-  - human_validate_analysis
   - inspect_application_page_agent
   - extract_application_requirements
   - generate_application_package
@@ -495,8 +524,6 @@ START
   -> receive_job_input
   -> normalize_job
   -> human_validate_job
-  -> analyze_match
-  -> human_validate_analysis
   -> inspect_application_page_agent
   -> extract_application_requirements
   -> generate_application_package
@@ -609,7 +636,7 @@ Help the user apply manually using the generated package.
 
 ### Not Allowed
 
-- automatic final submission
+- final submission through Karen
 - login automation
 - captcha handling
 - LinkedIn scraping
@@ -633,9 +660,13 @@ job_search_automation/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md
 ├── requirements.txt
-├── app.py
+├── package.json
+├── vite.config.ts
+├── index.html
+├── frontend/
 ├── src/
 │   ├── __init__.py
+│   ├── api.py
 │   ├── schemas.py
 │   ├── storage.py
 │   ├── sample_data.py
@@ -679,7 +710,8 @@ job_search_automation/
 Initial:
 
 ```text
-streamlit
+fastapi
+uvicorn
 pydantic
 python-dotenv
 pytest
@@ -725,7 +757,7 @@ After each phase:
 
 ```bash
 pytest
-streamlit run app.py
+npm run frontend:typecheck
 git add .
 git commit -m "Implement phase X"
 ```

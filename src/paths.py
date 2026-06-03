@@ -21,9 +21,15 @@ APPLICATION_PAGE_SNAPSHOT_FILENAME = "application_page_snapshot.json"
 APPLICATION_PACKAGE_FILENAME = "application_package.json"
 APPLICATION_PACKAGE_MARKDOWN_FILENAME = "application_package.md"
 APPLICATION_FILL_PLAN_FILENAME = "application_fill_plan.json"
+MATCH_ANALYSIS_FILENAME = "analysis.json"
+AGENT_SESSION_FILENAME = "session.json"
+AGENT_CHAT_FILENAME = "chat.jsonl"
+AGENT_JOB_CHAT_FILENAME = "agent_chat.jsonl"
+AGENT_EVENTS_FILENAME = "events.jsonl"
 
 CV_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "cv"
 OPTIONAL_DOCUMENT_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "optional_documents"
+AGENT_SESSIONS_DIR = RUNTIME_DATA_DIR / "agent_sessions"
 
 
 def candidate_profile_path(base_dir: Path | str) -> Path:
@@ -153,6 +159,21 @@ def runtime_application_package_path(base_dir: Path | str, job_id: str) -> Path:
     return runtime_job_dir(base_dir, job_id) / APPLICATION_PACKAGE_FILENAME
 
 
+def match_analysis_paths(base_dir: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Return runtime and template match-analysis paths."""
+
+    return (
+        runtime_job_dir(base_dir, job_id) / MATCH_ANALYSIS_FILENAME,
+        template_job_dir(base_dir, job_id) / MATCH_ANALYSIS_FILENAME,
+    )
+
+
+def runtime_match_analysis_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the mutable match-analysis path for a job."""
+
+    return runtime_job_dir(base_dir, job_id) / MATCH_ANALYSIS_FILENAME
+
+
 def application_package_markdown_path(base_dir: Path | str, job_id: str) -> Path:
     """Return the generated Markdown export path for a job package."""
 
@@ -187,3 +208,39 @@ def optional_document_upload_path(base_dir: Path | str, filename: str) -> Path:
     """Return the runtime upload path for a supporting candidate document."""
 
     return Path(base_dir) / OPTIONAL_DOCUMENT_UPLOAD_DIR / filename
+
+
+def agent_session_dir(base_dir: Path | str, session_id: str) -> Path:
+    """Return the runtime directory for one agent session."""
+
+    return Path(base_dir) / AGENT_SESSIONS_DIR / session_id
+
+
+def agent_session_path(base_dir: Path | str, session_id: str) -> Path:
+    """Return the metadata path for one agent session."""
+
+    return agent_session_dir(base_dir, session_id) / AGENT_SESSION_FILENAME
+
+
+def agent_session_chat_path(base_dir: Path | str, session_id: str) -> Path:
+    """Return the JSONL chat transcript path for one agent session."""
+
+    return agent_session_dir(base_dir, session_id) / AGENT_CHAT_FILENAME
+
+
+def agent_session_events_path(base_dir: Path | str, session_id: str) -> Path:
+    """Return the JSONL workflow event path for one agent session."""
+
+    return agent_session_dir(base_dir, session_id) / AGENT_EVENTS_FILENAME
+
+
+def job_agent_chat_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the per-job JSONL chat transcript copy path."""
+
+    return runtime_job_dir(base_dir, job_id) / AGENT_JOB_CHAT_FILENAME
+
+
+def job_agent_events_path(base_dir: Path | str, job_id: str) -> Path:
+    """Return the per-job JSONL workflow event path."""
+
+    return runtime_job_dir(base_dir, job_id) / AGENT_EVENTS_FILENAME

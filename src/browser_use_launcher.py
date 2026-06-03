@@ -129,6 +129,12 @@ def stop_all_browser_use_processes(log_dir: Path | str) -> int:
     return stopped_count
 
 
+def count_browser_use_runner_processes() -> int:
+    """Return the number of Browser Use runner processes started by this project."""
+
+    return len(_find_browser_use_runner_processes())
+
+
 def open_url_with_browser_use(
     url: str,
     *,
@@ -167,6 +173,7 @@ def open_apply_url_with_browser_use_fill_plan(
     candidate_profile: CandidateProfile | None = None,
     requirements: ApplicationRequirements | None = None,
     package: ApplicationPackage | None = None,
+    final_submit: bool = False,
 ) -> BrowserUseOpenResult:
     """Open an apply URL and start a Browser Use agent from a reviewed fill plan."""
 
@@ -190,12 +197,19 @@ def open_apply_url_with_browser_use_fill_plan(
         normalized_url,
         log_dir=log_dir,
         startup_wait_seconds=startup_wait_seconds,
-        agent_task=build_fill_plan_application_task(fill_plan),
+        agent_task=build_fill_plan_application_task(
+            fill_plan,
+            final_submit=final_submit,
+        ),
         available_file_paths=upload_paths,
     )
 
 
-def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
+def build_fill_plan_application_task(
+    fill_plan: ApplicationFillPlan,
+    *,
+    final_submit: bool = False,
+) -> str:
     """Return the guarded Browser Use task for a reviewed application fill plan."""
 
     field_values_before_upload = _dedupe_browser_action_fields(
@@ -248,6 +262,12 @@ def build_fill_plan_application_task(fill_plan: ApplicationFillPlan) -> str:
         "submit_guard_labels": fill_plan.submit_guard_labels,
     }
     payload = json.dumps(execution_payload, indent=2, ensure_ascii=True)
+
+    mode_instructions = (
+        _final_submit_mode_instructions(fill_plan)
+        if final_submit
+        else _fill_only_mode_instructions(fill_plan)
+    )
 
     return f"""
 Use the job application page already open in the browser and execute only this
@@ -369,17 +389,51 @@ Hard safety rules:
   "true".
 - Do not fill, select, type into, click, or modify any field that is not listed
   in field_values_before_upload, mandatory_checkbox_fields, or upload_files_last.
-- Never click, press, or activate a button or link named "Weiter & Pruefen",
-  "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
-  or any label from submit_guard_labels.
 - If upload_file reports an error or says the file is not available, stop
   immediately and report the upload as failed.
-- Stop after all fill-plan actions are completed or blocked. Leave the page
-  ready for manual inspection.
+- If the page asks for login, MFA, captcha, account creation, or verification
+  outside the reviewed fill plan, stop and report that manual user action is
+  required.
+- If any missing required unreviewed field appears, stop and report the exact
+  field instead of guessing or inventing candidate data.
+
+{mode_instructions}
 
 Your final answer should summarize filled fields, checked mandatory checkboxes,
 intentionally untouched false checkbox fields, uploaded files, blocked fields,
 failed actions, and whether the page is ready for human review.
+""".strip()
+
+
+def _fill_only_mode_instructions(fill_plan: ApplicationFillPlan) -> str:
+    labels = ", ".join(fill_plan.submit_guard_labels) or "submit/apply controls"
+    return f"""
+Fill-only mode:
+- Never click, press, or activate a button or link named "Weiter & Pruefen",
+  "Weiter & Prüfen", "Absenden", "Senden", "Submit", "Apply", "Bewerbung absenden",
+  or any label from submit_guard_labels.
+- Current reviewed submit guard labels: {labels}.
+- Stop after all fill-plan actions are completed or blocked. Leave the page
+  ready for manual inspection.
+""".strip()
+
+
+def _final_submit_mode_instructions(fill_plan: ApplicationFillPlan) -> str:
+    labels = ", ".join(fill_plan.submit_guard_labels) or "the final submit/apply control"
+    return f"""
+Final-submit mode:
+- This run has explicit per-job session permission to submit the application.
+- Do not click any final submit/apply control until every field, checkbox, and
+  upload listed in the reviewed fill plan is complete or explicitly reported as
+  failed.
+- If any listed required action failed, do not submit. Stop and report the
+  failed action.
+- If a review page appears after the fill plan is complete, inspect it in place.
+  If it shows only the reviewed values from this plan and no new required
+  unreviewed fields, you may activate the final submit/apply control once.
+- The final control may be labeled: {labels}.
+- Never submit through login, MFA, captcha, account creation, or a required
+  missing unreviewed field. Stop and report that manual user action is required.
 """.strip()
 
 

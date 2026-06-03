@@ -26,12 +26,20 @@ The user needs a system that can:
 - store reusable experience units
 - ingest a job position from a URL with manual review fallback
 - normalize the job into a consistent schema
-- compare the job against the candidate profile
+- discover application-form requirements for the saved job
 - generate tailored application material
 - keep AI outputs reviewable and editable
 - track the status of each application
 
 The system should assist, propose, and generate, but the user remains responsible for validation and final decisions.
+
+Karen is the runtime assistant for this workflow, but she is not a separate
+workflow engine and not a second implementation of the job-application
+workflow. Karen has the same workflow capabilities as the user, mediated by
+permission. She triggers the same backend actions that UI buttons trigger, must
+not maintain a parallel source of truth, and must not duplicate business logic,
+create Karen-only review logic, bypass blockers, invent candidate data, or
+decide how Browser Use behaves after launch.
 
 ---
 
@@ -41,11 +49,12 @@ The system should assist, propose, and generate, but the user remains responsibl
 2. User provides a job URL.
 3. App extracts and normalizes job-offer information.
 4. User validates normalized job data.
-5. App analyzes candidate/job match.
-6. User validates analysis.
+5. App discovers application requirements from the valid apply URL.
+6. User validates discovered requirements.
 7. App generates application material.
 8. User reviews, edits, approves, rejects, or regenerates the package.
-9. App saves the final package and updates the tracker.
+9. User reviews a fill plan before Browser Use preparation.
+10. App saves the reviewed package and updates the tracker.
 
 ---
 
@@ -70,10 +79,15 @@ The workflow should not silently jump from one stage to another without validati
 
 Examples:
 
-- normalized job data must be validated before match analysis
-- match analysis must be validated before application generation
+- normalized job data must be validated before application requirements discovery
+- discovered application requirements must be reviewed before package generation
 - generated application material must be reviewed before being marked ready
 - application submission must not be automatic
+
+Karen follows the same rule. She may request existing workflow actions only
+when the user's intent, granted permissions, and the persisted backend state
+allow it. Review gates are workflow actions, not Karen inventions. If the same
+backend review action used by the UI fails, Karen reports the backend blocker.
 
 ### Manual fallback
 
@@ -85,6 +99,9 @@ Examples:
 - if job search fails, user can manually add a job
 - if AI generation is poor, user can edit or regenerate with feedback
 - if assisted application fails, user can apply manually and update the tracker
+
+Karen may route the user to that manual fallback, but she must not fabricate
+missing answers or candidate data in order to move the workflow forward.
 
 ### Source provenance
 
@@ -110,11 +127,10 @@ claude_indeed_export
 The app stores structured candidate information:
 
 - professional summary
-- target roles
-- target locations
+- optional job-search preferences such as target roles and locations
 - skills
 - languages
-- salary expectation
+- optional salary expectation
 - constraints
 - documents used
 
@@ -207,9 +223,16 @@ cannot be verified cleanly.
 
 ### Match Analysis
 
-The app compares the normalized job against the candidate profile and experience units.
+Match analysis is not part of the current user-facing known-job apply workflow.
+Saved `analysis.json` files may remain as historical artifacts, and backend
+match-analysis code may remain for later removal or future discovery work, but
+normal navigation, Karen, requirements discovery, package generation, and
+tracker progression must not depend on it.
 
-The output includes:
+Future job-discovery or ranking scope may compare a normalized job against the
+candidate profile and experience units.
+
+Possible future output includes:
 
 - match score
 - matched skills
@@ -219,7 +242,8 @@ The output includes:
 - recommended positioning
 - application strategy
 
-The score should be deterministic where possible. AI may explain the score, but should not be the only source of scoring logic.
+The score should be deterministic where possible. AI may explain the score, but
+should not be the only source of scoring logic.
 
 ### Application Package Generation
 
@@ -278,6 +302,7 @@ interesting
 rejected_by_user
 application_draft
 ready_to_apply
+agent_assistance_attempted
 applied_manually
 applied_with_agent_assistance
 interview
@@ -285,6 +310,10 @@ rejected
 offer
 closed
 ```
+
+`rejected_by_user` is shown to users as `Not interested`. Use `closed` only when
+the posting is unavailable or no longer accepting applications, and use
+`rejected` only for employer/application outcomes.
 
 The tracker should support:
 
@@ -294,6 +323,9 @@ The tracker should support:
 - opening generated application material
 - editing notes
 - updating application state
+- removing jobs from active workflow views without deleting local data
+- permanently deleting one job's local data when the user confirms a destructive
+  privacy cleanup action
 - exporting data
 
 ---
@@ -324,7 +356,12 @@ This is an import path, not a required runtime dependency.
 
 The app may open the application URL and provide prepared answers.
 
-The app must not automatically submit applications.
+Browser Use remains fill-only and must stop before final submission. Karen may
+launch the same Browser Use apply-assistance action exposed by the UI when the
+workflow is ready and explicit Browser Use permission exists, but final
+submission remains outside Karen's executable workflow. Login, MFA, captcha,
+account creation, missing required unreviewed fields, and recruiter messaging
+remain manual-intervention boundaries.
 
 ### Job Proposal Agent
 
@@ -338,7 +375,7 @@ The user must approve which jobs enter the application pipeline.
 
 The first version should not implement:
 
-- autonomous final submission
+- final submission through Karen
 - LinkedIn scraping
 - login/session automation
 - email sending
@@ -353,6 +390,20 @@ The first version should not implement:
 
 ## Main UI Pages
 
+The primary runtime UI is React + TypeScript + Vite with FastAPI as the adapter
+layer over existing Python workflow logic. The historical Streamlit workflow is
+a legacy/parity reference, not the current runtime UI. The React migration must
+preserve workflow semantics, field coverage, review gates, navigation, and AI
+button labels before any future redesign is proposed.
+
+Current top-level pages:
+
+- Candidate Profile
+- Job Intake
+- Jobs
+- Tracker
+- Agent Karen
+
 ### Candidate Profile
 
 Purpose: create, inspect, and edit structured candidate data.
@@ -360,12 +411,12 @@ Purpose: create, inspect, and edit structured candidate data.
 Sections:
 
 - profile summary
-- target roles
-- target locations
+- optional target roles
+- optional target locations
 - skills
 - languages
 - constraints
-- salary expectation
+- optional salary expectation
 - uploaded/source documents
 - experience units
 
@@ -486,6 +537,45 @@ Displays:
 - notes
 - application package path
 
+### Karen Runtime Assistant
+
+Purpose: provide a first-class runtime assistant that helps the user operate
+the workflow without becoming a development agent. `AGENTS.md` remains guidance
+for Codex and other development agents only.
+
+Placement:
+
+- top-level `Agent Karen` tab in the main navigation
+- persistent app-level side panel across the top-level pages
+- Agent Karen dashboard for selected-job status, blockers, timeline, and
+  guidance
+
+Capabilities:
+
+- explain the app and Karen's role
+- inspect candidate profile status, selected job state, tracker state,
+  blockers, pending gates, artifacts, and next allowed actions
+- route the user to Candidate Profile, Job Intake, Jobs, Tracker, or the
+  Agent Karen tab
+- process safe draft/local workflow requests only after explicit user intent,
+  including requirements discovery, draft package generation, draft fill-plan
+  generation, apply-assistance preparation, and Browser Use launch for a
+  selected job when policy and session grants allow it
+
+Boundaries:
+
+- detailed job intake review stays on Job Intake
+- match analysis is not proposed or reviewed by Karen in the current known-job
+  workflow
+- requirements review, package review, and fill-plan review stay on Jobs when
+  structured reviewed fields are required
+- Karen can run registered job-scoped mutations and Browser Use launch only for
+  the selected job after explicit permission
+- destructive job deletion still requires explicit delete intent even when a
+  session grant exists
+- Karen cannot automate login, MFA, captchas, account creation, recruiter
+  messaging, bypass review gates, or invent candidate data from free-form chat
+
 ---
 
 ## LangGraph Role
@@ -505,8 +595,10 @@ The workflow graph should manage:
 The full graph will later cover job discovery, job detail extraction, apply URL
 resolution, application data generation, human review, and assisted
 upload/apply coordination through the webpage. Assisted upload/apply remains
-human-gated; graph nodes must not submit, upload, log in, or enter personal data
-without explicit human action.
+human-gated; graph nodes must not upload unreviewed files, enter unreviewed
+personal data, or submit. Graph nodes must stop and report manual intervention
+when login, MFA, captcha, account creation, final submission, or missing
+required unreviewed fields are encountered.
 
 ---
 
@@ -521,7 +613,6 @@ data/
 ├── profile.json
 ├── experience_units.json
 ├── jobs.json
-├── tracker.json
 ├── jobs/
 │   └── job_001/
 │       ├── raw_input.txt
@@ -548,8 +639,9 @@ mock, example, and template-style artifacts belong in `tests/fixtures/`, not in
 runtime `data/`.
 
 `data/runtime/jobs.json` is the shared job index and the canonical source for
-the Jobs and Tracker views. `data/jobs.json` and `data/tracker.json` may be
-kept as templates, but the app reads the runtime index first.
+the Jobs and Tracker views. `data/jobs.json` is the bootstrap template. Legacy
+`tracker.json` files may be read as fallback only when the canonical index is
+missing.
 
 A database can be added later if JSON files become limiting.
 
@@ -679,3 +771,5 @@ information prompts.
 - updated_at
 - generated_package_path
 - notes
+- archived_at
+- archive_reason
