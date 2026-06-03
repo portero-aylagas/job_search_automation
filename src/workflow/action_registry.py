@@ -57,6 +57,8 @@ class WorkflowAction:
     review_gate: bool = False
     external_effect: bool = False
     route_hint: str | None = None
+    progress_visible: bool = True
+    chat_milestone: bool = True
 
 
 def get_workflow_action(name: str | None) -> WorkflowAction | None:
@@ -214,7 +216,7 @@ def _prepare_apply_assistance(base_dir: Path | str, job_id: str) -> WorkflowActi
         raise JobWorkflowServiceError(" ".join(blockers))
     return WorkflowActionResult(
         action_name="prepare_apply_assistance",
-        status="executed",
+        status="done",
         message="Apply assistance is ready.",
         route_hint="Jobs",
     )
@@ -224,8 +226,12 @@ def _launch_browser_use(base_dir: Path | str, job_id: str) -> WorkflowActionResu
     result = job_services.launch_apply_assistance(base_dir, job_id, final_submit=False)
     return WorkflowActionResult(
         action_name="launch_browser_use",
-        status="executed",
-        message=f"Started Browser Use apply assistance for {result.url}.",
+        status="done",
+        message=(
+            f"Started Browser Use apply assistance for {result.url}.\n"
+            f"PID: {result.pid}.\n"
+            f"Log: {result.log_path}."
+        ),
         route_hint="Jobs",
         artifact_paths=[str(result.log_path)],
         event_details={"job_id": job_id, "pid": result.pid, "url": result.url},
@@ -248,7 +254,7 @@ def _stop_browser_use_session(base_dir: Path | str, job_id: str) -> WorkflowActi
     stopped = job_services.stop_active_browser_session(base_dir)
     return WorkflowActionResult(
         action_name="stop_browser_use_session",
-        status="executed",
+        status="done",
         message=(
             "Stopped the active Browser Use session."
             if stopped
@@ -262,7 +268,7 @@ def _kill_browser_use_processes(base_dir: Path | str, job_id: str) -> WorkflowAc
     stopped_count = job_services.kill_browser_processes(base_dir)
     return WorkflowActionResult(
         action_name="kill_browser_use_processes",
-        status="executed",
+        status="done",
         message=f"Killed {stopped_count} Browser Use process group(s).",
         event_details={"job_id": job_id, "stopped_count": stopped_count},
     )

@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.paths import (
+    agent_run_path,
     agent_session_chat_path,
     agent_session_events_path,
     agent_session_path,
@@ -19,6 +20,7 @@ from src.schemas import (
     AgentSession,
     AgentWorkflowEvent,
     AgentWorkflowState,
+    KarenWorkflowRun,
 )
 from src.storage import append_jsonl, load_jsonl, load_model, save_model
 
@@ -54,6 +56,12 @@ def create_agent_session_id() -> str:
     """Return a new local agent session identifier."""
 
     return f"agent-{uuid4().hex[:16]}"
+
+
+def create_agent_run_id() -> str:
+    """Return a new local Karen workflow run identifier."""
+
+    return f"karen-run-{uuid4().hex[:12]}"
 
 
 def get_or_create_agent_session(
@@ -126,6 +134,22 @@ def load_agent_events(base_dir: Path | str, session_id: str) -> list[AgentWorkfl
 
     records = load_jsonl(agent_session_events_path(base_dir, _safe_session_id(session_id)))
     return [AgentWorkflowEvent.model_validate(record) for record in records]
+
+
+def save_agent_run(base_dir: Path | str, run: KarenWorkflowRun) -> None:
+    """Persist one Karen workflow run status."""
+
+    save_model(agent_run_path(base_dir, _safe_session_id(run.run_id)), run)
+
+
+def load_agent_run(base_dir: Path | str, run_id: str) -> KarenWorkflowRun | None:
+    """Load one persisted Karen workflow run status."""
+
+    return load_model(
+        agent_run_path(base_dir, _safe_session_id(run_id)),
+        KarenWorkflowRun,
+        default=None,
+    )
 
 
 def build_agent_response(

@@ -1035,6 +1035,9 @@ describe("App workflow pages", () => {
             {
               action: "generate_application_package",
               result: "started",
+              event_type: "workflow_action",
+              status: "running",
+              label: "Generate application package",
               details: {
                 workflow_run_id: "run-1",
                 step_index: 0,
@@ -1060,8 +1063,8 @@ describe("App workflow pages", () => {
     expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Karen is working");
     expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Understood");
     expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate Application Data, Manual");
-    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Now");
     expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate application package");
+    expect(screen.getByLabelText("Karen workflow progress")).not.toHaveTextContent("Pending");
     expect(workspaceLoads).toBeGreaterThanOrEqual(2);
     expect(agentLoadsAfterChatStarted).toBeGreaterThanOrEqual(1);
 
@@ -1124,11 +1127,176 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const progress = await screen.findByLabelText("Karen workflow progress");
-    expect(progress).toHaveTextContent("Latest Karen progress");
+    expect(progress).toHaveTextContent("Stopped at: Approve fill plan");
     expect(progress).toHaveTextContent("Completed");
     expect(progress).toHaveTextContent("Review requirements");
-    expect(progress).toHaveTextContent("Blocked/Needs input");
+    expect(progress).toHaveTextContent("Blocked");
     expect(progress).toHaveTextContent("Approve fill plan: Provide values for required fields.");
+  });
+
+  it("polls a Karen run after chat returns a run id", async () => {
+    const runRequests: string[] = [];
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-1")) {
+        runRequests.push(url);
+        return {
+          body: runState("running", [
+            {
+              action: "review_requirements",
+              event_type: "workflow_action",
+              run_id: "run-1",
+              result: "started",
+              status: "running",
+              label: "Review application requirements",
+              details: { workflow_run_id: "run-1", step_index: 0 }
+            }
+          ])
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        expect(JSON.parse(String(init?.body)).message).toBe("Apply with browser use");
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-1",
+            status: "running",
+            run: { run_id: "run-1", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Apply with browser use");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(runRequests.length).toBeGreaterThan(0));
+    const progress = screen.getByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Karen is working on: Review application requirements");
+    expect(progress).toHaveTextContent("Review application requirements");
+  });
+
+  it("updates Karen progress across polling responses before completion", async () => {
+    let runPolls = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-progress")) {
+        runPolls += 1;
+        if (runPolls === 1) {
+          return {
+            body: runState("running", [
+              karenRunEvent("review_requirements", "Review application requirements", "running", 0)
+            ])
+          };
+        }
+        if (runPolls === 2) {
+          return {
+            body: runState("running", [
+              karenRunEvent("review_requirements", "Review application requirements", "completed", 0),
+              karenRunEvent("generate_application_package", "Generate application package", "running", 1)
+            ])
+          };
+        }
+        return {
+          body: runState("completed", [
+            karenRunEvent("review_requirements", "Review application requirements", "completed", 0),
+            karenRunEvent("generate_application_package", "Generate application package", "completed", 1)
+          ])
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-progress",
+            status: "running",
+            run: { run_id: "run-progress", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Continue workflow");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    expect(await screen.findByLabelText("Karen workflow progress")).toHaveTextContent(
+      "Karen is working on: Review application requirements"
+    );
+    await waitFor(
+      () => {
+        const progress = screen.getByLabelText("Karen workflow progress");
+        expect(progress).toHaveTextContent("✓Review application requirements");
+        expect(progress).toHaveTextContent("▶Generate application package");
+      },
+      { timeout: 2500 }
+    );
+    expect(runPolls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders unknown registered action progress generically", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [], [
+            {
+              action: "new_future_action",
+              event_type: "workflow_action",
+              result: "started",
+              status: "running",
+              label: "New future action",
+              details: {
+                workflow_run_id: "run-future",
+                step_index: 0
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const progress = await screen.findByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Karen is working on: New future action");
   });
 
   it("sends Karen quick prompts without changing typed composer text", async () => {
@@ -1923,7 +2091,43 @@ function agentState(loadCount: number, messages: ApiRecord[] = [], events: ApiRe
     },
     messages,
     events,
-    action_labels: { review_requirements: "Review requirements" }
+    action_labels: {
+      review_requirements: "Review requirements",
+      generate_application_package: "Generate application package",
+      review_application_package: "Review application package",
+      generate_fill_plan: "Generate fill plan",
+      review_fill_plan: "Review fill plan",
+      launch_browser_use: "Launch Browser Use"
+    }
+  };
+}
+
+function runState(status: string, events: ApiRecord[]) {
+  return {
+    run: {
+      run_id: "run-1",
+      session_id: "session-1",
+      job_id: "job-1",
+      status,
+      current_action: events.find((event) => event.status === "running")?.action || null
+    },
+    context: { selected_job_id: "job-1", session_id: "session-1" },
+    state: agentState(1).state,
+    messages: [],
+    events,
+    action_labels: agentState(1).action_labels
+  };
+}
+
+function karenRunEvent(action: string, label: string, status: string, stepIndex: number) {
+  return {
+    action,
+    event_type: "workflow_action",
+    run_id: "run-progress",
+    result: status === "running" ? "started" : "done",
+    status,
+    label,
+    details: { workflow_run_id: "run-progress", step_index: stepIndex }
   };
 }
 

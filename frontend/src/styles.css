@@ -848,6 +848,48 @@ summary {
   padding-left: 1rem;
 }
 
+.karen-progress-steps {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.karen-progress-step {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+  min-height: 1.4rem;
+  color: #1d2433;
+  font-size: 0.88rem;
+}
+
+.karen-progress-step > span {
+  color: #647085;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.karen-progress-step.completed > span {
+  color: #16703a;
+}
+
+.karen-progress-step.running > span {
+  color: #1f6feb;
+}
+
+.karen-progress-step.blocked > span,
+.karen-progress-step.needs_input > span,
+.karen-progress-step.refused > span,
+.karen-progress-step.error > span {
+  color: #b42318;
+}
+
+.karen-progress-step strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .karen-chat-form {
   flex: 0 0 auto;
   margin-top: 1rem;
