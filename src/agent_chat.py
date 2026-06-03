@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from src.paths import (
+    AGENT_RUNS_DIR,
     agent_run_path,
     agent_session_chat_path,
     agent_session_events_path,
@@ -150,6 +151,33 @@ def load_agent_run(base_dir: Path | str, run_id: str) -> KarenWorkflowRun | None
         KarenWorkflowRun,
         default=None,
     )
+
+
+def find_active_agent_run(
+    base_dir: Path | str,
+    *,
+    session_id: str,
+    job_id: str | None,
+) -> KarenWorkflowRun | None:
+    """Return an active Karen workflow run for the same session/job scope."""
+
+    runs_dir = Path(base_dir) / AGENT_RUNS_DIR
+    if not runs_dir.exists():
+        return None
+
+    active_statuses = {"queued", "running"}
+    for run_path in sorted(runs_dir.glob("*/run.json"), reverse=True):
+        run = load_model(run_path, KarenWorkflowRun, default=None)
+        if run is None:
+            continue
+        if run.status not in active_statuses:
+            continue
+        if run.session_id != session_id:
+            continue
+        if run.job_id != job_id:
+            continue
+        return run
+    return None
 
 
 def build_agent_response(

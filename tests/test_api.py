@@ -758,6 +758,66 @@ def test_agent_chat_returns_before_background_karen_turn_finishes(
     asyncio.run(exercise())
 
 
+def test_agent_chat_reuses_active_run_for_same_session_and_job(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started = Event()
+    release = Event()
+    calls = 0
+
+    def slow_chat_turn(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait(timeout=2)
+        return SimpleNamespace(
+            assistant_message="Done.",
+            context=KarenContext(
+                session_id="session-1",
+                current_page="Agent Karen",
+                selected_job_id="job-1",
+            ),
+            intent=None,
+            tool_result=SimpleNamespace(status="done"),
+        )
+
+    monkeypatch.setattr("src.api.process_karen_chat_turn", slow_chat_turn)
+
+    async def exercise() -> None:
+        app = create_app(tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            first = await client.post(
+                "/api/agent/chat",
+                json={
+                    "message": "run a long workflow",
+                    "selected_job_id": "job-1",
+                    "session_id": "session-1",
+                },
+            )
+            assert first.status_code == 200
+            assert started.wait(timeout=1)
+
+            second = await client.post(
+                "/api/agent/chat",
+                json={
+                    "message": "run a duplicate workflow",
+                    "selected_job_id": "job-1",
+                    "session_id": "session-1",
+                },
+            )
+
+            assert second.status_code == 200
+            assert second.json()["run_id"] == first.json()["run_id"]
+            assert second.json()["reused_run"] is True
+            assert calls == 1
+
+            release.set()
+
+    asyncio.run(exercise())
+
+
 def test_agent_run_endpoint_shows_progress_while_background_turn_runs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
