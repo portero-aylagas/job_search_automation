@@ -234,6 +234,16 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         allow_headers=["*"],
     )
 
+    _register_core_routes(app)
+    _register_candidate_profile_routes(app)
+    _register_job_workflow_routes(app)
+    _register_agent_routes(app)
+    return app
+
+
+def _register_core_routes(app: FastAPI) -> None:
+    """Register health, navigation, and monitoring endpoints."""
+
     @app.get("/api/health")
     async def health() -> dict[str, str]:
         """Return a lightweight readiness response."""
@@ -254,6 +264,10 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             return langsmith_monitoring_summary(days=days)
         except LangSmithMonitoringError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _register_candidate_profile_routes(app: FastAPI) -> None:
+    """Register candidate-profile upload, review, and preference endpoints."""
 
     @app.get("/api/candidate-profile")
     async def get_candidate_profile() -> dict[str, object]:
@@ -348,6 +362,9 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             "profile": profile.model_dump(mode="json"),
             "message": "Uploaded document deleted.",
         }
+
+def _register_job_workflow_routes(app: FastAPI) -> None:
+    """Register job intake, tracker, workspace, and workflow endpoints."""
 
     @app.post("/api/job-intake/extract")
     async def extract_job(payload: JobExtractionRequest) -> dict[str, object]:
@@ -724,6 +741,10 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             "message": f"Killed {stopped_count} Browser Use process group(s).",
         }
 
+
+def _register_agent_routes(app: FastAPI) -> None:
+    """Register Karen agent state, chat, and run polling endpoints."""
+
     @app.get("/api/agent")
     async def agent(
         selected_job_id: str | None = None,
@@ -797,8 +818,6 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         if run is None:
             raise HTTPException(status_code=404, detail="Karen workflow run not found.")
         return _agent_run_payload(app.state.base_dir, run)
-
-    return app
 
 
 def _run_karen_chat_background(
