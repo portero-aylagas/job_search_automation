@@ -9,7 +9,12 @@ from typing import Any, TypedDict
 import yaml
 
 from src import llm_client
-from src.agent_chat import append_agent_chat_message, log_agent_event
+from src.agent_chat import (
+    ACTION_LABELS,
+    GATE_LABELS,
+    append_agent_chat_message,
+    log_agent_event,
+)
 from src.agents.karen.policy import evaluate_karen_tool_request
 from src.agents.karen.state import (
     KarenChatTurnResult,
@@ -40,6 +45,7 @@ class KarenGraphState(TypedDict, total=False):
     session_id: str | None
     user_message: str
     intent_classifier: KarenIntentClassifier | None
+    workflow_run_id: str | None
     context: KarenContext
     intent: KarenIntentResponse | None
     tool_result: KarenToolResult | None
@@ -55,6 +61,7 @@ def process_karen_chat_turn(
     user_message: str,
     session_id: str | None = None,
     intent_classifier: KarenIntentClassifier | None = None,
+    workflow_run_id: str | None = None,
 ) -> KarenChatTurnResult:
     """Persist and process one Karen chat turn."""
 
@@ -65,6 +72,7 @@ def process_karen_chat_turn(
         "session_id": session_id,
         "user_message": user_message,
         "intent_classifier": intent_classifier,
+        "workflow_run_id": workflow_run_id,
     }
     graph = build_karen_graph()
     result = graph.invoke(initial_state)
@@ -220,15 +228,13 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
             session_id=context.session_id,
             selected_job_id=context.selected_job_id,
             intent=intent.workflow_intent,
+            workflow_run_id=state.get("workflow_run_id"),
         )
         tool_result = _workflow_result_to_tool_result(workflow_result)
         return {
             "context": context,
             "tool_result": tool_result,
-            "assistant_message": _combine_messages(
-                intent.assistant_message,
-                workflow_result.message,
-            ),
+            "assistant_message": _workflow_assistant_message(workflow_result),
         }
 
     tool_name = intent.proposed_tool
@@ -368,6 +374,55 @@ def _combine_messages(primary: str, secondary: str) -> str:
     if not secondary_text or secondary_text in primary_text:
         return primary_text
     return f"{primary_text}\n\n{secondary_text}"
+
+
+def _workflow_assistant_message(result: WorkflowRunResult) -> str:
+    """Return concise chat copy for deterministic workflow-controller turns."""
+
+    lines = [_sentence(result.message)]
+    blocker_text = _joined_blockers(result.blockers)
+    if blocker_text and blocker_text.casefold() not in lines[0].casefold():
+        lines.append(f"Blocked: {blocker_text}")
+
+    next_line = _workflow_next_line(result)
+    if next_line:
+        lines.append(next_line)
+
+    return "\n\n".join(line for line in lines if line)
+
+
+def _workflow_next_line(result: WorkflowRunResult) -> str:
+    if result.executed_actions and result.executed_actions[-1] == "launch_browser_use":
+        return ""
+    if result.status == "waiting_for_review" and result.pending_gate:
+        return f"Needs review: {_gate_label(result.pending_gate)}"
+    if result.status in {"blocked", "needs_input", "refused"}:
+        return ""
+    if result.pending_gate:
+        return f"Next: {_gate_label(result.pending_gate)}"
+    if result.next_allowed_actions:
+        return "Next: " + ", ".join(
+            ACTION_LABELS.get(action, action.replace("_", " ").title())
+            for action in result.next_allowed_actions[:3]
+        )
+    return ""
+
+
+def _gate_label(gate: str) -> str:
+    return GATE_LABELS.get(gate, gate.replace("_", " ").title())
+
+
+def _joined_blockers(blockers: list[str]) -> str:
+    return "; ".join(blocker.strip().rstrip(".") for blocker in blockers if blocker.strip())
+
+
+def _sentence(text: str) -> str:
+    value = text.strip()
+    if not value:
+        return "Workflow checked."
+    if value.endswith((".", "!", "?")):
+        return value
+    return f"{value}."
 
 
 def _workflow_result_to_tool_result(result: WorkflowRunResult) -> KarenToolResult:

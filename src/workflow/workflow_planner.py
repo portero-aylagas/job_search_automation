@@ -136,6 +136,27 @@ def planner_next_action(state, intent: WorkflowIntent) -> PlannerDecision:
             blockers=list(state.current_blockers),
         )
 
+    if state.pending_gate == "browser_use_launch":
+        if _intent_is_manual_only(intent):
+            return PlannerDecision(
+                status="done",
+                message="The job is prepared for manual application.",
+                route_hint="Jobs",
+            )
+        if intent.execution_mode == "browser_use":
+            if not intent.allow_browser_launch:
+                return PlannerDecision(
+                    status="refused",
+                    message="Browser Use launch requires permission.",
+                    route_hint="Jobs",
+                )
+            return PlannerDecision(
+                status="action",
+                action_name="launch_browser_use",
+                message="Launching Browser Use apply assistance.",
+                route_hint="Jobs",
+            )
+
     if intent.goal == "mark_current_gate_reviewed":
         return PlannerDecision(
             status="done",
@@ -178,13 +199,6 @@ def planner_next_action(state, intent: WorkflowIntent) -> PlannerDecision:
             intent,
             "generate_fill_plan",
             "Generating application fill plan.",
-        )
-
-    if _intent_is_manual_only(intent):
-        return PlannerDecision(
-            status="done",
-            message="The job is prepared for manual application.",
-            route_hint="Jobs",
         )
 
     if intent.execution_mode == "browser_use" and intent.goal in {
