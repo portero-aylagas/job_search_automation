@@ -56,6 +56,8 @@ function App() {
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
   const [isKarenSending, setIsKarenSending] = useState(false);
   const [isKarenMobileOpen, setIsKarenMobileOpen] = useState(false);
+  const [workflowRefresh, setWorkflowRefresh] = useState({ version: 0, jobId: "" });
+  const [pendingKarenRefresh, setPendingKarenRefresh] = useState<ApiRecord | null>(null);
   const karenSendingRef = useRef(false);
   const sessionId = agent?.context?.session_id;
 
@@ -96,6 +98,19 @@ function App() {
     loadKarenJobs(preferredJobId, nextSessionId);
   }
 
+  function refreshVisibleWorkflow(jobId = "") {
+    setWorkflowRefresh((current) => ({
+      version: current.version + 1,
+      jobId
+    }));
+  }
+
+  function completeVisibleWorkflowRefresh() {
+    if (!pendingKarenRefresh) return;
+    refreshKarenState(pendingKarenRefresh.jobId, pendingKarenRefresh.sessionId);
+    setPendingKarenRefresh(null);
+  }
+
   useEffect(() => {
     loadKarenJobs("", "");
   }, []);
@@ -117,7 +132,16 @@ function App() {
       if (!overrideMessage) setKarenMessage("");
       const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
       if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
-      loadAgent(nextJobId, result.context?.session_id);
+      if (result.tool_result?.status === "executed") {
+        if (workflowPageHandlesRefresh(page)) {
+          setPendingKarenRefresh({ jobId: nextJobId, sessionId: result.context?.session_id });
+        } else {
+          refreshKarenState(nextJobId, result.context?.session_id);
+        }
+        refreshVisibleWorkflow(nextJobId);
+      } else {
+        loadAgent(nextJobId, result.context?.session_id);
+      }
     });
     karenSendingRef.current = false;
   }
@@ -183,7 +207,13 @@ function App() {
         style={{ "--karen-panel-width": `${karenPanelWidth}px` } as CSSProperties}
       >
         <main className="page">
-          {page === "Candidate Profile" && <CandidateProfilePage onWorkflowChange={refreshKarenState} />}
+          {page === "Candidate Profile" && (
+            <CandidateProfilePage
+              onRefreshComplete={completeVisibleWorkflowRefresh}
+              onWorkflowChange={refreshKarenState}
+              refreshSignal={workflowRefresh.version}
+            />
+          )}
           {page === "Job Intake" && (
             <JobIntakePage
               onSaved={(jobId) => {
@@ -194,11 +224,20 @@ function App() {
           )}
           {page === "Jobs" && (
             <JobsPage
+              onRefreshComplete={completeVisibleWorkflowRefresh}
               onNavigateToIntake={() => setPage("Job Intake")}
               onWorkflowChange={refreshKarenState}
+              refreshJobId={workflowRefresh.jobId}
+              refreshSignal={workflowRefresh.version}
             />
           )}
-          {page === "Tracker" && <TrackerPage onWorkflowChange={refreshKarenState} />}
+          {page === "Tracker" && (
+            <TrackerPage
+              onRefreshComplete={completeVisibleWorkflowRefresh}
+              onWorkflowChange={refreshKarenState}
+              refreshSignal={workflowRefresh.version}
+            />
+          )}
           {page === "Agent Karen" && (
             <AgentKarenPage
               agent={agent}
@@ -232,9 +271,13 @@ function App() {
 }
 
 function CandidateProfilePage({
-  onWorkflowChange
+  onRefreshComplete,
+  onWorkflowChange,
+  refreshSignal
 }: {
+  onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshSignal: number;
 }) {
   const [profile, setProfile] = useState<ApiRecord | null>(null);
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -247,11 +290,20 @@ function CandidateProfilePage({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const isAiPending = !!pendingAction;
 
+  async function loadProfile() {
+    try {
+      const payload = await apiRequest<ApiRecord>("/api/candidate-profile");
+      setProfile(payload.profile);
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   useEffect(() => {
-    apiRequest<ApiRecord>("/api/candidate-profile")
-      .then((payload) => setProfile(payload.profile))
-      .catch((error) => setMessage({ type: "error", text: error.message }));
-  }, []);
+    loadProfile().finally(() => {
+      if (refreshSignal) onRefreshComplete();
+    });
+  }, [refreshSignal]);
 
   const extracted = profile?.candidate_profile?.cv_extracted;
   const preferences = profile?.candidate_profile?.candidate_preferences;
@@ -678,11 +730,17 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
 }
 
 function JobsPage({
+  onRefreshComplete,
   onNavigateToIntake,
-  onWorkflowChange
+  onWorkflowChange,
+  refreshJobId,
+  refreshSignal
 }: {
+  onRefreshComplete: () => void;
   onNavigateToIntake: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshJobId: string;
+  refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
@@ -691,15 +749,26 @@ function JobsPage({
   const [message, setMessage] = useState<ApiRecord | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
 
-  function loadJobs() {
-    apiRequest<ApiRecord>("/api/jobs").then((payload) => {
-      setRecords(payload.records || []);
+  async function loadJobs(preferredJobId = selectedJobId) {
+    try {
+      const payload = await apiRequest<ApiRecord>("/api/jobs");
+      const nextRecords = payload.records || [];
+      const nextJobId = chooseJobId(nextRecords, preferredJobId, selectedJobId);
+      setRecords(nextRecords);
       setStatusOptions(payload.status_options || []);
-      if (!selectedJobId && payload.records?.[0]) setSelectedJobId(payload.records[0].job_id);
-    }).catch((error) => setMessage({ type: "error", text: error.message }));
+      setSelectedJobId(nextJobId);
+      if (!nextJobId) setWorkspace(null);
+      return nextJobId;
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+      return selectedJobId;
+    }
   }
 
-  useEffect(loadJobs, []);
+  useEffect(() => {
+    loadJobs("");
+  }, []);
+
   useEffect(() => {
     if (!selectedJobId) return;
     setLoadingWorkspace(true);
@@ -708,6 +777,32 @@ function JobsPage({
       .catch((error) => setMessage({ type: "error", text: error.message }))
       .finally(() => setLoadingWorkspace(false));
   }, [selectedJobId]);
+
+  useEffect(() => {
+    if (!refreshSignal) return;
+    reloadWorkflowFromSignal(refreshJobId);
+  }, [refreshSignal]);
+
+  async function reloadWorkflowFromSignal(preferredJobId: string) {
+    setLoadingWorkspace(true);
+    try {
+      const jobsPayload = await apiRequest<ApiRecord>("/api/jobs");
+      const nextRecords = jobsPayload.records || [];
+      const nextJobId = chooseJobId(nextRecords, preferredJobId, selectedJobId);
+      const workspacePayload = nextJobId
+        ? await apiRequest<ApiRecord>(`/api/jobs/${nextJobId}/workspace`)
+        : null;
+      setRecords(nextRecords);
+      setStatusOptions(jobsPayload.status_options || []);
+      setSelectedJobId(nextJobId);
+      setWorkspace(workspacePayload);
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setLoadingWorkspace(false);
+      onRefreshComplete();
+    }
+  }
 
   async function reloadWorkspace() {
     if (!selectedJobId) return;
@@ -1288,9 +1383,13 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 }
 
 function TrackerPage({
-  onWorkflowChange
+  onRefreshComplete,
+  onWorkflowChange,
+  refreshSignal
 }: {
+  onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
   const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
@@ -1298,19 +1397,22 @@ function TrackerPage({
   const [message, setMessage] = useState<ApiRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState("All");
 
-  function loadTracker() {
-    apiRequest<ApiRecord>("/api/tracker")
-      .then((payload) => {
-        setRecords(payload.records || []);
-        setStatusOptions(payload.status_options || []);
-        setStatusFilters(payload.status_filters || []);
-      })
-      .catch((error) => setMessage({ type: "error", text: error.message }));
+  async function loadTracker() {
+    try {
+      const payload = await apiRequest<ApiRecord>("/api/tracker");
+      setRecords(payload.records || []);
+      setStatusOptions(payload.status_options || []);
+      setStatusFilters(payload.status_filters || []);
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    }
   }
 
   useEffect(() => {
-    loadTracker();
-  }, []);
+    loadTracker().finally(() => {
+      if (refreshSignal) onRefreshComplete();
+    });
+  }, [refreshSignal]);
 
   async function updateRecordStatus(jobId: string, status: string) {
     try {
@@ -2138,6 +2240,16 @@ function allWorkspaceBlockers(workspace: ApiRecord) {
     ...(workspace.fill_plan_generation_blockers || []),
     ...(workspace.apply_blockers || [])
   ].filter(Boolean);
+}
+
+function chooseJobId(records: ApiRecord[], preferredJobId = "", currentJobId = "") {
+  if (preferredJobId && records.some((record) => record.job_id === preferredJobId)) return preferredJobId;
+  if (currentJobId && records.some((record) => record.job_id === currentJobId)) return currentJobId;
+  return records[0]?.job_id || "";
+}
+
+function workflowPageHandlesRefresh(pageName: string) {
+  return ["Candidate Profile", "Jobs", "Tracker"].includes(pageName);
 }
 
 function jobBlockerCount(record: ApiRecord, workspace: ApiRecord | null) {

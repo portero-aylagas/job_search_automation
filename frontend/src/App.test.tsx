@@ -891,6 +891,66 @@ describe("App workflow pages", () => {
     ]);
   });
 
+  it("refreshes the visible Jobs workspace after Karen executes a workflow action", async () => {
+    const chatBodies: unknown[] = [];
+    const postChatRequests: string[] = [];
+    let workspaceLoads = 0;
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        if (chatBodies.length) postChatRequests.push("workspace");
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            tool_result: {
+              status: "executed",
+              tool_name: "review_requirements",
+              message: "Requirements reviewed."
+            }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        if (chatBodies.length) postChatRequests.push("agent");
+        return { body: agentState(2) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    expect(await screen.findByText("No application requirements have been discovered yet.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeDisabled();
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Review the requirements");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    expect(await screen.findByText("Ready summary")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("- [required] CV")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled();
+    expect(workspaceLoads).toBeGreaterThanOrEqual(2);
+    expect(postChatRequests.indexOf("workspace")).toBeGreaterThanOrEqual(0);
+    expect(postChatRequests.indexOf("workspace")).toBeLessThan(postChatRequests.indexOf("agent"));
+    expect(chatBodies).toEqual([
+      {
+        message: "Review the requirements",
+        selected_job_id: "job-1",
+        session_id: "session-1",
+      },
+    ]);
+  });
+
   it("sends Karen quick prompts without changing typed composer text", async () => {
     const chatBodies: unknown[] = [];
     mockFetch((url, init) => {
