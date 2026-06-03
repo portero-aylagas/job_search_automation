@@ -663,6 +663,13 @@ def test_karen_generates_package_by_calling_shared_service(
     assert events[1].details["action_label"] == "Generate application package"
     assert events[1].details["workflow_run_id"] == events[2].details["workflow_run_id"]
     assert events[1].planned_actions == []
+    assert set(events[2].refresh_scopes) >= {
+        "job_workspace",
+        "tracker",
+        "agent_context",
+    }
+    assert events[2].metadata["refresh_scopes"] == events[2].refresh_scopes
+    assert events[2].details["refresh_scopes"] == events[2].refresh_scopes
 
 
 def test_karen_emits_generic_progress_for_any_registered_action(
@@ -863,6 +870,15 @@ def test_karen_multi_step_workflow_emits_action_progress_events(
         ("launch_browser_use", "running"),
         ("launch_browser_use", "completed"),
     ]
+    fill_plan_completed = next(
+        event
+        for event in events
+        if event.action == "generate_fill_plan" and event.status == "completed"
+    )
+    assert set(fill_plan_completed.refresh_scopes) >= {
+        "job_workspace",
+        "agent_context",
+    }
     assert events[-1].metadata["url"] == "https://example.com/apply"
 
 

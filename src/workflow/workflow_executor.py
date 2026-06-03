@@ -298,7 +298,10 @@ def _log_workflow_action(
     details = dict(result.event_details)
     label = _action_label(result.action_name)
     progress_status = _progress_status_from_result(result.status)
+    action = get_workflow_action(result.action_name)
+    refresh_scopes = sorted(action.refresh_scopes) if action is not None else []
     metadata = dict(result.event_details)
+    metadata["refresh_scopes"] = list(refresh_scopes)
     details.update(
         {
             "workflow_run_id": workflow_run_id,
@@ -307,6 +310,7 @@ def _log_workflow_action(
             "action_label": label,
             "progress_status": progress_status,
             "event_type": "workflow_action",
+            "refresh_scopes": list(refresh_scopes),
         }
     )
     event = AgentWorkflowEvent(
@@ -323,6 +327,7 @@ def _log_workflow_action(
         route_hint=result.route_hint,
         gate=None,
         artifact_paths=result.artifact_paths,
+        refresh_scopes=list(refresh_scopes),
         metadata=metadata,
         details=details,
     )

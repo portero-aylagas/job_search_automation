@@ -59,6 +59,7 @@ class WorkflowAction:
     route_hint: str | None = None
     progress_visible: bool = True
     chat_milestone: bool = True
+    refresh_scopes: frozenset[str] = frozenset()
 
 
 def get_workflow_action(name: str | None) -> WorkflowAction | None:
@@ -303,6 +304,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_discover_requirements,
         permission_level=PermissionLevel.DRAFT_ONLY,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "agent_context"}),
     ),
     "review_requirements": WorkflowAction(
         name="review_requirements",
@@ -311,6 +313,7 @@ WORKFLOW_ACTION_REGISTRY = {
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         review_gate=True,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "agent_context"}),
     ),
     "generate_application_package": WorkflowAction(
         name="generate_application_package",
@@ -318,6 +321,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_generate_application_package,
         permission_level=PermissionLevel.DRAFT_ONLY,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "review_application_package": WorkflowAction(
         name="review_application_package",
@@ -326,6 +330,7 @@ WORKFLOW_ACTION_REGISTRY = {
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         review_gate=True,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "generate_fill_plan": WorkflowAction(
         name="generate_fill_plan",
@@ -333,6 +338,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_generate_fill_plan,
         permission_level=PermissionLevel.DRAFT_ONLY,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "agent_context"}),
     ),
     "review_fill_plan": WorkflowAction(
         name="review_fill_plan",
@@ -341,6 +347,7 @@ WORKFLOW_ACTION_REGISTRY = {
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         review_gate=True,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "prepare_apply_assistance": WorkflowAction(
         name="prepare_apply_assistance",
@@ -356,6 +363,7 @@ WORKFLOW_ACTION_REGISTRY = {
         permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
         external_effect=True,
         route_hint="Jobs",
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "prepare_manual_application": WorkflowAction(
         name="prepare_manual_application",
@@ -370,6 +378,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_stop_browser_use_session,
         permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
         external_effect=True,
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "kill_browser_use_processes": WorkflowAction(
         name="kill_browser_use_processes",
@@ -377,6 +386,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_kill_browser_use_processes,
         permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
         external_effect=True,
+        refresh_scopes=frozenset({"job_workspace", "tracker", "agent_context"}),
     ),
     "archive_job": WorkflowAction(
         name="archive_job",
@@ -384,6 +394,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_archive_job,
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         route_hint="Tracker",
+        refresh_scopes=frozenset({"jobs_index", "tracker", "agent_context"}),
     ),
     "restore_job": WorkflowAction(
         name="restore_job",
@@ -391,6 +402,7 @@ WORKFLOW_ACTION_REGISTRY = {
         handler=_restore_job,
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         route_hint="Tracker",
+        refresh_scopes=frozenset({"jobs_index", "tracker", "agent_context"}),
     ),
 }
 

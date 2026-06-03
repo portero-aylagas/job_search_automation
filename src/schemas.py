@@ -977,6 +977,7 @@ class AgentWorkflowEvent(BaseModel):
     blockers: list[str] = Field(default_factory=list)
     route_hint: str | None = None
     artifact_paths: list[str] = Field(default_factory=list)
+    refresh_scopes: list[str] = Field(default_factory=list)
     planned_actions: list[str] = Field(default_factory=list)
     next_allowed_actions: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

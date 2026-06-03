@@ -44,6 +44,13 @@ const karenPanelWidthKey = "karenPanelWidth";
 const karenPanelWidthMin = 320;
 const karenPanelWidthMax = 560;
 const karenPanelWidthDefault = 380;
+const fullWorkflowRefreshScopes = [
+  "job_workspace",
+  "jobs_index",
+  "tracker",
+  "candidate_profile",
+  "agent_context"
+];
 
 function App() {
   const [page, setPage] = useState("Candidate Profile");
@@ -57,9 +64,14 @@ function App() {
   const [activeKarenRunId, setActiveKarenRunId] = useState("");
   const [activeKarenRunStatus, setActiveKarenRunStatus] = useState("");
   const [isKarenMobileOpen, setIsKarenMobileOpen] = useState(false);
-  const [workflowRefresh, setWorkflowRefresh] = useState({ version: 0, jobId: "" });
+  const [workflowRefresh, setWorkflowRefresh] = useState({
+    version: 0,
+    jobId: "",
+    scopes: fullWorkflowRefreshScopes
+  });
   const [pendingKarenRefresh, setPendingKarenRefresh] = useState<ApiRecord | null>(null);
   const karenSendingRef = useRef(false);
+  const seenRefreshEventIdsRef = useRef<Set<string>>(new Set());
   const sessionId = agent?.context?.session_id;
   const isKarenBusy = isKarenSending || isActiveKarenRunStatus(activeKarenRunStatus);
 
@@ -106,10 +118,11 @@ function App() {
     loadAgent(jobId, sessionId);
   }
 
-  function refreshVisibleWorkflow(jobId = "") {
+  function refreshVisibleWorkflow(jobId = "", scopes: string[] = fullWorkflowRefreshScopes) {
     setWorkflowRefresh((current) => ({
       version: current.version + 1,
-      jobId
+      jobId,
+      scopes: uniqueStrings(scopes)
     }));
   }
 
@@ -127,7 +140,6 @@ function App() {
     if (!isKarenSending || page !== "Jobs") return;
     const pollKarenProgress = () => {
       loadAgent(selectedKarenJobId, sessionId);
-      refreshVisibleWorkflow(selectedKarenJobId);
     };
     const intervalId = window.setInterval(pollKarenProgress, 1000);
     return () => window.clearInterval(intervalId);
@@ -137,19 +149,22 @@ function App() {
     if (!activeKarenRunId) return;
     let intervalId = 0;
     let cancelled = false;
+    seenRefreshEventIdsRef.current = new Set();
 
     const pollKarenRun = async () => {
       try {
         const result = await apiRequest<ApiRecord>(`/api/agent/runs/${activeKarenRunId}`);
         if (cancelled) return;
+        const events = result.events || [];
         setActiveKarenRunStatus(String(result.run?.status || ""));
-        setAgent({
-          context: result.context || agent?.context || {},
-          state: result.state || agent?.state || {},
-          messages: result.messages || agent?.messages || [],
-          events: result.events || [],
-          action_labels: result.action_labels || agent?.action_labels || {}
-        });
+        setAgent((currentAgent) => ({
+          context: result.context || currentAgent?.context || {},
+          state: result.state || currentAgent?.state || {},
+          messages: result.messages || currentAgent?.messages || [],
+          events,
+          action_labels: result.action_labels || currentAgent?.action_labels || {}
+        }));
+        refreshFromKarenEvents(events, result.context?.selected_job_id || selectedKarenJobId);
         if (isTerminalKarenRunStatus(String(result.run?.status || ""))) {
           window.clearInterval(intervalId);
           setActiveKarenRunId("");
@@ -213,6 +228,24 @@ function App() {
     karenSendingRef.current = false;
   }
 
+  function refreshFromKarenEvents(events: ApiRecord[], fallbackJobId = "") {
+    const refreshScopes = new Set<string>();
+    let refreshJobId = fallbackJobId;
+
+    for (const event of events) {
+      if (!shouldRefreshForKarenEvent(event)) continue;
+      const eventKey = karenRefreshEventKey(event);
+      if (seenRefreshEventIdsRef.current.has(eventKey)) continue;
+      seenRefreshEventIdsRef.current.add(eventKey);
+      eventRefreshScopes(event).forEach((scope) => refreshScopes.add(scope));
+      if (event.job_id) refreshJobId = String(event.job_id);
+    }
+
+    if (refreshScopes.size) {
+      refreshVisibleWorkflow(refreshJobId, Array.from(refreshScopes));
+    }
+  }
+
   function navigateToWorkflowTarget(pageName: string, sectionId?: string) {
     setPage(pageName);
     if (!sectionId) return;
@@ -273,6 +306,7 @@ function App() {
             <CandidateProfilePage
               onRefreshComplete={completeVisibleWorkflowRefresh}
               onWorkflowChange={refreshKarenState}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -292,6 +326,7 @@ function App() {
               onSelectedJobChange={syncKarenWithJobsSelection}
               onWorkflowChange={refreshKarenState}
               refreshJobId={workflowRefresh.jobId}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -299,6 +334,7 @@ function App() {
             <TrackerPage
               onRefreshComplete={completeVisibleWorkflowRefresh}
               onWorkflowChange={refreshKarenState}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -329,10 +365,12 @@ function App() {
 function CandidateProfilePage({
   onRefreshComplete,
   onWorkflowChange,
+  refreshScopes,
   refreshSignal
 }: {
   onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [profile, setProfile] = useState<ApiRecord | null>(null);
@@ -356,6 +394,10 @@ function CandidateProfilePage({
   }
 
   useEffect(() => {
+    if (refreshSignal && !hasAnyRefreshScope(refreshScopes, ["candidate_profile"])) {
+      onRefreshComplete();
+      return;
+    }
     loadProfile().finally(() => {
       if (refreshSignal) onRefreshComplete();
     });
@@ -792,6 +834,7 @@ function JobsPage({
   onSelectedJobChange,
   onWorkflowChange,
   refreshJobId,
+  refreshScopes,
   refreshSignal
 }: {
   agent: ApiRecord | null;
@@ -800,6 +843,7 @@ function JobsPage({
   onSelectedJobChange: (jobId: string) => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
   refreshJobId: string;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
@@ -841,20 +885,31 @@ function JobsPage({
 
   useEffect(() => {
     if (!refreshSignal) return;
-    reloadWorkflowFromSignal(refreshJobId);
+    reloadWorkflowFromSignal(refreshJobId, refreshScopes);
   }, [refreshSignal]);
 
-  async function reloadWorkflowFromSignal(preferredJobId: string) {
+  async function reloadWorkflowFromSignal(preferredJobId: string, scopes: string[]) {
+    const refreshJobs = hasAnyRefreshScope(scopes, ["jobs_index", "tracker"]);
+    const refreshWorkspace = hasAnyRefreshScope(scopes, ["job_workspace"]);
+    if (!refreshJobs && !refreshWorkspace) {
+      onRefreshComplete();
+      return;
+    }
+
     setLoadingWorkspace(true);
     try {
-      const jobsPayload = await apiRequest<ApiRecord>("/api/jobs");
-      const nextRecords = jobsPayload.records || [];
-      const nextJobId = chooseJobId(nextRecords, preferredJobId, selectedJobId);
-      const workspacePayload = nextJobId
+      const jobsPayload = refreshJobs ? await apiRequest<ApiRecord>("/api/jobs") : null;
+      const nextRecords = jobsPayload ? jobsPayload.records || [] : records;
+      const nextJobId = refreshJobs
+        ? chooseJobId(nextRecords, preferredJobId, selectedJobId)
+        : preferredJobId || selectedJobId;
+      const workspacePayload = refreshWorkspace && nextJobId
         ? await apiRequest<ApiRecord>(`/api/jobs/${nextJobId}/workspace`)
-        : null;
-      setRecords(nextRecords);
-      setStatusOptions(jobsPayload.status_options || []);
+        : workspace;
+      if (jobsPayload) {
+        setRecords(nextRecords);
+        setStatusOptions(jobsPayload.status_options || []);
+      }
       setSelectedJobId(nextJobId);
       onSelectedJobChange(nextJobId);
       setWorkspace(workspacePayload);
@@ -1479,10 +1534,12 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 function TrackerPage({
   onRefreshComplete,
   onWorkflowChange,
+  refreshScopes,
   refreshSignal
 }: {
   onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
@@ -1503,6 +1560,10 @@ function TrackerPage({
   }
 
   useEffect(() => {
+    if (refreshSignal && !hasAnyRefreshScope(refreshScopes, ["tracker", "jobs_index"])) {
+      onRefreshComplete();
+      return;
+    }
     loadTracker().finally(() => {
       if (refreshSignal) onRefreshComplete();
     });
@@ -2505,6 +2566,36 @@ function latestWorkflowRunId(events: ApiRecord[]) {
     .reverse()
     .find((item) => item.run_id || item.details?.workflow_run_id);
   return event?.run_id || event?.details?.workflow_run_id || "";
+}
+
+function shouldRefreshForKarenEvent(event: ApiRecord) {
+  return (
+    event.action &&
+    (!event.event_type || event.event_type === "workflow_action") &&
+    progressStatus(event) === "completed" &&
+    eventRefreshScopes(event).length > 0
+  );
+}
+
+function eventRefreshScopes(event: ApiRecord) {
+  const value = event.refresh_scopes || event.metadata?.refresh_scopes || event.details?.refresh_scopes || [];
+  return Array.isArray(value) ? uniqueStrings(value.map(String)) : [];
+}
+
+function karenRefreshEventKey(event: ApiRecord) {
+  const runId = event.run_id || event.details?.workflow_run_id || "run";
+  const stepIndex = event.details?.step_index ?? "";
+  const status = progressStatus(event);
+  const timestamp = event.timestamp || event.created_at || "";
+  return `${runId}:${stepIndex}:${event.action}:${status}:${timestamp}`;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function hasAnyRefreshScope(scopes: string[] = [], targets: string[]) {
+  return targets.some((target) => scopes.includes(target));
 }
 
 function isBlockedKarenEvent(event: ApiRecord) {
