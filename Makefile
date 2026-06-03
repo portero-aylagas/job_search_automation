@@ -14,4 +14,5 @@ test:
 	fi
 
 clean-local-state:
+	# Removes data/runtime, data/candidate_profile.json, generated outputs, reports, and caches.
 	./scripts/clean_local_state.sh

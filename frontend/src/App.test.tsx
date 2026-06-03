@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -312,6 +312,42 @@ describe("App workflow pages", () => {
     expect(await screen.findAllByText("Not interested")).not.toHaveLength(0);
     expect(screen.getByRole("button", { name: "Remove from active jobs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Permanently delete job data" })).toBeInTheDocument();
+  });
+
+  it("omits repeated job id and suppresses action-style next text after agent apply attempt", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return {
+          body: {
+            records: [{ ...jobRecord(), status: "agent_assistance_attempted" }],
+            status_options: trackerStatusOptions()
+          }
+        };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: attemptedApplyWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentFillPlanState(true) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const jobManagement = await screen.findByLabelText("Job management");
+    expect(within(jobManagement).queryByText("job-1")).not.toBeInTheDocument();
+    expect(within(jobManagement).getByLabelText("Selected job workflow summary")).toHaveTextContent(
+      "Apply assistance attempted"
+    );
+    expect(within(jobManagement).getByLabelText("Selected job workflow summary")).not.toHaveTextContent(
+      "Prepare apply assistance"
+    );
+    expect(screen.getByRole("list", { name: "Selected job workflow steps" })).toHaveTextContent("Agent attempted");
   });
 
   it("shows pending feedback while requirements discovery is running", async () => {
@@ -647,7 +683,7 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
   });
 
-  it("refreshes Karen workflow summary after fill plan review without a new chat turn", async () => {
+  it("refreshes selected job workflow summary after fill plan review without a new chat turn", async () => {
     let fillPlanReviewed = false;
     mockFetch((url, init) => {
       if (url.endsWith("/api/candidate-profile")) {
@@ -673,14 +709,14 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect((await screen.findAllByText("Approve fill plan")).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers1");
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Blockers1");
 
     await userEvent.click(screen.getByRole("button", { name: "Save fill plan review" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Prepare apply assistance" })).toBeInTheDocument()
+      expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Prepare apply assistance")
     );
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers0");
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Blockers0");
     expect(screen.queryByText("Approve fill plan")).not.toBeInTheDocument();
   });
 
@@ -826,7 +862,7 @@ describe("App workflow pages", () => {
     expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
   });
 
-  it("navigates Karen action shortcuts to the matching workflow section", async () => {
+  it("shows workflow actions in Job Management but not as Karen quick prompts", async () => {
     mockFetch((url) => {
       if (url.endsWith("/api/candidate-profile")) {
         return { body: { profile: candidateProfile(), options: {} } };
@@ -844,13 +880,14 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
-    await userEvent.click((await screen.findAllByRole("button", { name: "Review requirements" }))[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
-    expect(screen.getByText("Application Requirements")).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Review requirements");
+    expect(screen.getByLabelText("Karen quick prompts")).not.toHaveTextContent("Review requirements");
   });
 
-  it("loads persistent Karen chat, sends chat payloads, and reloads state", async () => {
+  it("loads Jobs Karen chat, sends chat payloads, and reloads state", async () => {
     const chatBodies: unknown[] = [];
     let agentLoads = 0;
     mockFetch((url, init) => {
@@ -859,6 +896,9 @@ describe("App workflow pages", () => {
       }
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
       }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
@@ -872,11 +912,15 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    const karenChat = screen.getByRole("complementary", { name: "Karen chat" });
     expect(screen.getByPlaceholderText("Ask Karen")).toBeInTheDocument();
     expect(screen.getByText("No messages yet.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Requirements Review");
+    expect(within(karenChat).queryByLabelText("Job")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Requirements Review");
     await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "What next?");
     await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
 
@@ -960,6 +1004,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
         return { body: { context: { selected_job_id: "job-1", session_id: "session-1" } } };
@@ -971,6 +1018,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Draft question");
@@ -994,6 +1042,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
         return pendingChat;
@@ -1005,6 +1056,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Only once");
@@ -1016,7 +1068,6 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(chatBodies).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByLabelText("Job")).toBeDisabled();
     expect(screen.getByRole("button", { name: "What should I do next?" })).toBeDisabled();
     expect(composer).toBeDisabled();
     resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
@@ -1030,6 +1081,9 @@ describe("App workflow pages", () => {
       }
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
       }
       if (url.includes("/api/agent")) {
         return {
@@ -1052,6 +1106,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByText("You")).toBeInTheDocument();
     expect(screen.getByText("Karen")).toBeInTheDocument();
@@ -1074,6 +1129,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent")) {
         return {
           body: agentState(1, [
@@ -1089,6 +1147,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     await screen.findByText("Latest reply");
     await waitFor(() => expect(scrollTo).toHaveBeenCalled());
@@ -1109,6 +1168,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
         return { body: { context: { selected_job_id: "job-1", session_id: "session-1" } } };
@@ -1120,6 +1182,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Line one{Shift>}{Enter}{/Shift}Line two");
@@ -1130,7 +1193,7 @@ describe("App workflow pages", () => {
     expect(chatBodies[0]).toMatchObject({ message: "Line one\nLine two" });
   });
 
-  it("keeps one Karen chat panel available while switching pages", async () => {
+  it("shows Karen chat only on Jobs while switching pages", async () => {
     mockFetch((url) => {
       if (url.endsWith("/api/candidate-profile")) {
         return { body: { profile: candidateProfile(), options: {} } };
@@ -1158,13 +1221,9 @@ describe("App workflow pages", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
-    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
-    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Agent Karen" }));
-
+    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
     expect(screen.getAllByPlaceholderText("Ask Karen")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Ask Karen" })).toHaveLength(1);
     expect(screen.getByRole("log", { name: "Karen transcript" })).toBeInTheDocument();
@@ -1173,8 +1232,9 @@ describe("App workflow pages", () => {
     fireEvent.keyDown(resizeHandle, { key: "ArrowLeft" });
     expect(resizeHandle).toHaveAttribute("aria-valuenow", "400");
     expect(localStorage.getItem("karenPanelWidth")).toBe("400");
-    expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
-    expect(screen.getAllByText("Review requirements").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agent Karen" })).not.toBeInTheDocument();
   });
 
   it("shows LangSmith monitoring metrics and CV certificate trace view", async () => {
@@ -1671,6 +1731,16 @@ function readyWorkspace() {
     apply_blockers: [],
     active_browser_use_session: null,
     browser_use_runner_count: 0
+  };
+}
+
+function attemptedApplyWorkspace() {
+  return {
+    ...readyWorkspace(),
+    job: {
+      ...normalizedJob(),
+      status: "agent_assistance_attempted"
+    }
   };
 }
 
