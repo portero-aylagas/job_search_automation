@@ -503,6 +503,8 @@ npx playwright install chromium
 Python dependencies are tracked in `requirements.txt`. Frontend, Vitest, and
 Playwright test-runner dependencies are tracked in `package.json` and
 `package-lock.json`; do not add Node packages to `requirements.txt`.
+LangGraph must remain `>1.0,<2.0`; the current verified local version is
+`1.2.2`.
 
 If Playwright reports missing Linux system dependencies for browser tests, run
 `npx playwright install --with-deps chromium`.
