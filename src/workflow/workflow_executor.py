@@ -10,10 +10,11 @@ after launch.
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from src.agent_chat import log_agent_event
+from src.agent_chat import ACTION_LABELS, log_agent_event
 from src.agents.karen.policy import PermissionLevel
 from src.schemas import AgentWorkflowEvent
 from src.workflow.action_registry import (
@@ -61,8 +62,17 @@ def run_karen_workflow_goal(
     executed_actions: list[str] = []
     artifact_paths: list[str] = []
     last_result: WorkflowActionResult | None = None
+    workflow_run_id = f"karen-run-{uuid4().hex[:12]}"
 
-    for _ in range(MAX_WORKFLOW_STEPS):
+    _log_workflow_intent(
+        base_path,
+        session_id=session_id,
+        job_id=active_job_id,
+        intent=intent,
+        workflow_run_id=workflow_run_id,
+    )
+
+    for step_index in range(MAX_WORKFLOW_STEPS):
         state = load_current_workflow_state(base_path, active_job_id)
         decision = planner_next_action(state, intent)
 
@@ -76,6 +86,15 @@ def run_karen_workflow_goal(
                     executed_actions=executed_actions,
                 )
 
+            _log_workflow_action_started(
+                base_path,
+                session_id=session_id,
+                job_id=active_job_id,
+                action_name=decision.action_name,
+                workflow_run_id=workflow_run_id,
+                step_index=step_index,
+                planner_message=decision.message,
+            )
             action_result = execute_registered_action(
                 decision.action_name,
                 base_path,
@@ -89,6 +108,9 @@ def run_karen_workflow_goal(
                 session_id=session_id,
                 job_id=active_job_id,
                 result=action_result,
+                workflow_run_id=workflow_run_id,
+                step_index=step_index,
+                planner_message=decision.message,
             )
             if action_result.status not in {"executed", "done"}:
                 refreshed = load_current_workflow_state(base_path, active_job_id)
@@ -207,7 +229,22 @@ def _log_workflow_action(
     session_id: str,
     job_id: str | None,
     result: WorkflowActionResult,
+    workflow_run_id: str,
+    step_index: int,
+    planner_message: str,
 ) -> None:
+    details = dict(result.event_details)
+    details.update(
+        {
+            "workflow_run_id": workflow_run_id,
+            "step_index": step_index,
+            "planner_message": planner_message,
+            "action_label": ACTION_LABELS.get(
+                result.action_name,
+                result.action_name.replace("_", " ").title(),
+            ),
+        }
+    )
     log_agent_event(
         base_dir,
         AgentWorkflowEvent(
@@ -217,6 +254,65 @@ def _log_workflow_action(
             result=result.status,
             gate=None,
             artifact_paths=result.artifact_paths,
-            details=result.event_details,
+            details=details,
+        ),
+    )
+
+
+def _log_workflow_action_started(
+    base_dir: Path,
+    *,
+    session_id: str,
+    job_id: str | None,
+    action_name: str,
+    workflow_run_id: str,
+    step_index: int,
+    planner_message: str,
+) -> None:
+    log_agent_event(
+        base_dir,
+        AgentWorkflowEvent(
+            session_id=session_id,
+            job_id=job_id,
+            action=action_name,
+            result="started",
+            details={
+                "workflow_run_id": workflow_run_id,
+                "step_index": step_index,
+                "planner_message": planner_message,
+                "action_label": ACTION_LABELS.get(
+                    action_name,
+                    action_name.replace("_", " ").title(),
+                ),
+            },
+        ),
+    )
+
+
+def _log_workflow_intent(
+    base_dir: Path,
+    *,
+    session_id: str,
+    job_id: str | None,
+    intent: WorkflowIntent,
+    workflow_run_id: str,
+) -> None:
+    log_agent_event(
+        base_dir,
+        AgentWorkflowEvent(
+            session_id=session_id,
+            job_id=job_id,
+            action="karen_workflow_intent",
+            result="understood",
+            details={
+                "workflow_run_id": workflow_run_id,
+                "goal": intent.goal,
+                "execution_mode": intent.execution_mode,
+                "allow_draft_generation": intent.allow_draft_generation,
+                "allow_local_mutations": intent.allow_local_mutations,
+                "allow_review_gate_crossing": intent.allow_review_gate_crossing,
+                "allow_browser_launch": intent.allow_browser_launch,
+                "target_job_id": intent.target_job_id,
+            },
         ),
     )

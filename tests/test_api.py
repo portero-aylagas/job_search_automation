@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from src.agent_chat import log_agent_event
 from src.agents.karen.state import KarenContext
 from src.api import create_app
 from src.app_workflow import load_candidate_profile, load_jobs_index, save_candidate_profile
@@ -16,6 +17,7 @@ from src.application_package_storage import load_application_package, save_appli
 from src.application_requirements import save_application_requirements
 from src.job_intake import create_job_listing, persist_job_listing
 from src.schemas import (
+    AgentWorkflowEvent,
     ApplicationArtifact,
     ApplicationFillFieldValue,
     ApplicationFillPlan,
@@ -626,6 +628,34 @@ def test_agent_routes_return_stable_json_shapes(
         apply_url="https://example.com/apply/automation-engineer",
     )
     persist_job_listing(tmp_path, job)
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-1",
+            job_id=job.id,
+            action="karen_workflow_intent",
+            result="understood",
+            details={"goal": "continue_until_blocked"},
+        ),
+    )
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-1",
+            job_id="other-job",
+            action="review_requirements",
+            result="started",
+        ),
+    )
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-2",
+            job_id=job.id,
+            action="generate_application_package",
+            result="started",
+        ),
+    )
 
     agent = asyncio.run(api_request(
         tmp_path,
@@ -634,9 +664,13 @@ def test_agent_routes_return_stable_json_shapes(
     ))
 
     assert agent.status_code == 200
-    assert set(agent.json()) == {"context", "state", "messages", "action_labels"}
+    assert set(agent.json()) == {"context", "state", "messages", "events", "action_labels"}
     assert agent.json()["state"]["selected_job_id"] == job.id
     assert agent.json()["state"]["artifacts_present"]["normalized_job"] is True
+    assert [
+        (event["action"], event["result"])
+        for event in agent.json()["events"]
+    ] == [("karen_workflow_intent", "understood")]
 
     context = KarenContext(
         session_id="session-1",

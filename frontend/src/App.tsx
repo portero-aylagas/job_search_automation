@@ -120,6 +120,16 @@ function App() {
     loadKarenJobs("", "");
   }, []);
 
+  useEffect(() => {
+    if (!isKarenSending || page !== "Jobs") return;
+    const pollKarenProgress = () => {
+      loadAgent(selectedKarenJobId, sessionId);
+      refreshVisibleWorkflow(selectedKarenJobId);
+    };
+    const intervalId = window.setInterval(pollKarenProgress, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isKarenSending, page, selectedKarenJobId, sessionId]);
+
   async function sendKarenChat(event: FormEvent, overrideMessage?: string) {
     event.preventDefault();
     const outgoingMessage = (overrideMessage ?? karenMessage).trim();
@@ -1759,6 +1769,11 @@ function KarenChatPanel({
           </div>
           <StatusMessage type={status?.type} text={status?.text} />
           {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
+          <KarenProgress
+            actionLabels={agent?.action_labels || {}}
+            events={agent?.events || []}
+            isActive={isSending}
+          />
           <div className="quick-prompts" aria-label="Karen quick prompts">
             {quickPrompts.map((prompt) => (
               <button
@@ -1826,6 +1841,83 @@ function KarenChatPanel({
         </form>
       </fieldset>
     </aside>
+  );
+}
+
+function KarenProgress({
+  actionLabels,
+  events,
+  isActive
+}: {
+  actionLabels: ApiRecord;
+  events: ApiRecord[];
+  isActive: boolean;
+}) {
+  const latestRunId = latestWorkflowRunId(events);
+  const runEvents = latestRunId
+    ? events.filter((event) => event.details?.workflow_run_id === latestRunId)
+    : events;
+  const intentEvent = [...runEvents].reverse().find((event) => event.action === "karen_workflow_intent");
+  const startedEvent = latestUnmatchedStartedEvent(runEvents);
+  const completedEvents = runEvents
+    .filter((event) => isSuccessfulKarenEvent(event))
+    .slice(-3)
+    .reverse();
+  const blockedEvent = [...runEvents]
+    .reverse()
+    .find((event) => isBlockedKarenEvent(event));
+
+  if (!isActive && !intentEvent && !startedEvent && !completedEvents.length && !blockedEvent) {
+    return null;
+  }
+
+  const nowLabel = startedEvent
+    ? eventActionLabel(startedEvent, actionLabels)
+    : isActive
+      ? "Thinking"
+      : "";
+
+  return (
+    <section className="karen-progress" aria-label="Karen workflow progress">
+      <div className="karen-progress-heading">
+        <span className={`karen-progress-dot ${isActive ? "active" : ""}`} aria-hidden="true" />
+        <strong>{isActive ? "Karen is working" : "Latest Karen progress"}</strong>
+      </div>
+      {intentEvent && (
+        <KarenProgressRow
+          label="Understood"
+          value={formatKarenIntent(intentEvent)}
+        />
+      )}
+      {nowLabel && <KarenProgressRow label="Now" value={nowLabel} />}
+      {!!completedEvents.length && (
+        <div className="karen-progress-row">
+          <span>Completed</span>
+          <ul>
+            {completedEvents.map((event, index) => (
+              <li key={`${event.timestamp || event.action}-${index}`}>
+                {eventActionLabel(event, actionLabels)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {blockedEvent && (
+        <KarenProgressRow
+          label="Blocked/Needs input"
+          value={formatKarenBlockedEvent(blockedEvent, actionLabels)}
+        />
+      )}
+    </section>
+  );
+}
+
+function KarenProgressRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="karen-progress-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -2322,6 +2414,49 @@ function chooseJobId(records: ApiRecord[], preferredJobId = "", currentJobId = "
 
 function workflowPageHandlesRefresh(pageName: string) {
   return ["Candidate Profile", "Jobs", "Tracker"].includes(pageName);
+}
+
+function latestWorkflowRunId(events: ApiRecord[]) {
+  const event = [...events]
+    .reverse()
+    .find((item) => item.details?.workflow_run_id);
+  return event?.details?.workflow_run_id || "";
+}
+
+function latestUnmatchedStartedEvent(events: ApiRecord[]) {
+  const startedEvents = events.filter((event) => event.result === "started");
+  return [...startedEvents].reverse().find((started) => {
+    const startedIndex = events.indexOf(started);
+    return !events.slice(startedIndex + 1).some((event) => (
+      event.action === started.action &&
+      event.result !== "started" &&
+      event.details?.workflow_run_id === started.details?.workflow_run_id &&
+      event.details?.step_index === started.details?.step_index
+    ));
+  });
+}
+
+function isSuccessfulKarenEvent(event: ApiRecord) {
+  return event.action !== "karen_workflow_intent" && ["done", "executed"].includes(String(event.result || ""));
+}
+
+function isBlockedKarenEvent(event: ApiRecord) {
+  return !["understood", "started", "done", "executed"].includes(String(event.result || ""));
+}
+
+function eventActionLabel(event: ApiRecord, actionLabels: ApiRecord = {}) {
+  return event.details?.action_label || actionLabels[event.action] || titleCase(String(event.action || ""));
+}
+
+function formatKarenIntent(event: ApiRecord) {
+  const goal = titleCase(String(event.details?.goal || "workflow request"));
+  const mode = event.details?.execution_mode ? `, ${titleCase(String(event.details.execution_mode))}` : "";
+  return `${goal}${mode}`;
+}
+
+function formatKarenBlockedEvent(event: ApiRecord, actionLabels: ApiRecord = {}) {
+  const reason = event.details?.error || event.details?.planner_message || titleCase(String(event.result || "blocked"));
+  return `${eventActionLabel(event, actionLabels)}: ${reason}`;
 }
 
 function jobBlockerCount(record: ApiRecord, workspace: ApiRecord | null) {

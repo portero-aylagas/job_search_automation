@@ -588,7 +588,13 @@ def test_karen_generates_package_by_calling_shared_service(
     assert package is not None
     assert package.status == "draft"
     events = load_agent_events(tmp_path, "karen-generate-package")
-    assert events[-1].action == "generate_application_package"
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("generate_application_package", "started"),
+        ("generate_application_package", "executed"),
+    ]
+    assert events[1].details["action_label"] == "Generate application package"
+    assert events[1].details["workflow_run_id"] == events[2].details["workflow_run_id"]
 
 
 def test_karen_does_not_cross_package_review_without_explicit_permission(
@@ -615,7 +621,11 @@ def test_karen_does_not_cross_package_review_without_explicit_permission(
     package = load_application_package(tmp_path, job.id)
     assert package is not None
     assert package.status == "draft"
-    assert load_agent_events(tmp_path, "karen-no-review-permission") == []
+    events = load_agent_events(tmp_path, "karen-no-review-permission")
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+    ]
+    assert events[0].details["goal"] == "continue_until_blocked"
 
 
 def test_karen_crosses_package_review_only_with_explicit_permission(
@@ -645,7 +655,11 @@ def test_karen_crosses_package_review_only_with_explicit_permission(
     assert package is not None
     assert package.status == "approved"
     events = load_agent_events(tmp_path, "karen-review-permission")
-    assert [event.action for event in events] == ["review_application_package"]
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("review_application_package", "started"),
+        ("review_application_package", "executed"),
+    ]
 
 
 def test_karen_blocks_missing_candidate_gender_before_package_generation(
@@ -829,6 +843,13 @@ def test_karen_reports_backend_fill_plan_review_failure_after_attempt(
     assert result.status == "needs_input"
     assert result.route_hint == "Jobs"
     assert "previously blocked fields" in result.message
+    events = load_agent_events(tmp_path, "karen-fill-plan-review-backend-blocker")
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("review_fill_plan", "started"),
+        ("review_fill_plan", "needs_input"),
+    ]
+    assert "previously blocked fields" in events[-1].details["error"]
 
 
 def test_karen_does_not_attempt_fill_plan_review_without_permission(

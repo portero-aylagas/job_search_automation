@@ -15,6 +15,7 @@ describe("apiRequest", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
+    vi.useRealTimers();
   });
 
   it("returns JSON success payloads", async () => {
@@ -995,6 +996,141 @@ describe("App workflow pages", () => {
     ]);
   });
 
+  it("polls Karen progress and the Jobs workspace while chat is pending", async () => {
+    const chatBodies: unknown[] = [];
+    let resolveChat: (value: MockResponse) => void = () => undefined;
+    const pendingChat = new Promise<MockResponse>((resolve) => {
+      resolveChat = resolve;
+    });
+    let workspaceLoads = 0;
+    let agentLoadsAfterChatStarted = 0;
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return pendingChat;
+      }
+      if (url.includes("/api/agent")) {
+        if (chatBodies.length) agentLoadsAfterChatStarted += 1;
+        return {
+          body: agentState(2, [], [
+            {
+              action: "karen_workflow_intent",
+              result: "understood",
+              details: {
+                workflow_run_id: "run-1",
+                goal: "generate_application_data",
+                execution_mode: "manual"
+              }
+            },
+            {
+              action: "generate_application_package",
+              result: "started",
+              details: {
+                workflow_run_id: "run-1",
+                step_index: 0,
+                action_label: "Generate application package"
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(await screen.findByText("No application requirements have been discovered yet.")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Generate package");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(workspaceLoads).toBeGreaterThanOrEqual(2), { timeout: 1800 });
+
+    expect(await screen.findByText("Ready summary")).toBeInTheDocument();
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Karen is working");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Understood");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate Application Data, Manual");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Now");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate application package");
+    expect(workspaceLoads).toBeGreaterThanOrEqual(2);
+    expect(agentLoadsAfterChatStarted).toBeGreaterThanOrEqual(1);
+
+    resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
+    const workspaceLoadsAfterResolve = workspaceLoads;
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    expect(workspaceLoads).toBe(workspaceLoadsAfterResolve);
+  });
+
+  it("shows completed and blocked Karen progress events", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [], [
+            {
+              action: "karen_workflow_intent",
+              result: "understood",
+              details: {
+                workflow_run_id: "run-2",
+                goal: "continue_until_blocked",
+                execution_mode: "manual"
+              }
+            },
+            {
+              action: "review_requirements",
+              result: "executed",
+              details: {
+                workflow_run_id: "run-2",
+                step_index: 0,
+                action_label: "Review requirements"
+              }
+            },
+            {
+              action: "review_fill_plan",
+              result: "needs_input",
+              details: {
+                workflow_run_id: "run-2",
+                step_index: 1,
+                action_label: "Approve fill plan",
+                error: "Provide values for required fields."
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const progress = await screen.findByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Latest Karen progress");
+    expect(progress).toHaveTextContent("Completed");
+    expect(progress).toHaveTextContent("Review requirements");
+    expect(progress).toHaveTextContent("Blocked/Needs input");
+    expect(progress).toHaveTextContent("Approve fill plan: Provide values for required fields.");
+  });
+
   it("sends Karen quick prompts without changing typed composer text", async () => {
     const chatBodies: unknown[] = [];
     mockFetch((url, init) => {
@@ -1773,7 +1909,7 @@ function fillPlanReviewWorkspace() {
   };
 }
 
-function agentState(loadCount: number, messages: ApiRecord[] = []) {
+function agentState(loadCount: number, messages: ApiRecord[] = [], events: ApiRecord[] = []) {
   return {
     context: { selected_job_id: "job-1", session_id: "session-1" },
     state: {
@@ -1786,6 +1922,7 @@ function agentState(loadCount: number, messages: ApiRecord[] = []) {
       artifacts_present: { requirements: loadCount > 1 }
     },
     messages,
+    events,
     action_labels: { review_requirements: "Review requirements" }
   };
 }

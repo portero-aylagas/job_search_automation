@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from src.agent_chat import ACTION_LABELS, load_agent_chat_messages
+from src.agent_chat import ACTION_LABELS, load_agent_chat_messages, load_agent_events
 from src.agents.karen.graph import process_karen_chat_turn
 from src.agents.karen.tools import build_karen_context
 from src.app_workflow import (
@@ -727,10 +727,16 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         )
         state = load_current_workflow_state(app.state.base_dir, context.selected_job_id)
         messages = load_agent_chat_messages(app.state.base_dir, context.session_id)
+        events = _agent_events_payload(
+            app.state.base_dir,
+            context.session_id,
+            context.selected_job_id,
+        )
         return {
             "context": context.model_dump(mode="json"),
             "state": _agent_state_payload(context.session_id, state),
             "messages": [message.model_dump(mode="json") for message in messages],
+            "events": events,
             "action_labels": ACTION_LABELS,
         }
 
@@ -777,6 +783,23 @@ def _agent_state_payload(
         }
     )
     return payload
+
+
+def _agent_events_payload(
+    base_dir: Path | str,
+    session_id: str,
+    selected_job_id: str | None,
+) -> list[dict[str, object]]:
+    """Return recent workflow events for the current session and job."""
+
+    events = load_agent_events(base_dir, session_id)
+    if selected_job_id:
+        events = [
+            event
+            for event in events
+            if event.job_id in {None, selected_job_id}
+        ]
+    return [event.model_dump(mode="json") for event in events[-50:]]
 
 
 def post_job_action(app: FastAPI, path: str):
