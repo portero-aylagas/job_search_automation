@@ -40,6 +40,36 @@ def test_candidate_profile_load_returns_profile_and_options(tmp_path: Path) -> N
     assert ["remote", "Remote"] in payload["options"]["remote_preference"]
 
 
+def test_pages_include_monitoring(tmp_path: Path) -> None:
+    response = asyncio.run(api_request(tmp_path, "GET", "/api/pages"))
+
+    assert response.status_code == 200
+    assert "Monitoring" in response.json()["pages"]
+
+
+def test_langsmith_monitoring_endpoint_returns_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "src.api.langsmith_monitoring_summary",
+        lambda days: {
+            "configured": True,
+            "project_name": "job-search-automation",
+            "dashboard_url": "https://smith.langchain.com/dashboards/1",
+            "window_days": days,
+            "totals": {"run_count": 3},
+            "recent_runs": [],
+        },
+    )
+
+    response = asyncio.run(api_request(tmp_path, "GET", "/api/monitoring/langsmith?days=30"))
+
+    assert response.status_code == 200
+    assert response.json()["window_days"] == 30
+    assert response.json()["totals"]["run_count"] == 3
+
+
 def test_candidate_profile_review_rejects_invalid_email(tmp_path: Path) -> None:
     profile = complete_candidate_profile()
     profile.candidate_profile.cv_extracted.identity.email = "not-an-email"

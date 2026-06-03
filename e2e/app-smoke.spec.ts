@@ -11,7 +11,7 @@ test("top-level navigation renders without a backend server", async ({ page }) =
   await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
   await expect(page.getByPlaceholder("Ask Karen")).toBeVisible();
   await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
-  for (const name of ["Job Intake", "Jobs", "Tracker", "Agent Karen"]) {
+  for (const name of ["Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]) {
     await page.getByRole("button", { name }).click();
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
@@ -113,6 +113,24 @@ function responseFor(url: string, route: Route) {
       records: [jobRecord()],
       status_options: trackerStatusOptions(),
       status_filters: trackerStatusFilters()
+    };
+  }
+  if (url.includes("/api/monitoring/langsmith")) {
+    return {
+      configured: true,
+      project_name: "job-search-automation",
+      dashboard_url: "https://smith.langchain.com/dashboards/1",
+      window_days: 7,
+      totals: {
+        run_count: 3,
+        failed_run_count: 0,
+        error_rate: 0,
+        total_cost: 0.42,
+        total_tokens: 1200,
+        latency_p50: 1.1,
+        latency_p99: 3.2
+      },
+      recent_runs: []
     };
   }
   if (url.includes("/api/jobs/job-1/workspace")) {

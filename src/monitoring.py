@@ -1,0 +1,210 @@
+"""LangSmith monitoring summaries for the React Monitoring tab."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import Any
+
+
+class LangSmithMonitoringError(RuntimeError):
+    """Raised when LangSmith monitoring data cannot be loaded."""
+
+
+def langsmith_monitoring_summary(
+    *,
+    days: int = 7,
+    client_factory: Callable[[], Any] | None = None,
+) -> dict[str, Any]:
+    """Return a browser-safe LangSmith monitoring summary.
+
+    Args:
+        days: Number of days to include in the summary window.
+        client_factory: Optional test seam for a LangSmith client.
+
+    Returns:
+        A JSON-serializable monitoring payload.
+
+    Raises:
+        LangSmithMonitoringError: If LangSmith is configured but the API request fails.
+    """
+
+    project_name = os.getenv("LANGSMITH_PROJECT", "").strip()
+    dashboard_url = os.getenv("LANGSMITH_DASHBOARD_URL", "").strip()
+    window_days = _window_days(days)
+
+    if not os.getenv("LANGSMITH_API_KEY") or not project_name:
+        return {
+            "configured": False,
+            "project_name": project_name,
+            "dashboard_url": dashboard_url,
+            "window_days": window_days,
+            "totals": _empty_totals(),
+            "recent_runs": [],
+            "message": (
+                "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
+            ),
+        }
+
+    start_time = datetime.now(UTC) - timedelta(days=window_days)
+    try:
+        client = client_factory() if client_factory is not None else _default_langsmith_client()
+        stats = client.get_run_stats(
+            project_names=[project_name],
+            start_time=start_time.isoformat(),
+            is_root=True,
+        )
+        failed_stats = client.get_run_stats(
+            project_names=[project_name],
+            start_time=start_time.isoformat(),
+            is_root=True,
+            error=True,
+        )
+        recent_runs = list(
+            client.list_runs(
+                project_name=project_name,
+                start_time=start_time,
+                is_root=True,
+                select=[
+                    "id",
+                    "name",
+                    "run_type",
+                    "start_time",
+                    "end_time",
+                    "error",
+                    "status",
+                    "total_tokens",
+                    "total_cost",
+                ],
+                limit=10,
+            )
+        )
+    except Exception as exc:  # pragma: no cover - exact SDK exceptions vary.
+        raise LangSmithMonitoringError(f"Could not load LangSmith monitoring: {exc}") from exc
+
+    return {
+        "configured": True,
+        "project_name": project_name,
+        "dashboard_url": dashboard_url,
+        "window_days": window_days,
+        "totals": _totals_from_stats(stats, failed_stats),
+        "recent_runs": [_run_summary(client, project_name, run) for run in recent_runs],
+    }
+
+
+def _default_langsmith_client() -> Any:
+    """Create a LangSmith client using the process environment."""
+
+    from langsmith import Client
+
+    return Client()
+
+
+def _window_days(days: int) -> int:
+    """Clamp requested monitoring windows to a small supported range."""
+
+    return min(max(days, 1), 30)
+
+
+def _empty_totals() -> dict[str, int | float | None]:
+    """Return the zero-value metrics shape expected by the frontend."""
+
+    return {
+        "run_count": 0,
+        "failed_run_count": 0,
+        "error_rate": 0.0,
+        "total_cost": 0.0,
+        "total_tokens": 0,
+        "latency_p50": None,
+        "latency_p99": None,
+    }
+
+
+def _totals_from_stats(stats: dict[str, Any], failed_stats: dict[str, Any]) -> dict[str, Any]:
+    """Normalize LangSmith aggregate stats into stable frontend fields."""
+
+    run_count = int(stats.get("run_count") or 0)
+    failed_run_count = int(failed_stats.get("run_count") or 0)
+    raw_error_rate = stats.get("error_rate")
+    error_rate = _number(raw_error_rate)
+    if error_rate is None and run_count:
+        error_rate = failed_run_count / run_count
+
+    return {
+        "run_count": run_count,
+        "failed_run_count": failed_run_count,
+        "error_rate": error_rate or 0.0,
+        "total_cost": _number(stats.get("total_cost")) or 0.0,
+        "total_tokens": int(stats.get("total_tokens") or 0),
+        "latency_p50": _number(stats.get("latency_p50")),
+        "latency_p99": _number(stats.get("latency_p99")),
+    }
+
+
+def _run_summary(client: Any, project_name: str, run: Any) -> dict[str, Any]:
+    """Normalize one LangSmith run into table data."""
+
+    run_url = ""
+    try:
+        run_url = client.get_run_url(run=run, project_name=project_name)
+    except Exception:
+        run_url = ""
+
+    return {
+        "id": str(_attr(run, "id", "")),
+        "name": _attr(run, "name", "Untitled run"),
+        "run_type": _attr(run, "run_type", ""),
+        "start_time": _iso(_attr(run, "start_time", None)),
+        "end_time": _iso(_attr(run, "end_time", None)),
+        "status": _run_status(run),
+        "error": _attr(run, "error", None),
+        "total_tokens": int(_attr(run, "total_tokens", 0) or 0),
+        "total_cost": _number(_attr(run, "total_cost", None)),
+        "url": run_url,
+    }
+
+
+def _run_status(run: Any) -> str:
+    """Return a small display status for a LangSmith run."""
+
+    if _attr(run, "error", None):
+        return "error"
+    status = _attr(run, "status", "")
+    if status:
+        return str(status)
+    if _attr(run, "end_time", None):
+        return "complete"
+    return "running"
+
+
+def _attr(item: Any, name: str, default: Any = None) -> Any:
+    """Read an attribute or dict key from SDK model-like objects."""
+
+    if isinstance(item, dict):
+        return item.get(name, default)
+    return getattr(item, name, default)
+
+
+def _iso(value: Any) -> str:
+    """Return an ISO timestamp string for datetime-like values."""
+
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
+def _number(value: Any) -> float | None:
+    """Convert LangSmith numeric values to JSON-safe floats."""
+
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
