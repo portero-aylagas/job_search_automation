@@ -132,7 +132,8 @@ function App() {
       if (!overrideMessage) setKarenMessage("");
       const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
       if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
-      if (result.tool_result?.status === "executed") {
+      const executedActions = result.tool_result?.executed_actions || result.tool_result?.event_details?.executed_actions || [];
+      if (result.tool_result?.status === "executed" || executedActions.length) {
         if (workflowPageHandlesRefresh(page)) {
           setPendingKarenRefresh({ jobId: nextJobId, sessionId: result.context?.session_id });
         } else {

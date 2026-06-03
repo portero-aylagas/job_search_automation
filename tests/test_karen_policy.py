@@ -84,113 +84,27 @@ def test_karen_policy_grant_is_job_scoped() -> None:
     assert "session grant" in decision.reason
 
 
-def test_karen_policy_continue_to_apply_requires_app_and_browser_permission() -> None:
-    blocked_with_app_only = evaluate_karen_tool_request(
-        tool_name="continue_to_apply_assistance",
-        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
-        auto_execute=True,
-        user_message="Do all steps needed to apply.",
-        selected_job_id="job-1",
-        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
-        requires_job_permission=True,
-    )
-
-    assert blocked_with_app_only.allowed is False
-    assert "app mutations and Browser Use launch" in blocked_with_app_only.reason
-
-    allowed = evaluate_karen_tool_request(
-        tool_name="continue_to_apply_assistance",
-        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
-        auto_execute=True,
-        user_message="Do all steps needed to apply.",
-        selected_job_id="job-1",
-        job_permissions={
-            "job-1": AgentJobPermissionGrant(
-                allow_app_mutations=True,
-                allow_browser_launch=True,
-            )
-        },
-        requires_job_permission=True,
-    )
-
-    assert allowed.allowed is True
-
-
-def test_karen_policy_blocks_review_gate_actions_from_chat() -> None:
-    decision = evaluate_karen_tool_request(
-        tool_name="approve_package",
-        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
-        auto_execute=True,
-        user_message="Approve this package.",
-        selected_job_id="job-1",
-        job_permissions={},
-        requires_job_permission=True,
-    )
-
-    assert decision.allowed is False
-    assert "session grant" in decision.reason
-
-
-def test_karen_policy_blocks_browser_use_launch_from_chat() -> None:
+def test_karen_policy_blocks_direct_browser_use_launch_from_tool_policy() -> None:
     decision = evaluate_karen_tool_request(
         tool_name="launch_browser_use",
         permission_level=PermissionLevel.EXTERNAL_BROWSER_ACTION,
         auto_execute=True,
         user_message="Launch Browser Use now.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+            )
+        },
+        requires_job_permission=True,
     )
 
     assert decision.allowed is False
-    assert "Browser Use launch" in decision.reason
+    assert "structured workflow controller" in decision.reason
 
 
-def test_karen_policy_blocks_final_submission_and_unsafe_actions() -> None:
-    final_submission = evaluate_karen_tool_request(
-        tool_name="final_submission",
-        permission_level=PermissionLevel.FINAL_SUBMISSION,
-        auto_execute=True,
-        user_message="Submit the application now.",
-        selected_job_id="job-1",
-        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
-        requires_job_permission=True,
-    )
-    assert final_submission.allowed is False
-    assert "final submission enabled" in final_submission.reason
-
-    allowed_final_submission = evaluate_karen_tool_request(
-        tool_name="final_submission",
-        permission_level=PermissionLevel.FINAL_SUBMISSION,
-        auto_execute=True,
-        user_message="Submit the application now.",
-        selected_job_id="job-1",
-        job_permissions={
-            "job-1": AgentJobPermissionGrant(
-                allow_app_mutations=True,
-                allow_browser_launch=True,
-                allow_final_submission=True,
-            )
-        },
-        requires_job_permission=True,
-    )
-    assert allowed_final_submission.allowed is True
-
-    blocked_without_submit_intent = evaluate_karen_tool_request(
-        tool_name="final_submission",
-        permission_level=PermissionLevel.FINAL_SUBMISSION,
-        auto_execute=True,
-        user_message="Apply to this job now.",
-        selected_job_id="job-1",
-        job_permissions={
-            "job-1": AgentJobPermissionGrant(
-                allow_app_mutations=True,
-                allow_browser_launch=True,
-                allow_final_submission=True,
-            )
-        },
-        requires_job_permission=True,
-    )
-    assert blocked_without_submit_intent.allowed is False
-    assert "explicit submit" in blocked_without_submit_intent.reason
-
+def test_karen_policy_blocks_unsafe_actions() -> None:
     for tool_name in (
         "login_automation",
         "captcha_handling",
@@ -200,7 +114,7 @@ def test_karen_policy_blocks_final_submission_and_unsafe_actions() -> None:
     ):
         decision = evaluate_karen_tool_request(
             tool_name=tool_name,
-            permission_level=PermissionLevel.FINAL_SUBMISSION,
+            permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
             auto_execute=True,
             user_message="Do it now.",
         )
@@ -208,7 +122,19 @@ def test_karen_policy_blocks_final_submission_and_unsafe_actions() -> None:
         assert decision.allowed is False
 
 
-def test_karen_runtime_registry_excludes_match_analysis_actions() -> None:
-    assert "analyze_match" not in KAREN_TOOL_REGISTRY
-    assert "review_match" not in KAREN_TOOL_REGISTRY
-    assert "reject_match" not in KAREN_TOOL_REGISTRY
+def test_karen_runtime_registry_excludes_legacy_workflow_actions() -> None:
+    for tool_name in (
+        "analyze_match",
+        "review_match",
+        "reject_match",
+        "continue_to_apply_assistance",
+        "discover_requirements",
+        "review_requirements",
+        "generate_application_package",
+        "review_application_package",
+        "generate_fill_plan",
+        "review_fill_plan",
+        "launch_browser_use",
+        "final_submission",
+    ):
+        assert tool_name not in KAREN_TOOL_REGISTRY

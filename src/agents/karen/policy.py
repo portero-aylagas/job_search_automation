@@ -17,7 +17,6 @@ class PermissionLevel(str, Enum):
     DRAFT_ONLY = "DRAFT_ONLY"
     MUTATES_LOCAL_STATE = "MUTATES_LOCAL_STATE"
     EXTERNAL_BROWSER_ACTION = "EXTERNAL_BROWSER_ACTION"
-    FINAL_SUBMISSION = "FINAL_SUBMISSION"
 
 
 class KarenPolicyDecision(BaseModel):
@@ -34,10 +33,6 @@ BLOCKED_TOOL_NAMES = {
     "recruiter_messaging",
     "bypass_review_gates",
     "invent_candidate_data",
-}
-
-CHAT_BLOCKED_REVIEW_TOOLS = {
-    "reject_package",
 }
 
 PERMISSION_MANAGEMENT_TOOLS = {
@@ -75,7 +70,6 @@ _EXPLICIT_ACTION_WORDS = {
     "show",
     "start",
     "stop",
-    "submit",
     "switch",
     "authorize",
 }
@@ -113,16 +107,6 @@ def evaluate_karen_tool_request(
             allowed=False,
             permission_level=permission_level,
             reason=_blocked_reason(tool_name),
-        )
-
-    if tool_name in CHAT_BLOCKED_REVIEW_TOOLS:
-        return KarenPolicyDecision(
-            allowed=False,
-            permission_level=permission_level,
-            reason=(
-                "That review or launch step is not available from free-form chat. "
-                "Open the Jobs page and use the existing review panel."
-            ),
         )
 
     if permission_level == PermissionLevel.READ_ONLY:
@@ -165,48 +149,16 @@ def evaluate_karen_tool_request(
             job_permissions or {},
             active_job_id,
         )
-        if tool_name == "continue_to_apply_assistance":
-            if grant is None or not (
-                grant.allow_app_mutations and grant.allow_browser_launch
-            ):
-                return KarenPolicyDecision(
-                    allowed=False,
-                    permission_level=permission_level,
-                    reason=(
-                        "Continue to apply assistance requires a per-job session "
-                        "grant with app mutations and Browser Use launch enabled."
-                    ),
-                )
-        if permission_level == PermissionLevel.FINAL_SUBMISSION:
-            if "submit" not in user_message.casefold():
-                return KarenPolicyDecision(
-                    allowed=False,
-                    permission_level=permission_level,
-                    reason=(
-                        "Final submission requires an explicit submit or "
-                        "final-submit request."
-                    ),
-                )
-            if grant is None or not grant.allow_final_submission:
-                return KarenPolicyDecision(
-                    allowed=False,
-                    permission_level=permission_level,
-                    reason=(
-                        "Final application submission requires a per-job session "
-                        "grant with final submission enabled."
-                    ),
-                )
-        elif permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION:
-            if grant is None or not grant.allow_browser_launch:
-                return KarenPolicyDecision(
-                    allowed=False,
-                    permission_level=permission_level,
-                    reason=(
-                        "Browser Use launch requires a per-job session grant with "
-                        "browser launch enabled."
-                    ),
-                )
-        elif requires_job_permission and permission_level in {
+        if permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION:
+            return KarenPolicyDecision(
+                allowed=False,
+                permission_level=permission_level,
+                reason=(
+                    "Browser Use workflow actions must go through Karen's "
+                    "structured workflow controller."
+                ),
+            )
+        if requires_job_permission and permission_level in {
             PermissionLevel.DRAFT_ONLY,
             PermissionLevel.MUTATES_LOCAL_STATE,
         }:
@@ -221,21 +173,13 @@ def evaluate_karen_tool_request(
                 )
 
     if permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION:
-        if tool_name not in {
-            "prepare_apply_assistance",
-            "launch_browser_use",
-            "stop_browser_use_session",
-            "kill_browser_use_processes",
-        }:
-            return KarenPolicyDecision(
-                allowed=False,
-                permission_level=permission_level,
-                reason="This Browser Use action is not available from free-form chat.",
-            )
         return KarenPolicyDecision(
-            allowed=True,
+            allowed=False,
             permission_level=permission_level,
-            reason="Explicit Browser Use action is allowed by the selected-job grant.",
+            reason=(
+                "Browser Use workflow actions must go through Karen's structured "
+                "workflow controller."
+            ),
         )
 
     return KarenPolicyDecision(

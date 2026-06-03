@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from src.agent_chat import ACTION_LABELS, load_agent_chat_messages
-from src.agent_workflow import run_agent_workflow
 from src.agents.karen.graph import process_karen_chat_turn
 from src.agents.karen.tools import build_karen_context
 from src.app_workflow import (
@@ -100,6 +99,7 @@ from src.tracker_status import (
     tracker_status_filters,
     tracker_status_options,
 )
+from src.workflow.workflow_state import CurrentWorkflowState, load_current_workflow_state
 
 PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -725,15 +725,11 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             selected_job_id=selected_job_id,
             session_id=session_id,
         )
-        state = run_agent_workflow(
-            app.state.base_dir,
-            session_id=context.session_id,
-            selected_job_id=context.selected_job_id,
-        )
+        state = load_current_workflow_state(app.state.base_dir, context.selected_job_id)
         messages = load_agent_chat_messages(app.state.base_dir, context.session_id)
         return {
-            "context": context.__dict__,
-            "state": state.model_dump(mode="json"),
+            "context": context.model_dump(mode="json"),
+            "state": _agent_state_payload(context.session_id, state),
             "messages": [message.model_dump(mode="json") for message in messages],
             "action_labels": ACTION_LABELS,
         }
@@ -750,7 +746,7 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
             session_id=payload.session_id,
         )
         return {
-            "context": result.context.__dict__,
+            "context": result.context.model_dump(mode="json"),
             "intent": result.intent.model_dump(mode="json") if result.intent else None,
             "tool_result": (
                 result.tool_result.model_dump(mode="json") if result.tool_result else None
@@ -758,6 +754,29 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         }
 
     return app
+
+
+def _agent_state_payload(
+    session_id: str,
+    state: CurrentWorkflowState,
+) -> dict[str, object]:
+    """Return the `/api/agent` state shape from the shared workflow state."""
+
+    payload = state.model_dump(mode="json")
+    payload.update(
+        {
+            "session_id": session_id,
+            "artifacts_present": {
+                "normalized_job": state.job_exists,
+                "application_requirements": state.requirements_exists,
+                "application_package": state.package_exists,
+                "application_fill_plan": state.fill_plan_exists,
+            },
+            "blockers": list(state.current_blockers),
+            "errors": [],
+        }
+    )
+    return payload
 
 
 def post_job_action(app: FastAPI, path: str):

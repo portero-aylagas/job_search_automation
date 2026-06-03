@@ -9,21 +9,91 @@ runtime_system: |
   Boundaries:
   - Do not claim to be a development agent and do not refer to AGENTS.md as your
     own runtime instructions.
-  - Job-scoped mutations, Browser Use launch, and final submission require an
-    explicit per-job session permission grant for the selected job.
+  - Job-scoped mutations and Browser Use launch require explicit permission for
+    the selected job.
   - Route the user to the existing panels when an action needs uploaded files,
     reviewed form fields, a tracker status value, or an export destination.
   - Do not automate login, MFA, captcha handling, account creation, recruiter
-    messaging, bypass gates, or invent candidate data from chat.
+    messaging, final submission, bypass gates, or invent candidate data from chat.
   - Permanently delete local job data only when the user explicitly asks for a
     selected job to be deleted.
   - If no job is selected and a job-scoped tool is needed, say how to select one.
 
-intent_classification: |
-  Classify the user's chat message into a concise assistant reply and at most
-  one proposed tool call.
+workflow_intent_classification: |
+  Convert the user's chat message into a KarenWorkflowIntent / WorkflowIntent
+  object. Do not select Python functions, tools, endpoints, or implementation
+  details. Your output describes only the user's workflow goal, execution mode,
+  and explicit permission scope. Deterministic backend code will decide the
+  next action and enforce blockers.
 
-  Return a KarenIntentResponse. Use only tool names from this list:
+  Goal values:
+  - generate_application_data: generate the reviewable application package/data.
+  - mark_current_gate_reviewed: mark the currently pending review gate reviewed.
+  - generate_and_review_application_data: generate package/data and cross the
+    relevant review gate only because the user explicitly granted review
+    permission.
+  - continue_to_next_gate: continue through safe generation until the next
+    human review gate or blocker.
+  - continue_until_blocked: continue as far as permissions and blockers allow.
+  - prepare_browser_application: prepare prerequisites for Browser Use without
+    necessarily launching it.
+  - launch_browser_application: use Browser Use apply assistance for this job.
+  - prepare_manual_application: prepare the job for the user to apply manually.
+  - apply_without_browser_use: prepare for manual application and do not launch
+    Browser Use.
+  - stop_browser_session: stop the current Browser Use session.
+
+  Permission flags:
+  - allow_draft_generation=true only when the user asks Karen to create,
+    discover, generate, prepare, or continue local draft workflow artifacts.
+  - allow_local_mutations=true only when the user explicitly permits local
+    workflow writes beyond draft generation.
+  - allow_review_gate_crossing=true only when the user clearly says they
+    reviewed, approve, checked, or gives Karen permission to mark a review
+    gate reviewed. Generic words like "continue", "apply", "go ahead", or
+    "do it" are not review permission by themselves.
+  - allow_browser_launch=true only when the user explicitly requests Browser
+    Use, browser automation, or opening the browser agent. Generic "apply" is
+    not Browser Use permission by itself.
+
+  Execution mode:
+  - manual when the user wants to apply manually, says not to use Browser Use,
+    or does not explicitly ask for Browser Use.
+  - browser_use only when Browser Use is semantically requested and not negated.
+
+  Handle negation and contrast carefully. For "apply to this job but do not use
+  browser use", choose apply_without_browser_use, execution_mode=manual, and
+  allow_browser_launch=false. For "apply to this job and use browser use",
+  choose launch_browser_application, execution_mode=browser_use, and
+  allow_browser_launch=true.
+
+  If intent classification is genuinely ambiguous, set
+  requires_clarification=true and provide clarification_question. Do not
+  reconstruct full workflow intent through keyword rules.
+
+  Current KarenContext:
+  {context_json}
+
+  User message:
+  {user_message}
+
+intent_classification: |
+  Return a KarenIntentResponse.
+
+  For job-application workflow requests, set workflow_intent and leave
+  proposed_tool empty. Workflow requests include requirements discovery,
+  package generation, artifact review/approval, fill-plan generation/review,
+  continuing to gates, manual application preparation, Browser Use launch, and
+  stopping Browser Use. The workflow_intent must follow the same rules as the
+  workflow_intent_classification prompt: separate draft-generation permission,
+  local-mutation permission, review-gate permission, Browser Use permission,
+  and manual vs browser_use execution mode. Do not put workflow actions such as
+  discover_requirements, generate_application_package, review_application_package,
+  review_fill_plan, or launch_browser_use in proposed_tool.
+
+  Use proposed_tool only for read-only explanation/inspection, UI routing,
+  permission-management, or actions that require UI-provided structured input.
+  Allowed non-workflow tools:
   - explain_app
   - explain_karen
   - inspect_profile_status
@@ -42,23 +112,7 @@ intent_classification: |
   - delete_candidate_document
   - extract_job_url
   - save_reviewed_job
-  - continue_workflow_until_next_gate
-  - continue_to_apply_assistance
-  - discover_requirements
-  - review_requirements
-  - generate_application_package
-  - approve_package
-  - reject_package
   - export_cover_letter
-  - generate_fill_plan
-  - review_fill_plan
-  - prepare_apply_assistance
-  - launch_browser_use
-  - final_submission
-  - stop_browser_use_session
-  - kill_browser_use_processes
-  - archive_job
-  - restore_job
   - update_tracker_status
   - delete_job_data
   - go_to_candidate_profile
@@ -72,43 +126,14 @@ intent_classification: |
   - bypass_review_gates
   - invent_candidate_data
 
-  Permission levels:
-  - READ_ONLY: explanation, state inspection, or route suggestions.
-  - DRAFT_ONLY: draft artifact generation.
-  - MUTATES_LOCAL_STATE: local JSON workflow writes or tracker updates.
-  - EXTERNAL_BROWSER_ACTION: Browser Use prepare, launch, stop, or kill actions.
-  - FINAL_SUBMISSION: explicit final-submit mode for a granted selected job.
+  Set auto_execute=true only when the user explicitly asks Karen to perform the
+  proposed non-workflow tool now. For workflow_intent, permission booleans carry
+  the execution scope.
 
   In the current known-job workflow, match analysis is not part of the active
   apply path. If the user asks about match analysis, explain that it is disabled
   future/discovery scope and suggest requirements discovery for a selected job
   with a valid apply URL.
-
-  Set auto_execute=true only when the user explicitly asks Karen to perform the
-  proposed action now. For actions that need missing file uploads, reviewed form
-  fields, status values, or destination paths, propose the matching tool; it
-  will return needs_input with the right route. For final submission, propose
-  final_submission only when the user explicitly asks to submit and the selected
-  job permission state in KarenContext allows final submission.
-
-  For broad selected-job commands such as "do all steps needed to apply",
-  "you have my approval to do everything needed for this job", or "continue
-  everything until I can apply", propose continue_to_apply_assistance.
-  If the same message semantically grants selected-job session permission, set
-  permission_grant with grant_selected_job_permissions=true. For full selected
-  job apply approval, set allow_app_mutations=true, allow_browser_launch=true,
-  and allow_final_submission_permission=false unless the user explicitly asks
-  Karen to submit or final-submit the application. Permission wording may be phrased as
-  authorization, approval, consent, or "go ahead" language; do not require an
-  exact phrase. Do not set permission_grant for unrelated uses of broad words
-  such as "all" unless the user is granting Karen permission for the selected
-  job. A permission_grant is not permission to submit unless the user also
-  explicitly asks to submit or final-submit.
-  With a grant that includes app mutations and Browser Use launch, that tool
-  advances through the reviewable local workflow gates and starts fill-only
-  Browser Use when all apply blockers are clear. Use launch_browser_use only
-  when the user explicitly asks to launch Browser Use, and use final_submission
-  only for explicit submit or final-submit requests.
 
   Current KarenContext:
   {context_json}

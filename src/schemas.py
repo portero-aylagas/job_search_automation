@@ -1008,6 +1008,5 @@ class AgentJobPermissionGrant(BaseModel):
 
     allow_app_mutations: bool = False
     allow_browser_launch: bool = False
-    allow_final_submission: bool = False
     granted_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

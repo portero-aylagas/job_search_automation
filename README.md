@@ -334,34 +334,39 @@ events are stored as `events.jsonl` in both the session directory and the
 affected job directory.
 
 Karen can explain the app and her role, inspect the current workflow state,
-suggest next steps, route users to the right page, and process safe draft/local
-workflow requests after explicit chat intent through the backend policy layer.
-The Agent Karen dashboard displays next actions as guidance rather than direct
-workflow buttons. She does not duplicate Job Intake or the detailed Jobs review
-forms.
+suggest next steps, route users to the right page, and run selected workflow
+actions after structured intent parsing. The LLM classifies the user's goal and
+permission scope; deterministic LangGraph controller code then loads persisted
+workflow state, checks blockers, plans the next action, and executes only
+registered shared actions.
+
+Karen's workflow controller lives in `src/workflow/`. Its action registry calls
+the same service-layer functions used by the FastAPI/UI buttons for requirements
+discovery, requirements review, package generation/review, fill-plan
+generation/review, and Browser Use launch. She does not duplicate Job Intake,
+the detailed Jobs review forms, package generation logic, fill-plan validation,
+or Browser Use execution policy.
 
 For a selected saved job with a valid `apply_url`, Karen can continue the
-workflow through permissioned job-scoped actions such as requirements discovery,
-draft package generation, draft fill-plan generation, apply-assistance
-preparation, and Browser Use launch. She does not propose match analysis or
-match review actions in the current known-job workflow.
+workflow through requirements discovery, structured review gates, application
+package generation, fill-plan generation, manual-application preparation, and
+Browser Use launch when the classified intent gives the required permission.
+She does not propose match analysis or match review actions in the current
+known-job workflow.
 
 Karen's permission model is deliberately gated:
 
-- read-only explanation, status inspection, blockers, and routing are allowed
-  directly
-- local job mutations require explicit user intent and a selected-job session
-  grant
-- Browser Use launch requires explicit user intent plus a selected-job grant
-  that enables browser launch
-- final-submit mode requires explicit submit intent plus a selected-job grant
-  that enables final submission
-- requirements review, package approval, and fill-plan review stay in the Jobs
-  page when structured reviewed fields are required
+- read-only explanation, status inspection, blockers, and routing are allowed directly
+- draft generation requires explicit draft-generation intent
+- requirements review, package approval, and fill-plan review require explicit
+  review-gate permission
+- Browser Use launch requires explicit Browser Use intent and launch permission
+- unresolved edited fields, selected upload paths, sensitive values, or missing
+  candidate data route the user to the appropriate UI page
 
 Karen never automates login, MFA, captcha handling, account creation, recruiter
 messaging, review-gate bypasses, or invented candidate data from free-form chat.
-Autonomous or ungranted final submission is blocked.
+Final submission is not a Karen-executable workflow action.
 
 ### Application Package
 
@@ -564,8 +569,9 @@ Notes:
   field values, reviewed upload paths, and submit guard labels. Unresolved
   fill-plan items block the flow before Browser Use starts. The default mode
   stops before any review or submission action.
-- Karen's separate final-submit mode is available only for a selected job after
-  explicit submit intent and a session grant that enables final submission.
+- Karen can launch the same Browser Use apply-assistance action exposed by the
+  Jobs UI when explicit Browser Use permission exists, but she does not own or
+  trigger final submission.
 - The Browser Use task fills reviewed fields first, processes mandatory
   checkboxes once, then uploads reviewed files last. It does not run a separate
   second checkbox verification pass before upload.
