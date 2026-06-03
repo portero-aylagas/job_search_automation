@@ -1193,6 +1193,8 @@ describe("App workflow pages", () => {
             dashboard_url: "https://smith.langchain.com/dashboards/1",
             trace_view_label: "CV & Certificates Extraction",
             trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=cv",
+            cv_extraction_dashboard_label: "job-search-automation_cv-extraction",
+            cv_extraction_dashboard_url: "https://smith.langchain.com/o/example/dashboards/cv",
             window_days: 7,
             totals: {
               run_count: 12,
@@ -1244,6 +1246,10 @@ describe("App workflow pages", () => {
       "href",
       "https://smith.langchain.com/dashboards/1"
     );
+    expect(screen.getByRole("link", { name: "Open job-search-automation_cv-extraction" })).toHaveAttribute(
+      "href",
+      "https://smith.langchain.com/o/example/dashboards/cv"
+    );
     expect(screen.getByRole("link", { name: "Open Trace View" })).toHaveAttribute(
       "href",
       "https://smith.langchain.com/o/example/projects/p/traces?view=cv"
@@ -1270,6 +1276,8 @@ describe("App workflow pages", () => {
             dashboard_url: "",
             trace_view_label: "CV & Certificates Extraction",
             trace_view_url: "",
+            cv_extraction_dashboard_label: "job-search-automation_cv-extraction",
+            cv_extraction_dashboard_url: "",
             window_days: 7,
             totals: {
               run_count: 0,

@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.monitoring import LangSmithMonitoringError, langsmith_monitoring_summary
+from src.monitoring import (
+    LangSmithMonitoringError,
+    _discover_custom_dashboard_url,
+    langsmith_monitoring_summary,
+)
 
 
 def test_langsmith_monitoring_returns_unconfigured_without_credentials(
@@ -20,6 +24,8 @@ def test_langsmith_monitoring_returns_unconfigured_without_credentials(
     assert payload["project_name"] == "job-search-automation"
     assert payload["totals"]["run_count"] == 0
     assert payload["trace_view_label"] == "CV & Certificates Extraction"
+    assert payload["cv_extraction_dashboard_label"] == "job-search-automation_cv-extraction"
+    assert payload["cv_extraction_dashboard_url"] == ""
     assert payload["cv_certificate_traces"] == []
 
 
@@ -33,6 +39,10 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
         "LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL",
         "https://smith.langchain.com/o/example/projects/p/traces?view=cv",
     )
+    monkeypatch.setenv(
+        "LANGSMITH_CV_EXTRACTION_DASHBOARD_URL",
+        "https://smith.langchain.com/o/example/dashboards/cv",
+    )
     client = FakeLangSmithClient()
 
     payload = langsmith_monitoring_summary(days=7, client_factory=lambda: client)
@@ -43,6 +53,11 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
     assert (
         payload["trace_view_url"]
         == "https://smith.langchain.com/o/example/projects/p/traces?view=cv"
+    )
+    assert payload["cv_extraction_dashboard_label"] == "job-search-automation_cv-extraction"
+    assert (
+        payload["cv_extraction_dashboard_url"]
+        == "https://smith.langchain.com/o/example/dashboards/cv"
     )
     assert payload["window_days"] == 7
     assert payload["totals"] == {
@@ -93,6 +108,53 @@ def test_langsmith_monitoring_wraps_client_errors(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(LangSmithMonitoringError, match="Could not load LangSmith monitoring"):
         langsmith_monitoring_summary(client_factory=lambda: BrokenLangSmithClient())
+
+
+def test_langsmith_monitoring_discovers_custom_dashboard_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://eu.api.smith.langchain.com")
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/charts/section"):
+            return FakeResponse(
+                [
+                    {
+                        "title": "job-search-automation_cv-extraction",
+                        "id": "58980282-ca5c-4205-b397-07991676e646",
+                    }
+                ]
+            )
+        if url.endswith("/workspaces"):
+            return FakeResponse(
+                [
+                    {
+                        "id": "c8a8962b-4b69-4a4c-a6b6-d7d458b6ab57",
+                        "is_deleted": False,
+                    }
+                ]
+            )
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("src.monitoring.requests.get", fake_get)
+
+    assert _discover_custom_dashboard_url("job-search-automation_cv-extraction") == (
+        "https://eu.smith.langchain.com/o/"
+        "c8a8962b-4b69-4a4c-a6b6-d7d458b6ab57/dashboards/"
+        "58980282-ca5c-4205-b397-07991676e646"
+    )
+
+
+class FakeResponse:
+    def __init__(self, payload: object) -> None:
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self.payload
 
 
 class FakeLangSmithClient:

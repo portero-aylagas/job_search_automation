@@ -1518,6 +1518,8 @@ function MonitoringPage() {
   const extractionTraces = summary?.cv_certificate_traces || [];
   const traceViewLabel = String(summary?.trace_view_label || "CV & Certificates Extraction");
   const traceViewUrl = String(summary?.trace_view_url || "");
+  const cvDashboardLabel = String(summary?.cv_extraction_dashboard_label || "job-search-automation_cv-extraction");
+  const cvDashboardUrl = String(summary?.cv_extraction_dashboard_url || "");
 
   return (
     <>
@@ -1550,6 +1552,11 @@ function MonitoringPage() {
             {summary?.dashboard_url && (
               <a className="button-link primary" href={summary.dashboard_url} rel="noreferrer" target="_blank">
                 Open LangSmith Dashboard
+              </a>
+            )}
+            {cvDashboardUrl && (
+              <a className="button-link primary" href={cvDashboardUrl} rel="noreferrer" target="_blank">
+                Open {cvDashboardLabel}
               </a>
             )}
           </div>

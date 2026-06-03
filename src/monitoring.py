@@ -7,7 +7,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlparse
 
+import requests
+
+CV_EXTRACTION_DASHBOARD_TITLE = "job-search-automation_cv-extraction"
 CV_CERTIFICATE_TRACE_NODE_NAMES = {
     "extract_cv_data",
     "inspect_cv_document_agent",
@@ -43,6 +47,9 @@ def langsmith_monitoring_summary(
         os.getenv("LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL", "").strip()
         or dashboard_url
     )
+    cv_extraction_dashboard_url = _cv_extraction_dashboard_url(
+        client_factory=client_factory,
+    )
     window_days = _window_days(days)
 
     if not os.getenv("LANGSMITH_API_KEY") or not project_name:
@@ -52,6 +59,8 @@ def langsmith_monitoring_summary(
             "dashboard_url": dashboard_url,
             "trace_view_label": CV_CERTIFICATE_TRACE_VIEW_LABEL,
             "trace_view_url": trace_view_url,
+            "cv_extraction_dashboard_label": CV_EXTRACTION_DASHBOARD_TITLE,
+            "cv_extraction_dashboard_url": cv_extraction_dashboard_url,
             "window_days": window_days,
             "totals": _empty_totals(),
             "cv_certificate_traces": [],
@@ -103,6 +112,8 @@ def langsmith_monitoring_summary(
         "dashboard_url": dashboard_url,
         "trace_view_label": CV_CERTIFICATE_TRACE_VIEW_LABEL,
         "trace_view_url": trace_view_url,
+        "cv_extraction_dashboard_label": CV_EXTRACTION_DASHBOARD_TITLE,
+        "cv_extraction_dashboard_url": cv_extraction_dashboard_url,
         "window_days": window_days,
         "totals": _totals_from_stats(stats, failed_stats),
         "cv_certificate_traces": [
@@ -118,6 +129,94 @@ def _cv_certificate_trace_filter() -> str:
     names = sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)
     clauses = ", ".join(f'eq(name, "{name}")' for name in names)
     return f"or({clauses})"
+
+
+def _cv_extraction_dashboard_url(
+    *,
+    client_factory: Callable[[], Any] | None,
+) -> str:
+    """Return the configured or discoverable LangSmith CV extraction dashboard URL."""
+
+    configured_url = os.getenv("LANGSMITH_CV_EXTRACTION_DASHBOARD_URL", "").strip()
+    if configured_url:
+        return configured_url
+    if client_factory is not None:
+        return ""
+    return _discover_custom_dashboard_url(CV_EXTRACTION_DASHBOARD_TITLE)
+
+
+def _discover_custom_dashboard_url(title: str) -> str:
+    """Look up one LangSmith custom chart section URL by exact title."""
+
+    api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
+    if not api_key:
+        return ""
+
+    endpoint = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com").strip()
+    api_base = endpoint.rstrip("/")
+    headers = {"x-api-key": api_key}
+    try:
+        sections_response = requests.get(
+            f"{api_base}/charts/section",
+            headers=headers,
+            params={"title_contains": title, "limit": 10},
+            timeout=10,
+        )
+        sections_response.raise_for_status()
+        sections = sections_response.json()
+        if not isinstance(sections, list):
+            return ""
+        section = next(
+            (
+                item
+                for item in sections
+                if isinstance(item, dict) and item.get("title") == title
+            ),
+            None,
+        )
+        section_id = str(section.get("id", "")).strip() if section else ""
+        if not section_id:
+            return ""
+
+        workspaces_response = requests.get(
+            f"{api_base}/workspaces",
+            headers=headers,
+            timeout=10,
+        )
+        workspaces_response.raise_for_status()
+        workspaces = workspaces_response.json()
+        if not isinstance(workspaces, list) or not workspaces:
+            return ""
+        workspace = next(
+            (
+                item
+                for item in workspaces
+                if isinstance(item, dict) and not item.get("is_deleted")
+            ),
+            None,
+        )
+        workspace_id = str(workspace.get("id", "")).strip() if workspace else ""
+        if not workspace_id:
+            return ""
+    except Exception:
+        return ""
+
+    return f"{_langsmith_web_base_url(api_base)}/o/{workspace_id}/dashboards/{section_id}"
+
+
+def _langsmith_web_base_url(api_base: str) -> str:
+    """Convert a LangSmith API base URL to the matching web app base URL."""
+
+    parsed = urlparse(api_base)
+    scheme = parsed.scheme or "https"
+    host = parsed.netloc or parsed.path
+    if host == "api.smith.langchain.com":
+        host = "smith.langchain.com"
+    elif host == "eu.api.smith.langchain.com":
+        host = "eu.smith.langchain.com"
+    elif host.startswith("api."):
+        host = host.removeprefix("api.")
+    return f"{scheme}://{host}".rstrip("/")
 
 
 def _default_langsmith_client() -> Any:
