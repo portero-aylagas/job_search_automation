@@ -87,7 +87,7 @@ These are optional input or assistance layers. The core workflow is independent 
 
 The application does not aim to implement:
 
-- autonomous final job submission
+- autonomous or ungranted final job submission
 - LinkedIn scraping
 - login/session automation
 - recruiter messaging automation
@@ -186,7 +186,8 @@ implementation and project improvement. It is not part of the runtime
 application unless explicitly integrated.
 
 The React UI in `frontend/src/` is intentionally a workflow-parity port of the
-Streamlit app, not a product redesign. It preserves the top navigation pages:
+historical Streamlit workflow, not a product redesign. It preserves the top
+navigation pages:
 `Candidate Profile`, `Job Intake`, `Jobs`, `Tracker`, and `Agent Karen`.
 AI-triggering buttons keep the visible `with AI` labels. Structured review
 forms remain structured review forms rather than raw JSON editors.
@@ -339,14 +340,28 @@ The Agent Karen dashboard displays next actions as guidance rather than direct
 workflow buttons. She does not duplicate Job Intake or the detailed Jobs review
 forms.
 
-For a selected saved job with a valid `apply_url`, Karen's apply-oriented next
-step is application requirements discovery. She does not propose match analysis
-or match review actions in the current known-job workflow.
+For a selected saved job with a valid `apply_url`, Karen can continue the
+workflow through permissioned job-scoped actions such as requirements discovery,
+draft package generation, draft fill-plan generation, apply-assistance
+preparation, and Browser Use launch. She does not propose match analysis or
+match review actions in the current known-job workflow.
 
-Karen never marks requirements reviewed, approves packages, reviews fill plans,
-launches Browser Use, submits applications, automates login or captcha
-handling, messages recruiters, bypasses review gates, or invents candidate data
-from free-form chat. Final submission is always blocked.
+Karen's permission model is deliberately gated:
+
+- read-only explanation, status inspection, blockers, and routing are allowed
+  directly
+- local job mutations require explicit user intent and a selected-job session
+  grant
+- Browser Use launch requires explicit user intent plus a selected-job grant
+  that enables browser launch
+- final-submit mode requires explicit submit intent plus a selected-job grant
+  that enables final submission
+- requirements review, package approval, and fill-plan review stay in the Jobs
+  page when structured reviewed fields are required
+
+Karen never automates login, MFA, captcha handling, account creation, recruiter
+messaging, review-gate bypasses, or invented candidate data from free-form chat.
+Autonomous or ungranted final submission is blocked.
 
 ### Application Package
 
@@ -458,7 +473,14 @@ closed
 
 ## Installation
 
-Create and activate a Python environment.
+Use the repository-local Python environment when available:
+
+```bash
+PATH="$PWD/.conda/bin:$PATH"
+```
+
+If you are setting up from scratch without the repository-local environment,
+create and activate a Python environment.
 
 ```bash
 python -m venv .venv
@@ -535,11 +557,13 @@ Notes:
 - Each apply-assistance run starts a fresh Browser Use process, uses an
   isolated Chromium profile, and exposes `Stop Browser Use Session` plus
   `Kill All Browser Use Processes` controls in the Jobs page.
-- The current Browser Use pilot opens the reviewed apply URL and executes only
-  the reviewed `application_fill_plan.json`: explicit reviewed field values,
-  reviewed upload paths, and submit guard labels. Unresolved fill-plan items
-  block the flow before Browser Use starts. It stops before any review or
-  submission action.
+- The default Browser Use apply-assistance run opens the reviewed apply URL and
+  executes only the reviewed `application_fill_plan.json`: explicit reviewed
+  field values, reviewed upload paths, and submit guard labels. Unresolved
+  fill-plan items block the flow before Browser Use starts. The default mode
+  stops before any review or submission action.
+- Karen's separate final-submit mode is available only for a selected job after
+  explicit submit intent and a session grant that enables final submission.
 - The Browser Use task fills reviewed fields first, processes mandatory
   checkboxes once, then uploads reviewed files last. It does not run a separate
   second checkbox verification pass before upload.
@@ -555,7 +579,7 @@ Notes:
 Start the FastAPI backend in one terminal:
 
 ```bash
-uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Start the Vite frontend in another terminal:

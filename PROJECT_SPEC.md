@@ -374,10 +374,10 @@ The first version should not implement:
 ## Main UI Pages
 
 The primary runtime UI is React + TypeScript + Vite with FastAPI as the adapter
-layer over existing Python workflow logic. The original Streamlit UI remains a
-legacy/parity reference. The React migration must preserve workflow semantics,
-field coverage, review gates, navigation, and AI button labels before any
-future redesign is proposed.
+layer over existing Python workflow logic. The historical Streamlit workflow is
+a legacy/parity reference, not the current runtime UI. The React migration must
+preserve workflow semantics, field coverage, review gates, navigation, and AI
+button labels before any future redesign is proposed.
 
 Current top-level pages:
 
@@ -529,8 +529,9 @@ for Codex and other development agents only.
 Placement:
 
 - top-level `Agent Karen` tab in the main navigation
-- no persistent sidebar or cross-page chat surface
-- expanded Karen dashboard and chat in the Agent Karen tab
+- persistent app-level side panel across the top-level pages
+- Agent Karen dashboard for selected-job status, blockers, timeline, and
+  guidance
 
 Capabilities:
 
@@ -540,9 +541,9 @@ Capabilities:
 - route the user to Candidate Profile, Job Intake, Jobs, Tracker, or the
   Agent Karen tab
 - process safe draft/local workflow requests only after explicit user intent,
-  starting with requirements discovery for a selected job that has a valid
-  apply URL; the current Streamlit UI shows next actions as static guidance
-  rather than direct action buttons
+  including requirements discovery, draft package generation, draft fill-plan
+  generation, apply-assistance preparation, and Browser Use launch for a
+  selected job when policy and session grants allow it
 
 Boundaries:
 

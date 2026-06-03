@@ -1,5 +1,10 @@
 # Sprint 1 Planning
 
+This document is historical sprint-planning evidence. It records the initial
+project scope and acceptance criteria, not the current runtime contract. For
+current behavior, use `README.md`, `PROJECT_SPEC.md`, `IMPLEMENTATION_PLAN.md`,
+`docs/current_architecture.md`, and the application code as source of truth.
+
 Sprint length: 1 week
 
 Sprint goal: Build a first usable version of a controlled human-in-the-loop job application workflow, with enough planning, reliability, and documentation to satisfy the Ironhack project requirements.
@@ -291,14 +296,14 @@ Tasks:
 - open or expose the apply URL
 - show prepared answers beside the application package
 - allow the user to mark applied manually or assisted
-- avoid automatic final submission
+- avoid autonomous or ungranted final submission
 
 Definition of done:
 
 - user can access the apply URL
 - prepared material is easy to copy or review
 - tracker records applied status
-- no login automation or final submission is automated
+- no login automation or autonomous final submission is automated
 
 ### 12. End-to-End Testing & Reliability
 
