@@ -402,7 +402,7 @@ Current top-level pages:
 - Job Intake
 - Jobs
 - Tracker
-- Agent Karen
+- Monitoring
 
 ### Candidate Profile
 
@@ -545,18 +545,16 @@ for Codex and other development agents only.
 
 Placement:
 
-- top-level `Agent Karen` tab in the main navigation
-- persistent app-level side panel across the top-level pages
-- Agent Karen dashboard for selected-job status, blockers, timeline, and
-  guidance
+- Jobs workspace side panel only
+- no separate top-level `Agent Karen` navigation tab
+- selected-job Karen panel for status, blockers, timeline, and guidance
 
 Capabilities:
 
 - explain the app and Karen's role
 - inspect candidate profile status, selected job state, tracker state,
   blockers, pending gates, artifacts, and next allowed actions
-- route the user to Candidate Profile, Job Intake, Jobs, Tracker, or the
-  Agent Karen tab
+- route the user to Candidate Profile, Job Intake, Jobs, or Tracker
 - process safe draft/local workflow requests only after explicit user intent,
   including requirements discovery, draft package generation, draft fill-plan
   generation, apply-assistance preparation, and Browser Use launch for a

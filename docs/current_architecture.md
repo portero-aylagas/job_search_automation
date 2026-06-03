@@ -34,19 +34,18 @@ The React UI preserves the Streamlit navigation and workflow semantics:
 - `Job Intake`
 - `Jobs`
 - `Tracker`
-- `Agent Karen`
+- `Monitoring`
 
 Karen chat remains mounted as an app-level side panel across all top-level
-pages. The top-level `Agent Karen` page remains as a dashboard for selected-job
-workflow status, blockers, timeline, and next-action guidance. The side panel
-keeps context controls fixed at the top, the transcript in the only scrolling
-middle area with automatic scroll-to-latest behavior, and a compact Ask Karen
-composer with an icon send control fixed at the bottom; desktop users can
-resize the panel from the divider between page content and chat. Buttons that
-invoke AI keep visible `with AI` labels. Review gates remain explicit and
-human-controlled. Dynamic job fields, application requirements, package
-artifacts, and fill plans remain structured editable forms rather than raw JSON
-editors.
+pages, but it is only visible on `Jobs`, where Karen operates on the selected
+job workspace. The side panel keeps context controls fixed at the top, the
+transcript in the only scrolling middle area with automatic scroll-to-latest
+behavior, and a compact Ask Karen composer with an icon send control fixed at
+the bottom; desktop users can resize the panel from the divider between page
+content and chat. Buttons that invoke AI keep visible `with AI` labels. Review
+gates remain explicit and human-controlled. Dynamic job fields, application
+requirements, package artifacts, and fill plans remain structured editable
+forms rather than raw JSON editors.
 
 The parity checklist for the migration lives in `docs/ui_migration_parity.md`.
 
