@@ -26,24 +26,23 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 ACTION_LABELS = {
     "continue": "Continue workflow",
-    "continue_to_apply_assistance": "Continue to apply assistance",
-    "analyze_match": "Analyze candidate/job match",
-    "review_match": "Approve match analysis",
-    "reject_match": "Reject match",
     "discover_requirements": "Discover application requirements",
     "review_requirements": "Approve requirements review",
-    "generate_package": "Generate application package",
-    "approve_package": "Approve application package",
-    "reject_package": "Reject application package",
+    "generate_application_package": "Generate application package",
+    "review_application_package": "Approve application package",
     "generate_fill_plan": "Generate fill plan",
     "review_fill_plan": "Approve fill plan",
     "prepare_apply_assistance": "Prepare apply assistance",
     "launch_browser_use": "Launch Browser Use",
+    "prepare_manual_application": "Prepare manual application",
+    "stop_browser_use_session": "Stop Browser Use session",
+    "kill_browser_use_processes": "Kill Browser Use processes",
+    "archive_job": "Archive job",
+    "restore_job": "Restore job",
 }
 
 GATE_LABELS = {
     "select_job": "Select a job before the workflow can continue.",
-    "match_review": "Review the match analysis before downstream steps run.",
     "requirements_review": "Review the discovered application requirements.",
     "package_review": "Review and approve the generated application package.",
     "fill_plan_review": "Review every fill-plan field before Browser Use can receive it.",
@@ -142,7 +141,12 @@ def build_agent_response(
         lines.append("No job is selected yet.")
 
     if state.pending_gate:
-        lines.append(GATE_LABELS[state.pending_gate])
+        lines.append(
+            GATE_LABELS.get(
+                state.pending_gate,
+                f"Review the current workflow gate: {state.pending_gate}.",
+            )
+        )
     elif state.blockers:
         lines.append("The workflow is blocked.")
     else:
@@ -164,9 +168,9 @@ def build_agent_response(
 
     if _asks_for_safety_boundary(user_message):
         lines.append(
-            "Safety boundary: Browser launch and final submission require explicit "
-            "per-job session permission. I will not automate login, MFA, captcha "
-            "handling, account creation, recruiter messaging, or invented candidate data."
+            "Safety boundary: Browser Use launch requires explicit permission. "
+            "I will not automate login, MFA, captcha handling, account creation, "
+            "recruiter messaging, final submission, or invented candidate data."
         )
 
     return AgentChatMessage(

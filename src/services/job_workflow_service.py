@@ -7,7 +7,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from src.agent_workflow import AgentWorkflowDependencies, run_agent_workflow
 from src.app_workflow import (
     apply_resolution_details,
     extract_job_intake_data,
@@ -60,7 +59,6 @@ from src.job_workspace import (
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
-    AgentWorkflowState,
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
@@ -429,25 +427,6 @@ def kill_browser_processes(base_dir: Path | str) -> int:
 
     browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
     return stop_all_browser_use_processes(browser_use_log_dir)
-
-
-def run_karen_workflow_action(
-    base_dir: Path | str,
-    *,
-    session_id: str,
-    selected_job_id: str | None,
-    action: str,
-    dependencies: AgentWorkflowDependencies | None = None,
-) -> AgentWorkflowState:
-    """Run the shared agent workflow action used by Karen."""
-
-    return run_agent_workflow(
-        base_dir,
-        session_id=session_id,
-        selected_job_id=selected_job_id,
-        action=action,
-        dependencies=dependencies,
-    )
 
 
 def require_job(base_dir: Path | str, job_id: str) -> JobListing:

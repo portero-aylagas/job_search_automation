@@ -33,6 +33,14 @@ The user needs a system that can:
 
 The system should assist, propose, and generate, but the user remains responsible for validation and final decisions.
 
+Karen is the runtime assistant for this workflow, but she is not a separate
+workflow engine and not a second implementation of the job-application
+workflow. Karen has the same workflow capabilities as the user, mediated by
+permission. She triggers the same backend actions that UI buttons trigger, must
+not maintain a parallel source of truth, and must not duplicate business logic,
+create Karen-only review logic, bypass blockers, invent candidate data, or
+decide how Browser Use behaves after launch.
+
 ---
 
 ## Core Workflow
@@ -76,6 +84,11 @@ Examples:
 - generated application material must be reviewed before being marked ready
 - application submission must not be automatic
 
+Karen follows the same rule. She may request existing workflow actions only
+when the user's intent, granted permissions, and the persisted backend state
+allow it. Review gates are workflow actions, not Karen inventions. If the same
+backend review action used by the UI fails, Karen reports the backend blocker.
+
 ### Manual fallback
 
 Every automated step needs a manual fallback.
@@ -86,6 +99,9 @@ Examples:
 - if job search fails, user can manually add a job
 - if AI generation is poor, user can edit or regenerate with feedback
 - if assisted application fails, user can apply manually and update the tracker
+
+Karen may route the user to that manual fallback, but she must not fabricate
+missing answers or candidate data in order to move the workflow forward.
 
 ### Source provenance
 
@@ -340,11 +356,12 @@ This is an import path, not a required runtime dependency.
 
 The app may open the application URL and provide prepared answers.
 
-By default, Browser Use remains fill-only and must stop before final
-submission. Karen may launch an explicit final-submit mode only for a selected
-job with a per-job session permission grant that enables final submission.
-Login, MFA, captcha, account creation, missing required unreviewed fields, and
-recruiter messaging remain manual-intervention boundaries.
+Browser Use remains fill-only and must stop before final submission. Karen may
+launch the same Browser Use apply-assistance action exposed by the UI when the
+workflow is ready and explicit Browser Use permission exists, but final
+submission remains outside Karen's executable workflow. Login, MFA, captcha,
+account creation, missing required unreviewed fields, and recruiter messaging
+remain manual-intervention boundaries.
 
 ### Job Proposal Agent
 
@@ -358,7 +375,7 @@ The user must approve which jobs enter the application pipeline.
 
 The first version should not implement:
 
-- autonomous final submission without a per-job Karen session grant
+- final submission through Karen
 - LinkedIn scraping
 - login/session automation
 - email sending
@@ -552,8 +569,8 @@ Boundaries:
   workflow
 - requirements review, package review, and fill-plan review stay on Jobs when
   structured reviewed fields are required
-- Karen can run job-scoped mutations, Browser Use launch, and final-submit mode
-  only for the selected job after an explicit per-job session grant
+- Karen can run registered job-scoped mutations and Browser Use launch only for
+  the selected job after explicit permission
 - destructive job deletion still requires explicit delete intent even when a
   session grant exists
 - Karen cannot automate login, MFA, captchas, account creation, recruiter
@@ -578,11 +595,10 @@ The workflow graph should manage:
 The full graph will later cover job discovery, job detail extraction, apply URL
 resolution, application data generation, human review, and assisted
 upload/apply coordination through the webpage. Assisted upload/apply remains
-human-gated; graph nodes must not upload, enter personal data, or submit
-without explicit human action. Final submission is allowed only in Karen's
-explicit final-submit mode for a granted selected job. Graph nodes must stop
-and report manual intervention when login, MFA, captcha, account creation, or
-missing required unreviewed fields are encountered.
+human-gated; graph nodes must not upload unreviewed files, enter unreviewed
+personal data, or submit. Graph nodes must stop and report manual intervention
+when login, MFA, captcha, account creation, final submission, or missing
+required unreviewed fields are encountered.
 
 ---
 

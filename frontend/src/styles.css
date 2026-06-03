@@ -242,12 +242,17 @@ label {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(320px, var(--karen-panel-width, 380px), 560px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   width: 100%;
   margin: 0;
-  padding: 1.25rem 0 3rem clamp(1rem, 4vw, 2rem);
+  padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
   align-items: start;
+}
+
+.workspace-layout.with-karen {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, var(--karen-panel-width, 380px), 560px);
+  padding-right: 0;
 }
 
 .page {
@@ -427,6 +432,29 @@ label {
 
 .job-management .split-actions {
   justify-content: space-between;
+}
+
+.job-management-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.job-management-summary > div {
+  min-width: 0;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 0.6rem;
+}
+
+.job-management-summary strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-list-panel {
@@ -934,6 +962,11 @@ summary {
     padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
   }
 
+  .workspace-layout.with-karen {
+    grid-template-columns: 1fr;
+    padding-right: clamp(1rem, 4vw, 2rem);
+  }
+
   .jobs-master-detail {
     grid-template-columns: 1fr;
   }
@@ -1000,6 +1033,7 @@ summary {
   .grid,
   .grid.three,
   .check-grid,
+  .job-management-summary,
   .karen-context-summary {
     grid-template-columns: 1fr;
   }

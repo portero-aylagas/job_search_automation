@@ -5,14 +5,13 @@ import {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
-const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"];
+const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"];
 const careerLevel = [
   ["internship", "Internship"],
   ["working_student", "Working student"],
@@ -98,6 +97,12 @@ function App() {
     loadKarenJobs(preferredJobId, nextSessionId);
   }
 
+  function syncKarenWithJobsSelection(jobId: string) {
+    if (jobId === selectedKarenJobId) return;
+    setSelectedKarenJobId(jobId);
+    loadAgent(jobId, sessionId);
+  }
+
   function refreshVisibleWorkflow(jobId = "") {
     setWorkflowRefresh((current) => ({
       version: current.version + 1,
@@ -132,7 +137,8 @@ function App() {
       if (!overrideMessage) setKarenMessage("");
       const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
       if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
-      if (result.tool_result?.status === "executed") {
+      const executedActions = result.tool_result?.executed_actions || result.tool_result?.event_details?.executed_actions || [];
+      if (result.tool_result?.status === "executed" || executedActions.length) {
         if (workflowPageHandlesRefresh(page)) {
           setPendingKarenRefresh({ jobId: nextJobId, sessionId: result.context?.session_id });
         } else {
@@ -144,11 +150,6 @@ function App() {
       }
     });
     karenSendingRef.current = false;
-  }
-
-  function selectKarenJob(jobId: string) {
-    setSelectedKarenJobId(jobId);
-    loadAgent(jobId, sessionId);
   }
 
   function navigateToWorkflowTarget(pageName: string, sectionId?: string) {
@@ -203,7 +204,7 @@ function App() {
         ))}
       </nav>
       <div
-        className="workspace-layout"
+        className={`workspace-layout ${page === "Jobs" ? "with-karen" : ""}`}
         style={{ "--karen-panel-width": `${karenPanelWidth}px` } as CSSProperties}
       >
         <main className="page">
@@ -224,8 +225,10 @@ function App() {
           )}
           {page === "Jobs" && (
             <JobsPage
+              agent={agent}
               onRefreshComplete={completeVisibleWorkflowRefresh}
               onNavigateToIntake={() => setPage("Job Intake")}
+              onSelectedJobChange={syncKarenWithJobsSelection}
               onWorkflowChange={refreshKarenState}
               refreshJobId={workflowRefresh.jobId}
               refreshSignal={workflowRefresh.version}
@@ -239,33 +242,24 @@ function App() {
             />
           )}
           {page === "Monitoring" && <MonitoringPage />}
-          {page === "Agent Karen" && (
-            <AgentKarenPage
-              agent={agent}
-              records={karenRecords}
-              selectedJobId={selectedKarenJobId}
-              status={karenStatus}
-              onActionShortcut={navigateKarenAction}
-            />
-          )}
         </main>
-        <KarenChatPanel
-          agent={agent}
-          records={karenRecords}
-          selectedJobId={selectedKarenJobId}
-          message={karenMessage}
-          status={karenStatus}
-          width={karenPanelWidth}
-          isSending={isKarenSending}
-          isMobileOpen={isKarenMobileOpen}
-          onMobileToggle={() => setIsKarenMobileOpen((current) => !current)}
-          onActionShortcut={navigateKarenAction}
-          onMessageChange={setKarenMessage}
-          onSelectJob={selectKarenJob}
-          onWidthChange={updateKarenPanelWidth}
-          onResizeStart={startKarenPanelResize}
-          onSendChat={sendKarenChat}
-        />
+        {page === "Jobs" && (
+          <KarenChatPanel
+            agent={agent}
+            records={karenRecords}
+            message={karenMessage}
+            status={karenStatus}
+            width={karenPanelWidth}
+            isSending={isKarenSending}
+            isMobileOpen={isKarenMobileOpen}
+            onMobileToggle={() => setIsKarenMobileOpen((current) => !current)}
+            onActionShortcut={navigateKarenAction}
+            onMessageChange={setKarenMessage}
+            onWidthChange={updateKarenPanelWidth}
+            onResizeStart={startKarenPanelResize}
+            onSendChat={sendKarenChat}
+          />
+        )}
       </div>
     </div>
   );
@@ -731,14 +725,18 @@ function JobIntakePage({ onSaved }: { onSaved: (jobId: string) => void }) {
 }
 
 function JobsPage({
+  agent,
   onRefreshComplete,
   onNavigateToIntake,
+  onSelectedJobChange,
   onWorkflowChange,
   refreshJobId,
   refreshSignal
 }: {
+  agent: ApiRecord | null;
   onRefreshComplete: () => void;
   onNavigateToIntake: () => void;
+  onSelectedJobChange: (jobId: string) => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
   refreshJobId: string;
   refreshSignal: number;
@@ -758,6 +756,7 @@ function JobsPage({
       setRecords(nextRecords);
       setStatusOptions(payload.status_options || []);
       setSelectedJobId(nextJobId);
+      onSelectedJobChange(nextJobId);
       if (!nextJobId) setWorkspace(null);
       return nextJobId;
     } catch (error) {
@@ -796,6 +795,7 @@ function JobsPage({
       setRecords(nextRecords);
       setStatusOptions(jobsPayload.status_options || []);
       setSelectedJobId(nextJobId);
+      onSelectedJobChange(nextJobId);
       setWorkspace(workspacePayload);
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
@@ -824,6 +824,7 @@ function JobsPage({
     setStatusOptions(jobsPayload.status_options || []);
     const nextJobId = nextRecords[0]?.job_id || "";
     setSelectedJobId(nextJobId);
+    onSelectedJobChange(nextJobId);
     setWorkspace(null);
     setMessage({ type: "success", text: messageText });
     onWorkflowChange(nextJobId);
@@ -882,7 +883,13 @@ function JobsPage({
           <SectionHeader title="Saved jobs" summary={`${records.length} job${records.length === 1 ? "" : "s"}`} />
           <label className="mobile-job-select">
             Job
-            <select value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>
+            <select
+              value={selectedJobId}
+              onChange={(event) => {
+                setSelectedJobId(event.target.value);
+                onSelectedJobChange(event.target.value);
+              }}
+            >
               {records.map((record) => <option key={record.job_id} value={record.job_id}>{record.company} / {record.title}</option>)}
             </select>
           </label>
@@ -891,7 +898,10 @@ function JobsPage({
               <button
                 className={`job-list-item ${record.job_id === selectedJobId ? "selected" : ""}`}
                 key={record.job_id}
-                onClick={() => setSelectedJobId(record.job_id)}
+                onClick={() => {
+                  setSelectedJobId(record.job_id);
+                  onSelectedJobChange(record.job_id);
+                }}
               >
                 <span className="job-list-title">{record.title || "Untitled role"}</span>
                 <span className="job-list-company">{record.company || "Unknown company"}</span>
@@ -917,10 +927,11 @@ function JobsPage({
                 <WorkflowStepper workspace={workspace} />
               </section>
               <JobManagement
-                job={workspace.job}
+                agent={agent}
                 onArchive={archiveSelectedJob}
                 onDelete={deleteSelectedJob}
                 busy={loadingWorkspace}
+                workspace={workspace}
               />
               <JobSnapshot job={workspace.job} />
               <RequirementsPanel workspace={workspace} setMessage={setMessage} reload={reloadWorkspace} />
@@ -955,19 +966,25 @@ function JobSnapshot({ job }: { job: ApiRecord }) {
 }
 
 function JobManagement({
-  job,
+  agent,
   onArchive,
   onDelete,
-  busy
+  busy,
+  workspace
 }: {
-  job: ApiRecord;
+  agent: ApiRecord | null;
   onArchive: () => void;
   onDelete: () => void;
   busy: boolean;
+  workspace: ApiRecord;
 }) {
+  const state = agent?.state || {};
+  const blockers = [...(state.blockers || []), ...(state.errors || [])].filter(Boolean);
+  const nextLabel = jobManagementNextLabel(workspace, state.next_allowed_actions || [], agent?.action_labels);
+
   return (
     <section className="panel job-management" aria-label="Job management">
-      <SectionHeader title="Job Management" summary={job.id} />
+      <SectionHeader title="Job Management" />
       <div className="actions split-actions">
         <button className="secondary" onClick={onArchive} disabled={busy}>
           Remove from active jobs
@@ -976,6 +993,21 @@ function JobManagement({
           Permanently delete job data
         </button>
       </div>
+      <div className="job-management-summary" aria-label="Selected job workflow summary">
+        <div>
+          <span className="summary-label">Gate</span>
+          <strong>{state.pending_gate ? titleCase(state.pending_gate) : "None"}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Blockers</span>
+          <strong>{blockers.length}</strong>
+        </div>
+        <div>
+          <span className="summary-label">Next</span>
+          <strong>{nextLabel}</strong>
+        </div>
+      </div>
+      <Blockers title="Workflow blockers" blockers={blockers} />
     </section>
   );
 }
@@ -1627,68 +1659,9 @@ function MonitoringPage() {
   );
 }
 
-function AgentKarenPage({
-  agent,
-  records,
-  selectedJobId,
-  status,
-  onActionShortcut
-}: {
-  agent: ApiRecord | null;
-  records: ApiRecord[];
-  selectedJobId: string;
-  status: ApiRecord | null;
-  onActionShortcut: (actionName: string) => void;
-}) {
-  const state = agent?.state || {};
-  const selectedRecord = records.find((record) => record.job_id === selectedJobId);
-  return (
-    <>
-      <div className="karen-header">
-        <img src={karenImage} width="128" height="126" alt="Agent Karen" />
-        <h1>Agent Karen</h1>
-      </div>
-      <StatusMessage type={status?.type} text={status?.text} />
-      {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
-      <section className="panel">
-        <h2>Karen Dashboard</h2>
-        {selectedRecord && (
-          <p className="muted">
-            Selected job: {selectedRecord.company} / {selectedRecord.title}
-          </p>
-        )}
-        <div className="grid three">
-          <Field label="Job" value={state.selected_job_id || "None"} />
-          <Field label="Gate" value={state.pending_gate || "None"} />
-          <Field label="Actions" value={String(state.next_allowed_actions?.length || 0)} />
-        </div>
-        <Blockers title="Workflow blockers" blockers={state.blockers} />
-        <Blockers title="Last workflow error" blockers={state.errors} />
-        <details><summary>Workflow timeline</summary>{Object.entries(state.artifacts_present || {}).map(([label, present]) => <p key={label}>- {titleCase(label)}: {present ? "ready" : "missing"}</p>)}</details>
-        {!!state.next_allowed_actions?.length && (
-          <>
-            <h3>Next Actions</h3>
-            <div className="action-shortcuts">
-              {state.next_allowed_actions.map((actionName: string) => (
-                <KarenActionShortcut
-                  actionName={actionName}
-                  key={actionName}
-                  label={agent?.action_labels?.[actionName] || titleCase(actionName)}
-                  onActionShortcut={onActionShortcut}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-    </>
-  );
-}
-
 function KarenChatPanel({
   agent,
   records,
-  selectedJobId,
   message,
   status,
   width,
@@ -1697,14 +1670,12 @@ function KarenChatPanel({
   onMobileToggle,
   onActionShortcut,
   onMessageChange,
-  onSelectJob,
   onWidthChange,
   onResizeStart,
   onSendChat
 }: {
   agent: ApiRecord | null;
   records: ApiRecord[];
-  selectedJobId: string;
   message: string;
   status: ApiRecord | null;
   width: number;
@@ -1713,15 +1684,11 @@ function KarenChatPanel({
   onMobileToggle: () => void;
   onActionShortcut: (actionName: string) => void;
   onMessageChange: (message: string) => void;
-  onSelectJob: (jobId: string) => void;
   onWidthChange: (width: number) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSendChat: (event: FormEvent, overrideMessage?: string) => void;
 }) {
-  const state = agent?.state || {};
   const messages = agent?.messages || [];
-  const blockers = [...(state.blockers || []), ...(state.errors || [])].filter(Boolean);
-  const nextActions = state.next_allowed_actions || [];
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const latestMessage = messages[messages.length - 1];
   const quickPrompts = [
@@ -1792,48 +1759,7 @@ function KarenChatPanel({
           </div>
           <StatusMessage type={status?.type} text={status?.text} />
           {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
-          {!!records.length && (
-            <label>
-              Job
-              <select value={selectedJobId} onChange={(event) => onSelectJob(event.target.value)}>
-                {records.map((record) => (
-                  <option key={record.job_id} value={record.job_id}>
-                    {record.company} / {record.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <div className="karen-context-summary" aria-label="Karen workflow summary">
-            <div>
-              <span className="summary-label">Gate</span>
-              <strong>{state.pending_gate ? titleCase(state.pending_gate) : "None"}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Blockers</span>
-              <strong>{blockers.length}</strong>
-            </div>
-            <div>
-              <span className="summary-label">Next</span>
-              <strong>{nextActionLabel(nextActions, agent?.action_labels)}</strong>
-            </div>
-          </div>
           <div className="quick-prompts" aria-label="Karen quick prompts">
-            {nextActions.map((actionName: string) => {
-              const target = karenActionTarget(actionName);
-              if (!target) return null;
-              return (
-                <button
-                  className="quick-prompt action"
-                  disabled={isSending || !records.length}
-                  key={actionName}
-                  onClick={() => onActionShortcut(actionName)}
-                  type="button"
-                >
-                  {agent?.action_labels?.[actionName] || titleCase(actionName)}
-                </button>
-              );
-            })}
             {quickPrompts.map((prompt) => (
               <button
                 className="quick-prompt"
@@ -2319,6 +2245,14 @@ function nextActionLabel(actions: string[] = [], labels: ApiRecord = {}) {
   return labels[actions[0]] || titleCase(actions[0]);
 }
 
+function jobManagementNextLabel(workspace: ApiRecord, actions: string[] = [], labels: ApiRecord = {}) {
+  const status = workspace.job?.status;
+  if (status === "agent_assistance_attempted") return "Apply assistance attempted";
+  if (["applied", "applied_manually", "applied_with_agent_assistance"].includes(status)) return "Applied";
+  if (workspace.active_browser_use_session) return "Browser session active";
+  return nextActionLabel(actions, labels);
+}
+
 function profileStatus(workspace: ApiRecord) {
   const blockers = allWorkspaceBlockers(workspace).filter((item) => /profile|candidate|cv/i.test(item));
   if (blockers.length) return { status: "blocked", labelText: "Blocked" };
@@ -2360,7 +2294,10 @@ function fillPlanStatus(workspace: ApiRecord) {
 
 function applyStatus(workspace: ApiRecord) {
   if (workspace.apply_blockers?.length) return { status: "blocked", labelText: "Blocked" };
-  if (workspace.job?.status === "applied") return { status: "complete", labelText: "Complete" };
+  if (["applied", "applied_manually", "applied_with_agent_assistance"].includes(workspace.job?.status)) {
+    return { status: "complete", labelText: "Complete" };
+  }
+  if (workspace.job?.status === "agent_assistance_attempted") return { status: "needs-review", labelText: "Agent attempted" };
   return { status: "ready", labelText: "Ready" };
 }
 

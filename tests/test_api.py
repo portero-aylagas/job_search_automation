@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from src.agents.karen.state import KarenContext
 from src.api import create_app
 from src.app_workflow import load_candidate_profile, load_jobs_index, save_candidate_profile
 from src.application_fill_plan import load_application_fill_plan, save_application_fill_plan
@@ -15,7 +16,6 @@ from src.application_package_storage import load_application_package, save_appli
 from src.application_requirements import save_application_requirements
 from src.job_intake import create_job_listing, persist_job_listing
 from src.schemas import (
-    AgentWorkflowState,
     ApplicationArtifact,
     ApplicationFillFieldValue,
     ApplicationFillPlan,
@@ -619,27 +619,30 @@ def test_agent_routes_return_stable_json_shapes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    context = SimpleNamespace(session_id="session-1", selected_job_id="job-1")
-    state = AgentWorkflowState(
-        session_id="session-1",
-        selected_job_id="job-1",
-        blockers=[],
-        next_allowed_actions=["review_requirements"],
+    job = create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
     )
-    monkeypatch.setattr("src.api.build_karen_context", lambda *args, **kwargs: context)
-    monkeypatch.setattr("src.api.run_agent_workflow", lambda *args, **kwargs: state)
-    monkeypatch.setattr("src.api.load_agent_chat_messages", lambda *args, **kwargs: [])
+    persist_job_listing(tmp_path, job)
 
     agent = asyncio.run(api_request(
         tmp_path,
         "GET",
-        "/api/agent?selected_job_id=job-1&session_id=session-1",
+        f"/api/agent?selected_job_id={job.id}&session_id=session-1",
     ))
 
     assert agent.status_code == 200
     assert set(agent.json()) == {"context", "state", "messages", "action_labels"}
-    assert agent.json()["state"]["selected_job_id"] == "job-1"
+    assert agent.json()["state"]["selected_job_id"] == job.id
+    assert agent.json()["state"]["artifacts_present"]["normalized_job"] is True
 
+    context = KarenContext(
+        session_id="session-1",
+        current_page="Agent Karen",
+        selected_job_id=job.id,
+    )
     chat_result = SimpleNamespace(
         context=context,
         intent=None,

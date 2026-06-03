@@ -18,7 +18,6 @@ def grant_job_session_permission(
     job_id: str,
     allow_app_mutations: bool = True,
     allow_browser_launch: bool = False,
-    allow_final_submission: bool = False,
 ) -> AgentSession:
     """Grant Karen scoped permissions for one job in one session."""
 
@@ -28,7 +27,6 @@ def grant_job_session_permission(
     grant = AgentJobPermissionGrant(
         allow_app_mutations=allow_app_mutations,
         allow_browser_launch=allow_browser_launch,
-        allow_final_submission=allow_final_submission,
         granted_at=existing.granted_at if existing is not None else now,
         updated_at=now,
     )
@@ -71,7 +69,6 @@ def job_permission_allows(
     job_id: str | None,
     app_mutation: bool = False,
     browser_launch: bool = False,
-    final_submission: bool = False,
 ) -> bool:
     """Return whether a session grant covers the requested job-scoped action."""
 
@@ -83,7 +80,5 @@ def job_permission_allows(
     if app_mutation and not grant.allow_app_mutations:
         return False
     if browser_launch and not grant.allow_browser_launch:
-        return False
-    if final_submission and not grant.allow_final_submission:
         return False
     return True

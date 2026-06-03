@@ -14,7 +14,5 @@ test:
 	fi
 
 clean-local-state:
-	rm -rf data/runtime data/candidate_profile.json
-	@if [ -d outputs ]; then \
-		find outputs -mindepth 1 ! -name '.gitkeep' -exec rm -rf {} +; \
-	fi
+	# Removes data/runtime, data/candidate_profile.json, generated outputs, reports, and caches.
+	./scripts/clean_local_state.sh

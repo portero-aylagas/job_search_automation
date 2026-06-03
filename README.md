@@ -14,6 +14,13 @@ The application helps transform candidate data and a specific job position into 
 
 The system is designed to keep the user in control. AI can assist with extraction, requirements discovery, generation, future job discovery, and application preparation, but the user validates the important steps.
 
+Karen follows the same workflow capabilities as the user, mediated by permission.
+She triggers the same backend actions that UI buttons trigger. Karen is a
+controller over the existing workflow, not a second workflow engine or a
+parallel source of truth. She must not duplicate business logic, create
+Karen-only review logic, bypass blockers, invent candidate data, or decide how
+Browser Use behaves after launch.
+
 ---
 
 ## Main Workflow
@@ -192,6 +199,14 @@ navigation pages:
 AI-triggering buttons keep the visible `with AI` labels. Structured review
 forms remain structured review forms rather than raw JSON editors.
 
+Karen is expected to stay within that workflow parity. When the UI can discover
+requirements, generate application material, save a review gate, or launch
+Browser Use, Karen may request the same backend action when user intent,
+permissions, and backend blockers allow it. Karen-specific code should handle
+intent classification, permission checks, workflow planning, action dispatch,
+result reporting, and route hints, while the underlying workflow services stay
+the source of truth for validation and blockers.
+
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,
 and template-style assets belong in `tests/fixtures/`.
@@ -334,34 +349,39 @@ events are stored as `events.jsonl` in both the session directory and the
 affected job directory.
 
 Karen can explain the app and her role, inspect the current workflow state,
-suggest next steps, route users to the right page, and process safe draft/local
-workflow requests after explicit chat intent through the backend policy layer.
-The Agent Karen dashboard displays next actions as guidance rather than direct
-workflow buttons. She does not duplicate Job Intake or the detailed Jobs review
-forms.
+suggest next steps, route users to the right page, and run selected workflow
+actions after structured intent parsing. The LLM classifies the user's goal and
+permission scope; deterministic LangGraph controller code then loads persisted
+workflow state, checks blockers, plans the next action, and executes only
+registered shared actions.
+
+Karen's workflow controller lives in `src/workflow/`. Its action registry calls
+the same service-layer functions used by the FastAPI/UI buttons for requirements
+discovery, requirements review, package generation/review, fill-plan
+generation/review, and Browser Use launch. She does not duplicate Job Intake,
+the detailed Jobs review forms, package generation logic, fill-plan validation,
+or Browser Use execution policy.
 
 For a selected saved job with a valid `apply_url`, Karen can continue the
-workflow through permissioned job-scoped actions such as requirements discovery,
-draft package generation, draft fill-plan generation, apply-assistance
-preparation, and Browser Use launch. She does not propose match analysis or
-match review actions in the current known-job workflow.
+workflow through requirements discovery, structured review gates, application
+package generation, fill-plan generation, manual-application preparation, and
+Browser Use launch when the classified intent gives the required permission.
+She does not propose match analysis or match review actions in the current
+known-job workflow.
 
 Karen's permission model is deliberately gated:
 
-- read-only explanation, status inspection, blockers, and routing are allowed
-  directly
-- local job mutations require explicit user intent and a selected-job session
-  grant
-- Browser Use launch requires explicit user intent plus a selected-job grant
-  that enables browser launch
-- final-submit mode requires explicit submit intent plus a selected-job grant
-  that enables final submission
-- requirements review, package approval, and fill-plan review stay in the Jobs
-  page when structured reviewed fields are required
+- read-only explanation, status inspection, blockers, and routing are allowed directly
+- draft generation requires explicit draft-generation intent
+- requirements review, package approval, and fill-plan review require explicit
+  review-gate permission
+- Browser Use launch requires explicit Browser Use intent and launch permission
+- unresolved edited fields, selected upload paths, sensitive values, or missing
+  candidate data route the user to the appropriate UI page
 
 Karen never automates login, MFA, captcha handling, account creation, recruiter
 messaging, review-gate bypasses, or invented candidate data from free-form chat.
-Autonomous or ungranted final submission is blocked.
+Final submission is not a Karen-executable workflow action.
 
 ### Application Package
 
@@ -503,6 +523,8 @@ npx playwright install chromium
 Python dependencies are tracked in `requirements.txt`. Frontend, Vitest, and
 Playwright test-runner dependencies are tracked in `package.json` and
 `package-lock.json`; do not add Node packages to `requirements.txt`.
+LangGraph must remain `>1.0,<2.0`; the current verified local version is
+`1.2.2`.
 
 If Playwright reports missing Linux system dependencies for browser tests, run
 `npx playwright install --with-deps chromium`.
@@ -562,8 +584,9 @@ Notes:
   field values, reviewed upload paths, and submit guard labels. Unresolved
   fill-plan items block the flow before Browser Use starts. The default mode
   stops before any review or submission action.
-- Karen's separate final-submit mode is available only for a selected job after
-  explicit submit intent and a session grant that enables final submission.
+- Karen can launch the same Browser Use apply-assistance action exposed by the
+  Jobs UI when explicit Browser Use permission exists, but she does not own or
+  trigger final submission.
 - The Browser Use task fills reviewed fields first, processes mandatory
   checkboxes once, then uploads reviewed files last. It does not run a separate
   second checkbox verification pass before upload.
