@@ -1,4 +1,11 @@
-"""Bounded Karen workflow execution over registered shared actions."""
+"""Bounded Karen workflow execution over registered shared actions.
+
+Karen is permissioned to operate the same workflow controls as the user. The
+executor runs only registered actions, reloads persisted workflow state after
+each action, and reports backend blockers instead of bypassing them. It is not
+an alternate source of workflow truth and does not own Browser Use behavior
+after launch.
+"""
 
 from __future__ import annotations
 
@@ -42,7 +49,12 @@ def run_karen_workflow_goal(
     selected_job_id: str | None,
     intent: WorkflowIntent,
 ) -> WorkflowRunResult:
-    """Run a bounded deterministic workflow loop for one structured intent."""
+    """Run a bounded deterministic workflow loop for one structured intent.
+
+    Karen-specific code here is limited to permission checks, action dispatch,
+    state reload, and result reporting. The underlying workflow services remain
+    authoritative for validation, review gates, and blockers.
+    """
 
     base_path = Path(base_dir)
     active_job_id = intent.target_job_id or selected_job_id

@@ -1,4 +1,10 @@
-"""Enforce Karen's runtime permission rules before tool execution."""
+"""Enforce Karen's runtime permission rules before tool execution.
+
+This module governs whether Karen may request an existing app capability. It
+does not implement a second copy of workflow business logic. Workflow
+validation, review behavior, Browser Use launch semantics, and persisted
+blockers remain in the shared workflow and service layers.
+"""
 
 from __future__ import annotations
 
@@ -93,6 +99,10 @@ def evaluate_karen_tool_request(
         permission_level: Enforced tool permission from the registry.
         auto_execute: Whether the classifier says the user asked to execute now.
         user_message: Raw user message used to verify explicit intent.
+
+    This policy decides whether Karen may request an existing action. It should
+    not be expanded into keyword-driven workflow routing or Karen-only review
+    behavior.
     """
 
     if not tool_name:

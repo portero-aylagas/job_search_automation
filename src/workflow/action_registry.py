@@ -1,4 +1,12 @@
-"""Shared workflow action registry for UI metadata and Karen execution."""
+"""Shared workflow action registry for UI metadata and Karen execution.
+
+These actions represent the same backend capabilities exposed by the UI. Karen
+dispatches through this registry so she remains a permissioned controller over
+the existing workflow, not a second implementation of workflow business logic.
+Handlers should call the existing workflow and service functions instead of
+duplicating requirements discovery, package generation, fill-plan review, or
+Browser Use behavior.
+"""
 
 from __future__ import annotations
 
@@ -64,7 +72,12 @@ def execute_registered_action(
     base_dir: Path | str,
     selected_job_id: str | None,
 ) -> WorkflowActionResult:
-    """Execute a registered action and normalize service-layer failures."""
+    """Execute a registered action and normalize service-layer failures.
+
+    Karen and the UI should converge on the same backend outcome here. If the
+    underlying service reports a blocker, the blocker remains authoritative and
+    is returned rather than bypassed or reinterpreted by Karen-specific logic.
+    """
 
     action = get_workflow_action(action_name)
     if action is None:

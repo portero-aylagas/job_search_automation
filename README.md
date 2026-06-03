@@ -14,6 +14,13 @@ The application helps transform candidate data and a specific job position into 
 
 The system is designed to keep the user in control. AI can assist with extraction, requirements discovery, generation, future job discovery, and application preparation, but the user validates the important steps.
 
+Karen follows the same workflow capabilities as the user, mediated by permission.
+She triggers the same backend actions that UI buttons trigger. Karen is a
+controller over the existing workflow, not a second workflow engine or a
+parallel source of truth. She must not duplicate business logic, create
+Karen-only review logic, bypass blockers, invent candidate data, or decide how
+Browser Use behaves after launch.
+
 ---
 
 ## Main Workflow
@@ -191,6 +198,14 @@ navigation pages:
 `Candidate Profile`, `Job Intake`, `Jobs`, `Tracker`, and `Agent Karen`.
 AI-triggering buttons keep the visible `with AI` labels. Structured review
 forms remain structured review forms rather than raw JSON editors.
+
+Karen is expected to stay within that workflow parity. When the UI can discover
+requirements, generate application material, save a review gate, or launch
+Browser Use, Karen may request the same backend action when user intent,
+permissions, and backend blockers allow it. Karen-specific code should handle
+intent classification, permission checks, workflow planning, action dispatch,
+result reporting, and route hints, while the underlying workflow services stay
+the source of truth for validation and blockers.
 
 The `data/` directory stores structured runtime state. The `outputs/` directory
 stores derived human-readable exports generated from JSON. Test, mock, example,

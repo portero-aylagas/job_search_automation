@@ -1,4 +1,11 @@
-"""Deterministic planner for the known-job application workflow."""
+"""Deterministic planner for the known-job application workflow.
+
+Karen interprets user intent into a structured workflow goal, then this planner
+selects only registered workflow actions. The planner is not a separate
+workflow engine: it operates over persisted workflow state and existing backend
+capabilities, and it must not bypass blockers, invent candidate data, or
+synthesize Karen-only review behavior.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +30,12 @@ PlannerStatus = Literal["action", "blocked", "done", "waiting_for_review", "refu
 
 
 class WorkflowIntent(BaseModel):
-    """Structured workflow intent parsed from a Karen chat message."""
+    """Structured workflow intent parsed from a Karen chat message.
+
+    The LLM classifies user intent into this structure. Deterministic code then
+    validates that intent against workflow state, permissions, and backend
+    blockers rather than routing by hardcoded phrase trees.
+    """
 
     goal: WorkflowGoal
     target_job_id: str | None = None
@@ -71,7 +83,12 @@ REVIEW_ACTION_BY_GATE = {
 
 
 def planner_next_action(state, intent: WorkflowIntent) -> PlannerDecision:
-    """Return the next allowed action or a deterministic stop reason."""
+    """Return the next allowed action or a deterministic stop reason.
+
+    Review gates are existing workflow actions when permission exists. If the
+    corresponding backend action later fails, Karen reports that backend result
+    rather than inventing a separate path around it.
+    """
 
     if intent.requires_clarification:
         return PlannerDecision(

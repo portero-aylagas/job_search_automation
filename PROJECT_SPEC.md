@@ -33,6 +33,14 @@ The user needs a system that can:
 
 The system should assist, propose, and generate, but the user remains responsible for validation and final decisions.
 
+Karen is the runtime assistant for this workflow, but she is not a separate
+workflow engine and not a second implementation of the job-application
+workflow. Karen has the same workflow capabilities as the user, mediated by
+permission. She triggers the same backend actions that UI buttons trigger, must
+not maintain a parallel source of truth, and must not duplicate business logic,
+create Karen-only review logic, bypass blockers, invent candidate data, or
+decide how Browser Use behaves after launch.
+
 ---
 
 ## Core Workflow
@@ -76,6 +84,11 @@ Examples:
 - generated application material must be reviewed before being marked ready
 - application submission must not be automatic
 
+Karen follows the same rule. She may request existing workflow actions only
+when the user's intent, granted permissions, and the persisted backend state
+allow it. Review gates are workflow actions, not Karen inventions. If the same
+backend review action used by the UI fails, Karen reports the backend blocker.
+
 ### Manual fallback
 
 Every automated step needs a manual fallback.
@@ -86,6 +99,9 @@ Examples:
 - if job search fails, user can manually add a job
 - if AI generation is poor, user can edit or regenerate with feedback
 - if assisted application fails, user can apply manually and update the tracker
+
+Karen may route the user to that manual fallback, but she must not fabricate
+missing answers or candidate data in order to move the workflow forward.
 
 ### Source provenance
 
