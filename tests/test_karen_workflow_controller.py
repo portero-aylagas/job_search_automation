@@ -10,6 +10,7 @@ from src.agents.karen.graph import (
     classify_karen_workflow_intent_with_llm,
     process_karen_chat_turn,
 )
+from src.agents.karen.policy import PermissionLevel
 from src.agents.karen.state import KarenIntentResponse
 from src.app_workflow import load_application_requirements, save_candidate_profile
 from src.application_fill_plan import (
@@ -36,8 +37,13 @@ from src.schemas import (
     CandidateProfile,
 )
 from src.services import job_workflow_service as job_services
+from src.workflow.action_registry import (
+    WORKFLOW_ACTION_REGISTRY,
+    WorkflowAction,
+    WorkflowActionResult,
+)
 from src.workflow.workflow_executor import run_karen_workflow_goal
-from src.workflow.workflow_planner import WorkflowIntent, planner_next_action
+from src.workflow.workflow_planner import PlannerDecision, WorkflowIntent, planner_next_action
 from src.workflow.workflow_state import CurrentWorkflowState, load_current_workflow_state
 
 
@@ -153,6 +159,15 @@ def save_reviewed_fill_plan(tmp_path: Path, profile: CandidateProfile, job) -> N
     assert package is not None
     fill_plan = generate_application_fill_plan(profile, requirements, package)
     save_application_fill_plan(tmp_path, mark_application_fill_plan_reviewed(fill_plan))
+
+
+def save_draft_reviewable_fill_plan(tmp_path: Path, profile: CandidateProfile, job) -> None:
+    requirements = load_application_requirements(tmp_path, job.id)
+    package = load_application_package(tmp_path, job.id)
+    assert requirements is not None
+    assert package is not None
+    fill_plan = generate_application_fill_plan(profile, requirements, package)
+    save_application_fill_plan(tmp_path, fill_plan)
 
 
 def test_llm_classifier_returns_structured_workflow_intent(monkeypatch) -> None:
@@ -504,6 +519,46 @@ def _minimal_karen_context():
                 fill_plan_review_status="reviewed",
                 pending_gate="browser_use_launch",
             ),
+            workflow_intent(
+                goal="continue_until_blocked",
+                execution_mode="browser_use",
+                allow_browser_launch=True,
+            ),
+            "launch_browser_use",
+            "action",
+        ),
+        (
+            CurrentWorkflowState(
+                selected_job_id="job-1",
+                job_exists=True,
+                requirements_exists=True,
+                requirements_review_status="reviewed",
+                package_exists=True,
+                package_status="approved",
+                fill_plan_exists=True,
+                fill_plan_review_status="reviewed",
+                pending_gate="browser_use_launch",
+            ),
+            workflow_intent(
+                goal="continue_until_blocked",
+                execution_mode="browser_use",
+                allow_browser_launch=False,
+            ),
+            None,
+            "refused",
+        ),
+        (
+            CurrentWorkflowState(
+                selected_job_id="job-1",
+                job_exists=True,
+                requirements_exists=True,
+                requirements_review_status="reviewed",
+                package_exists=True,
+                package_status="approved",
+                fill_plan_exists=True,
+                fill_plan_review_status="reviewed",
+                pending_gate="browser_use_launch",
+            ),
             workflow_intent(goal="apply_without_browser_use", execution_mode="manual"),
             None,
             "done",
@@ -583,12 +638,277 @@ def test_karen_generates_package_by_calling_shared_service(
 
     assert result.tool_result is not None
     assert result.tool_result.status == "waiting_for_review"
+    assert "I will run the workflow controller" not in result.assistant_message
+    assert (
+        "Needs review: Review and approve the generated application package."
+        in result.assistant_message
+    )
     assert calls == [("generate_reviewable_application_package", job.id)]
     package = load_application_package(tmp_path, job.id)
     assert package is not None
     assert package.status == "draft"
     events = load_agent_events(tmp_path, "karen-generate-package")
-    assert events[-1].action == "generate_application_package"
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("generate_application_package", "started"),
+        ("generate_application_package", "executed"),
+        ("karen_workflow_run", "waiting_for_review"),
+    ]
+    assert [(event.action, event.status) for event in events[:3]] == [
+        ("karen_workflow_intent", "planned"),
+        ("generate_application_package", "running"),
+        ("generate_application_package", "completed"),
+    ]
+    assert events[1].event_type == "workflow_action"
+    assert events[1].details["action_label"] == "Generate application package"
+    assert events[1].details["workflow_run_id"] == events[2].details["workflow_run_id"]
+    assert events[1].planned_actions == []
+    assert set(events[2].refresh_scopes) >= {
+        "job_workspace",
+        "tracker",
+        "agent_context",
+    }
+    assert events[2].metadata["refresh_scopes"] == events[2].refresh_scopes
+    assert events[2].details["refresh_scopes"] == events[2].refresh_scopes
+
+
+def test_karen_emits_generic_progress_for_any_registered_action(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    job_id = "job-dummy-progress"
+    planner_calls = 0
+
+    def fake_dummy_action(_base_dir, _job_id):
+        return WorkflowActionResult(
+            action_name="dummy_registered_action",
+            status="done",
+            message="Dummy action completed.",
+            route_hint="Dummy route",
+        )
+
+    def fake_state():
+        return CurrentWorkflowState(
+            selected_job_id=job_id,
+            job_exists=True,
+            next_allowed_actions=["dummy_registered_action"],
+        )
+
+    def fake_planner(_state, _intent):
+        nonlocal planner_calls
+        planner_calls += 1
+        return PlannerDecision(
+            status="action",
+            action_name="dummy_registered_action",
+            message="Running dummy action.",
+        )
+
+    monkeypatch.setitem(
+        WORKFLOW_ACTION_REGISTRY,
+        "dummy_registered_action",
+        WorkflowAction(
+            name="dummy_registered_action",
+            label="Dummy registered action",
+            handler=fake_dummy_action,
+            permission_level=PermissionLevel.READ_ONLY,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.workflow.workflow_executor.load_current_workflow_state",
+        lambda *_args: fake_state(),
+    )
+    monkeypatch.setattr(
+        "src.workflow.workflow_executor.planner_next_action",
+        fake_planner,
+    )
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-dummy-progress",
+        selected_job_id=job_id,
+        intent=workflow_intent(),
+    )
+
+    assert result.status == "done"
+    assert planner_calls == 1
+    events = [
+        event
+        for event in load_agent_events(tmp_path, "karen-dummy-progress")
+        if event.action == "dummy_registered_action"
+    ]
+    assert [(event.event_type, event.status, event.label) for event in events] == [
+        ("workflow_action", "running", "Dummy registered action"),
+        ("workflow_action", "completed", "Dummy registered action"),
+    ]
+    assert [event.planned_actions for event in events] == [[], []]
+
+
+def test_karen_multi_step_workflow_emits_action_progress_events(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    job_id = "job-progress"
+    executed: list[str] = []
+
+    def state_for_stage() -> CurrentWorkflowState:
+        common = {
+            "selected_job_id": job_id,
+            "job_exists": True,
+            "requirements_exists": True,
+            "requirements_review_status": "reviewed",
+        }
+        if len(executed) == 0:
+            return CurrentWorkflowState(
+                **common,
+                next_allowed_actions=["generate_application_package"],
+                route_hint="Jobs",
+            )
+        if len(executed) == 1:
+            return CurrentWorkflowState(
+                **common,
+                package_exists=True,
+                package_status="draft",
+                pending_gate="package_review",
+                next_allowed_actions=[
+                    "review_application_package",
+                    "generate_application_package",
+                ],
+                route_hint="Jobs",
+            )
+        if len(executed) == 2:
+            return CurrentWorkflowState(
+                **common,
+                package_exists=True,
+                package_status="approved",
+                next_allowed_actions=["generate_fill_plan"],
+                route_hint="Jobs",
+            )
+        if len(executed) == 3:
+            return CurrentWorkflowState(
+                **common,
+                package_exists=True,
+                package_status="approved",
+                fill_plan_exists=True,
+                fill_plan_review_status="draft",
+                pending_gate="fill_plan_review",
+                next_allowed_actions=["review_fill_plan", "generate_fill_plan"],
+                route_hint="Jobs",
+            )
+        return CurrentWorkflowState(
+            **common,
+            package_exists=True,
+            package_status="approved",
+            fill_plan_exists=True,
+            fill_plan_review_status="reviewed",
+            pending_gate="browser_use_launch",
+            next_allowed_actions=[
+                "prepare_apply_assistance",
+                "launch_browser_use",
+                "prepare_manual_application",
+            ],
+            route_hint="Jobs",
+        )
+
+    def fake_execute(action_name, _base_dir, _selected_job_id):
+        executed.append(action_name)
+        details = (
+            {"url": "https://example.com/apply", "pid": 123}
+            if action_name == "launch_browser_use"
+            else {}
+        )
+        return WorkflowActionResult(
+            action_name=action_name,
+            status="done" if action_name == "launch_browser_use" else "executed",
+            message=f"{action_name} completed.",
+            route_hint="Jobs",
+            event_details=details,
+        )
+
+    monkeypatch.setattr(
+        "src.workflow.workflow_executor.load_current_workflow_state",
+        lambda *_args: state_for_stage(),
+    )
+    monkeypatch.setattr(
+        "src.workflow.workflow_executor.execute_registered_action",
+        fake_execute,
+    )
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-progress-multi",
+        selected_job_id=job_id,
+        intent=workflow_intent(
+            goal="continue_until_blocked",
+            execution_mode="browser_use",
+            allow_review_gate_crossing=True,
+            allow_browser_launch=True,
+        ),
+    )
+
+    assert result.status == "done"
+    assert executed == [
+        "generate_application_package",
+        "review_application_package",
+        "generate_fill_plan",
+        "review_fill_plan",
+        "launch_browser_use",
+    ]
+    events = [
+        event
+        for event in load_agent_events(tmp_path, "karen-progress-multi")
+        if event.action != "karen_workflow_intent"
+    ]
+    assert [(event.action, event.status) for event in events] == [
+        ("generate_application_package", "running"),
+        ("generate_application_package", "completed"),
+        ("review_application_package", "running"),
+        ("review_application_package", "completed"),
+        ("generate_fill_plan", "running"),
+        ("generate_fill_plan", "completed"),
+        ("review_fill_plan", "running"),
+        ("review_fill_plan", "completed"),
+        ("launch_browser_use", "running"),
+        ("launch_browser_use", "completed"),
+    ]
+    fill_plan_completed = next(
+        event
+        for event in events
+        if event.action == "generate_fill_plan" and event.status == "completed"
+    )
+    assert set(fill_plan_completed.refresh_scopes) >= {
+        "job_workspace",
+        "agent_context",
+    }
+    assert events[-1].metadata["url"] == "https://example.com/apply"
+
+
+def test_karen_single_action_review_progress_only_includes_actual_action(
+    tmp_path: Path,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_draft_reviewable_fill_plan(tmp_path, profile, job)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-progress-single-review",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="mark_current_gate_reviewed",
+            allow_review_gate_crossing=True,
+        ),
+    )
+
+    assert result.executed_actions == ["review_fill_plan"]
+    events = load_agent_events(tmp_path, "karen-progress-single-review")
+    review_events = [event for event in events if event.action == "review_fill_plan"]
+    assert [(event.result, event.status) for event in review_events] == [
+        ("started", "running"),
+        ("executed", "completed"),
+    ]
+    assert review_events[0].planned_actions == []
+    assert review_events[1].planned_actions == []
 
 
 def test_karen_does_not_cross_package_review_without_explicit_permission(
@@ -611,11 +931,23 @@ def test_karen_does_not_cross_package_review_without_explicit_permission(
 
     assert result.tool_result is not None
     assert result.tool_result.status == "waiting_for_review"
+    assert "I will run the workflow controller" not in result.assistant_message
+    assert (
+        "Needs review: Review and approve the generated application package."
+        in result.assistant_message
+    )
     assert result.tool_result.event_details["pending_gate"] == "package_review"
     package = load_application_package(tmp_path, job.id)
     assert package is not None
     assert package.status == "draft"
-    assert load_agent_events(tmp_path, "karen-no-review-permission") == []
+    events = load_agent_events(tmp_path, "karen-no-review-permission")
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("karen_workflow_run", "waiting_for_review"),
+    ]
+    assert events[0].details["goal"] == "continue_until_blocked"
+    assert events[-1].status == "needs_input"
+    assert events[-1].route_hint == "Jobs"
 
 
 def test_karen_crosses_package_review_only_with_explicit_permission(
@@ -641,11 +973,20 @@ def test_karen_crosses_package_review_only_with_explicit_permission(
 
     assert result.tool_result is not None
     assert result.tool_result.status == "done"
+    assert "I will run the workflow controller" not in result.assistant_message
+    assert "Next: Generate fill plan" in result.assistant_message
     package = load_application_package(tmp_path, job.id)
     assert package is not None
     assert package.status == "approved"
     events = load_agent_events(tmp_path, "karen-review-permission")
-    assert [event.action for event in events] == ["review_application_package"]
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("review_application_package", "started"),
+        ("review_application_package", "executed"),
+        ("karen_workflow_run", "done"),
+    ]
+    assert events[1].status == "running"
+    assert events[2].status == "completed"
 
 
 def test_karen_blocks_missing_candidate_gender_before_package_generation(
@@ -829,6 +1170,13 @@ def test_karen_reports_backend_fill_plan_review_failure_after_attempt(
     assert result.status == "needs_input"
     assert result.route_hint == "Jobs"
     assert "previously blocked fields" in result.message
+    events = load_agent_events(tmp_path, "karen-fill-plan-review-backend-blocker")
+    assert [(event.action, event.result) for event in events] == [
+        ("karen_workflow_intent", "understood"),
+        ("review_fill_plan", "started"),
+        ("review_fill_plan", "needs_input"),
+    ]
+    assert "previously blocked fields" in events[-1].details["error"]
 
 
 def test_karen_does_not_attempt_fill_plan_review_without_permission(
@@ -871,6 +1219,161 @@ def test_karen_does_not_attempt_fill_plan_review_without_permission(
     assert result.status == "waiting_for_review"
     assert result.executed_actions == []
     assert result.pending_gate == "fill_plan_review"
+
+
+def test_karen_browser_use_requested_continues_after_fill_plan_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_draft_reviewable_fill_plan(tmp_path, profile, job)
+    calls: list[str] = []
+
+    def fake_launch(base_dir, job_id, **kwargs):
+        calls.append(job_id)
+        return SimpleNamespace(
+            url="https://example.com/apply/automation-engineer",
+            pid=123,
+            log_path=Path(base_dir) / "browser.log",
+        )
+
+    monkeypatch.setattr(job_services, "launch_apply_assistance", fake_launch)
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Jobs",
+        selected_job_id=job.id,
+        user_message="apply to this position including browser use",
+        session_id="karen-browser-after-fill-review",
+        intent_classifier=static_workflow_intent(
+            workflow_intent(
+                goal="continue_until_blocked",
+                execution_mode="browser_use",
+                allow_review_gate_crossing=True,
+                allow_browser_launch=True,
+            )
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "done"
+    assert result.tool_result.executed_actions == [
+        "review_fill_plan",
+        "launch_browser_use",
+    ]
+    assert calls == [job.id]
+    assert "Fill plan review saved." in result.assistant_message
+    assert "Started Browser Use apply assistance" in result.assistant_message
+    assert "PID: 123." in result.assistant_message
+    assert "Log:" in result.assistant_message
+    assert "ready to launch" not in result.assistant_message
+
+
+def test_karen_manual_mode_stops_after_fill_plan_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_draft_reviewable_fill_plan(tmp_path, profile, job)
+
+    def fail_launch(*_args, **_kwargs):
+        raise AssertionError("Browser Use should not launch in manual mode")
+
+    monkeypatch.setattr(job_services, "launch_apply_assistance", fail_launch)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-manual-after-fill-review",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="continue_until_blocked",
+            execution_mode="manual",
+            allow_review_gate_crossing=True,
+            allow_browser_launch=False,
+        ),
+    )
+
+    assert result.status == "done"
+    assert result.executed_actions == ["review_fill_plan"]
+    assert "manual application" in result.message
+
+
+def test_karen_browser_use_requested_without_launch_permission_is_refused(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_reviewed_fill_plan(tmp_path, profile, job)
+
+    def fail_launch(*_args, **_kwargs):
+        raise AssertionError("Browser Use should not launch without permission")
+
+    monkeypatch.setattr(job_services, "launch_apply_assistance", fail_launch)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-browser-no-launch-permission",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="continue_until_blocked",
+            execution_mode="browser_use",
+            allow_browser_launch=False,
+        ),
+    )
+
+    assert result.status == "refused"
+    assert result.executed_actions == []
+    assert result.message == "Browser Use launch requires permission."
+
+
+def test_karen_reports_backend_browser_use_launch_failure_after_fill_plan_review(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_draft_reviewable_fill_plan(tmp_path, profile, job)
+
+    def fail_launch(*_args, **_kwargs):
+        raise job_services.JobWorkflowServiceError("Browser backend refused launch.")
+
+    monkeypatch.setattr(job_services, "launch_apply_assistance", fail_launch)
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Jobs",
+        selected_job_id=job.id,
+        user_message="apply to this position including browser use",
+        session_id="karen-browser-launch-backend-failure",
+        intent_classifier=static_workflow_intent(
+            workflow_intent(
+                goal="continue_until_blocked",
+                execution_mode="browser_use",
+                allow_review_gate_crossing=True,
+                allow_browser_launch=True,
+            )
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "blocked"
+    assert result.tool_result.executed_actions == [
+        "review_fill_plan",
+        "launch_browser_use",
+    ]
+    assert "Fill plan review saved." in result.assistant_message
+    assert "Tried to launch Browser Use, but the backend blocked it:" in (
+        result.assistant_message
+    )
+    assert "Browser backend refused launch." in result.assistant_message
+    assert "Started Browser Use" not in result.assistant_message
 
 
 def test_karen_manual_mode_does_not_launch_browser_use(

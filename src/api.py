@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from src.agent_chat import ACTION_LABELS, load_agent_chat_messages
+from src.agent_chat import (
+    ACTION_LABELS,
+    create_agent_run_id,
+    load_agent_chat_messages,
+    load_agent_events,
+    load_agent_run,
+    save_agent_run,
+)
 from src.agents.karen.graph import process_karen_chat_turn
 from src.agents.karen.tools import build_karen_context
 from src.app_workflow import (
@@ -43,6 +53,7 @@ from src.schemas import (
     ApplicationPackage,
     ApplicationRequirements,
     CandidateProfile,
+    KarenWorkflowRun,
 )
 from src.services.candidate_profile_service import (
     CandidateProfileServiceError,
@@ -104,6 +115,7 @@ from src.workflow.workflow_state import CurrentWorkflowState, load_current_workf
 PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]
 BASE_DIR = Path(__file__).resolve().parent.parent
 API_BROWSER_USE_STARTUP_WAIT_SECONDS = 0.0
+KAREN_RUN_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="karen-run")
 
 
 class FilePayload(BaseModel):
@@ -727,10 +739,16 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         )
         state = load_current_workflow_state(app.state.base_dir, context.selected_job_id)
         messages = load_agent_chat_messages(app.state.base_dir, context.session_id)
+        events = _agent_events_payload(
+            app.state.base_dir,
+            context.session_id,
+            context.selected_job_id,
+        )
         return {
             "context": context.model_dump(mode="json"),
             "state": _agent_state_payload(context.session_id, state),
             "messages": [message.model_dump(mode="json") for message in messages],
+            "events": events,
             "action_labels": ACTION_LABELS,
         }
 
@@ -738,22 +756,140 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     async def agent_chat(payload: KarenChatRequest) -> dict[str, object]:
         """Process one Agent Karen chat turn."""
 
-        result = process_karen_chat_turn(
+        context = build_karen_context(
             app.state.base_dir,
             current_page="Agent Karen",
             selected_job_id=payload.selected_job_id,
-            user_message=payload.message,
             session_id=payload.session_id,
         )
-        return {
-            "context": result.context.model_dump(mode="json"),
-            "intent": result.intent.model_dump(mode="json") if result.intent else None,
-            "tool_result": (
-                result.tool_result.model_dump(mode="json") if result.tool_result else None
+        run = KarenWorkflowRun(
+            run_id=create_agent_run_id(),
+            session_id=context.session_id,
+            job_id=context.selected_job_id,
+            status="running",
+        )
+        save_agent_run(app.state.base_dir, run)
+        KAREN_RUN_EXECUTOR.submit(
+            partial(
+                _run_karen_chat_background,
+                app.state.base_dir,
+                current_page="Agent Karen",
+                selected_job_id=context.selected_job_id,
+                user_message=payload.message,
+                session_id=context.session_id,
+                workflow_run_id=run.run_id,
             ),
+        )
+        return {
+            "context": context.model_dump(mode="json"),
+            "intent": None,
+            "tool_result": None,
+            "run": run.model_dump(mode="json"),
+            "run_id": run.run_id,
+            "status": run.status,
         }
 
+    @app.get("/api/agent/runs/{run_id}")
+    async def agent_run(run_id: str) -> dict[str, object]:
+        """Return current status and progress events for one Karen run."""
+
+        run = load_agent_run(app.state.base_dir, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Karen workflow run not found.")
+        return _agent_run_payload(app.state.base_dir, run)
+
     return app
+
+
+def _run_karen_chat_background(
+    base_dir: Path,
+    *,
+    current_page: str,
+    selected_job_id: str | None,
+    user_message: str,
+    session_id: str,
+    workflow_run_id: str,
+) -> None:
+    """Run one Karen chat turn outside the request/response lifecycle."""
+
+    run = load_agent_run(base_dir, workflow_run_id)
+    if run is None:
+        run = KarenWorkflowRun(
+            run_id=workflow_run_id,
+            session_id=session_id,
+            job_id=selected_job_id,
+            status="running",
+        )
+    try:
+        result = process_karen_chat_turn(
+            base_dir,
+            current_page=current_page,
+            selected_job_id=selected_job_id,
+            user_message=user_message,
+            session_id=session_id,
+            workflow_run_id=workflow_run_id,
+        )
+    except Exception as exc:  # pragma: no cover - defensive runtime guard
+        run.status = "error"
+        run.finished_at = datetime.now(timezone.utc).isoformat()
+        run.final_message = f"Karen workflow failed: {exc}"
+        save_agent_run(base_dir, run)
+        return
+
+    run.job_id = result.context.selected_job_id
+    result_status = result.tool_result.status if result.tool_result else "completed"
+    run.status = _run_status_from_chat_result(result_status)
+    run.current_action = None
+    run.finished_at = datetime.now(timezone.utc).isoformat()
+    run.final_message = result.assistant_message
+    save_agent_run(base_dir, run)
+
+
+def _run_status_from_chat_result(status: str) -> str:
+    if status in {"blocked", "needs_job"}:
+        return "blocked"
+    if status in {"needs_input", "waiting_for_review"}:
+        return "needs_input"
+    if status in {"refused"}:
+        return "refused"
+    if status in {"error"}:
+        return "error"
+    return "completed"
+
+
+def _agent_run_payload(base_dir: Path | str, run: KarenWorkflowRun) -> dict[str, object]:
+    """Return run status plus the latest visible Agent Karen state."""
+
+    events = [
+        event
+        for event in load_agent_events(base_dir, run.session_id)
+        if event.run_id == run.run_id or event.details.get("workflow_run_id") == run.run_id
+    ]
+    current_action = _current_action_from_events(events)
+    run_payload = run.model_copy(update={"current_action": current_action})
+    state = load_current_workflow_state(base_dir, run.job_id)
+    messages = load_agent_chat_messages(base_dir, run.session_id)
+    return {
+        "run": run_payload.model_dump(mode="json"),
+        "events": [event.model_dump(mode="json") for event in events[-50:]],
+        "context": {
+            "session_id": run.session_id,
+            "selected_job_id": run.job_id,
+        },
+        "state": _agent_state_payload(run.session_id, state),
+        "messages": [message.model_dump(mode="json") for message in messages],
+        "action_labels": ACTION_LABELS,
+    }
+
+
+def _current_action_from_events(events: list[object]) -> str | None:
+    for event in reversed(events):
+        status = getattr(event, "status", "") or getattr(event, "result", "")
+        if status == "running" or getattr(event, "result", "") == "started":
+            return getattr(event, "action", None)
+        if status in {"completed", "blocked", "needs_input", "refused", "error"}:
+            return None
+    return None
 
 
 def _agent_state_payload(
@@ -777,6 +913,23 @@ def _agent_state_payload(
         }
     )
     return payload
+
+
+def _agent_events_payload(
+    base_dir: Path | str,
+    session_id: str,
+    selected_job_id: str | None,
+) -> list[dict[str, object]]:
+    """Return recent workflow events for the current session and job."""
+
+    events = load_agent_events(base_dir, session_id)
+    if selected_job_id:
+        events = [
+            event
+            for event in events
+            if event.job_id in {None, selected_job_id}
+        ]
+    return [event.model_dump(mode="json") for event in events[-50:]]
 
 
 def post_job_action(app: FastAPI, path: str):

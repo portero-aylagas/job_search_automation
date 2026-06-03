@@ -44,6 +44,13 @@ const karenPanelWidthKey = "karenPanelWidth";
 const karenPanelWidthMin = 320;
 const karenPanelWidthMax = 560;
 const karenPanelWidthDefault = 380;
+const fullWorkflowRefreshScopes = [
+  "job_workspace",
+  "jobs_index",
+  "tracker",
+  "candidate_profile",
+  "agent_context"
+];
 
 function App() {
   const [page, setPage] = useState("Candidate Profile");
@@ -54,11 +61,19 @@ function App() {
   const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
   const [isKarenSending, setIsKarenSending] = useState(false);
+  const [activeKarenRunId, setActiveKarenRunId] = useState("");
+  const [activeKarenRunStatus, setActiveKarenRunStatus] = useState("");
   const [isKarenMobileOpen, setIsKarenMobileOpen] = useState(false);
-  const [workflowRefresh, setWorkflowRefresh] = useState({ version: 0, jobId: "" });
+  const [workflowRefresh, setWorkflowRefresh] = useState({
+    version: 0,
+    jobId: "",
+    scopes: fullWorkflowRefreshScopes
+  });
   const [pendingKarenRefresh, setPendingKarenRefresh] = useState<ApiRecord | null>(null);
   const karenSendingRef = useRef(false);
+  const seenRefreshEventIdsRef = useRef<Set<string>>(new Set());
   const sessionId = agent?.context?.session_id;
+  const isKarenBusy = isKarenSending || isActiveKarenRunStatus(activeKarenRunStatus);
 
   useEffect(() => {
     let favicon = document.querySelector<HTMLLinkElement>("link[rel='icon']");
@@ -103,10 +118,11 @@ function App() {
     loadAgent(jobId, sessionId);
   }
 
-  function refreshVisibleWorkflow(jobId = "") {
+  function refreshVisibleWorkflow(jobId = "", scopes: string[] = fullWorkflowRefreshScopes) {
     setWorkflowRefresh((current) => ({
       version: current.version + 1,
-      jobId
+      jobId,
+      scopes: uniqueStrings(scopes)
     }));
   }
 
@@ -119,6 +135,61 @@ function App() {
   useEffect(() => {
     loadKarenJobs("", "");
   }, []);
+
+  useEffect(() => {
+    if (!isKarenSending || page !== "Jobs") return;
+    const pollKarenProgress = () => {
+      loadAgent(selectedKarenJobId, sessionId);
+    };
+    const intervalId = window.setInterval(pollKarenProgress, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isKarenSending, page, selectedKarenJobId, sessionId]);
+
+  useEffect(() => {
+    if (!activeKarenRunId) return;
+    let intervalId = 0;
+    let cancelled = false;
+    seenRefreshEventIdsRef.current = new Set();
+
+    const pollKarenRun = async () => {
+      try {
+        const result = await apiRequest<ApiRecord>(`/api/agent/runs/${activeKarenRunId}`);
+        if (cancelled) return;
+        const events = result.events || [];
+        setActiveKarenRunStatus(String(result.run?.status || ""));
+        setAgent((currentAgent) => ({
+          context: result.context || currentAgent?.context || {},
+          state: result.state || currentAgent?.state || {},
+          messages: result.messages || currentAgent?.messages || [],
+          events,
+          action_labels: result.action_labels || currentAgent?.action_labels || {}
+        }));
+        refreshFromKarenEvents(events, result.context?.selected_job_id || selectedKarenJobId);
+        if (isTerminalKarenRunStatus(String(result.run?.status || ""))) {
+          window.clearInterval(intervalId);
+          setActiveKarenRunId("");
+          setActiveKarenRunStatus("");
+          const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
+          loadKarenJobs(nextJobId, result.context?.session_id || sessionId);
+          refreshVisibleWorkflow(nextJobId);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setKarenStatus({ type: "error", text: error instanceof Error ? error.message : String(error) });
+          window.clearInterval(intervalId);
+          setActiveKarenRunId("");
+          setActiveKarenRunStatus("");
+        }
+      }
+    };
+
+    void pollKarenRun();
+    intervalId = window.setInterval(pollKarenRun, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeKarenRunId]);
 
   async function sendKarenChat(event: FormEvent, overrideMessage?: string) {
     event.preventDefault();
@@ -137,6 +208,11 @@ function App() {
       if (!overrideMessage) setKarenMessage("");
       const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
       if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
+      if (result.run_id || result.run?.run_id) {
+        setActiveKarenRunId(String(result.run_id || result.run.run_id));
+        setActiveKarenRunStatus(String(result.status || result.run?.status || "running"));
+        return;
+      }
       const executedActions = result.tool_result?.executed_actions || result.tool_result?.event_details?.executed_actions || [];
       if (result.tool_result?.status === "executed" || executedActions.length) {
         if (workflowPageHandlesRefresh(page)) {
@@ -150,6 +226,24 @@ function App() {
       }
     });
     karenSendingRef.current = false;
+  }
+
+  function refreshFromKarenEvents(events: ApiRecord[], fallbackJobId = "") {
+    const refreshScopes = new Set<string>();
+    let refreshJobId = fallbackJobId;
+
+    for (const event of events) {
+      if (!shouldRefreshForKarenEvent(event)) continue;
+      const eventKey = karenRefreshEventKey(event);
+      if (seenRefreshEventIdsRef.current.has(eventKey)) continue;
+      seenRefreshEventIdsRef.current.add(eventKey);
+      eventRefreshScopes(event).forEach((scope) => refreshScopes.add(scope));
+      if (event.job_id) refreshJobId = String(event.job_id);
+    }
+
+    if (refreshScopes.size) {
+      refreshVisibleWorkflow(refreshJobId, Array.from(refreshScopes));
+    }
   }
 
   function navigateToWorkflowTarget(pageName: string, sectionId?: string) {
@@ -212,6 +306,7 @@ function App() {
             <CandidateProfilePage
               onRefreshComplete={completeVisibleWorkflowRefresh}
               onWorkflowChange={refreshKarenState}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -231,6 +326,7 @@ function App() {
               onSelectedJobChange={syncKarenWithJobsSelection}
               onWorkflowChange={refreshKarenState}
               refreshJobId={workflowRefresh.jobId}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -238,6 +334,7 @@ function App() {
             <TrackerPage
               onRefreshComplete={completeVisibleWorkflowRefresh}
               onWorkflowChange={refreshKarenState}
+              refreshScopes={workflowRefresh.scopes}
               refreshSignal={workflowRefresh.version}
             />
           )}
@@ -250,7 +347,7 @@ function App() {
             message={karenMessage}
             status={karenStatus}
             width={karenPanelWidth}
-            isSending={isKarenSending}
+            isSending={isKarenBusy}
             isMobileOpen={isKarenMobileOpen}
             onMobileToggle={() => setIsKarenMobileOpen((current) => !current)}
             onActionShortcut={navigateKarenAction}
@@ -268,10 +365,12 @@ function App() {
 function CandidateProfilePage({
   onRefreshComplete,
   onWorkflowChange,
+  refreshScopes,
   refreshSignal
 }: {
   onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [profile, setProfile] = useState<ApiRecord | null>(null);
@@ -295,6 +394,10 @@ function CandidateProfilePage({
   }
 
   useEffect(() => {
+    if (refreshSignal && !hasAnyRefreshScope(refreshScopes, ["candidate_profile"])) {
+      onRefreshComplete();
+      return;
+    }
     loadProfile().finally(() => {
       if (refreshSignal) onRefreshComplete();
     });
@@ -731,6 +834,7 @@ function JobsPage({
   onSelectedJobChange,
   onWorkflowChange,
   refreshJobId,
+  refreshScopes,
   refreshSignal
 }: {
   agent: ApiRecord | null;
@@ -739,6 +843,7 @@ function JobsPage({
   onSelectedJobChange: (jobId: string) => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
   refreshJobId: string;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
@@ -780,20 +885,31 @@ function JobsPage({
 
   useEffect(() => {
     if (!refreshSignal) return;
-    reloadWorkflowFromSignal(refreshJobId);
+    reloadWorkflowFromSignal(refreshJobId, refreshScopes);
   }, [refreshSignal]);
 
-  async function reloadWorkflowFromSignal(preferredJobId: string) {
+  async function reloadWorkflowFromSignal(preferredJobId: string, scopes: string[]) {
+    const refreshJobs = hasAnyRefreshScope(scopes, ["jobs_index", "tracker"]);
+    const refreshWorkspace = hasAnyRefreshScope(scopes, ["job_workspace"]);
+    if (!refreshJobs && !refreshWorkspace) {
+      onRefreshComplete();
+      return;
+    }
+
     setLoadingWorkspace(true);
     try {
-      const jobsPayload = await apiRequest<ApiRecord>("/api/jobs");
-      const nextRecords = jobsPayload.records || [];
-      const nextJobId = chooseJobId(nextRecords, preferredJobId, selectedJobId);
-      const workspacePayload = nextJobId
+      const jobsPayload = refreshJobs ? await apiRequest<ApiRecord>("/api/jobs") : null;
+      const nextRecords = jobsPayload ? jobsPayload.records || [] : records;
+      const nextJobId = refreshJobs
+        ? chooseJobId(nextRecords, preferredJobId, selectedJobId)
+        : preferredJobId || selectedJobId;
+      const workspacePayload = refreshWorkspace && nextJobId
         ? await apiRequest<ApiRecord>(`/api/jobs/${nextJobId}/workspace`)
-        : null;
-      setRecords(nextRecords);
-      setStatusOptions(jobsPayload.status_options || []);
+        : workspace;
+      if (jobsPayload) {
+        setRecords(nextRecords);
+        setStatusOptions(jobsPayload.status_options || []);
+      }
       setSelectedJobId(nextJobId);
       onSelectedJobChange(nextJobId);
       setWorkspace(workspacePayload);
@@ -1418,10 +1534,12 @@ function ApplyPanel({ workspace, setMessage, reload }: PanelProps) {
 function TrackerPage({
   onRefreshComplete,
   onWorkflowChange,
+  refreshScopes,
   refreshSignal
 }: {
   onRefreshComplete: () => void;
   onWorkflowChange: (jobId?: string, nextSessionId?: string) => void;
+  refreshScopes: string[];
   refreshSignal: number;
 }) {
   const [records, setRecords] = useState<ApiRecord[]>([]);
@@ -1442,6 +1560,10 @@ function TrackerPage({
   }
 
   useEffect(() => {
+    if (refreshSignal && !hasAnyRefreshScope(refreshScopes, ["tracker", "jobs_index"])) {
+      onRefreshComplete();
+      return;
+    }
     loadTracker().finally(() => {
       if (refreshSignal) onRefreshComplete();
     });
@@ -1759,6 +1881,11 @@ function KarenChatPanel({
           </div>
           <StatusMessage type={status?.type} text={status?.text} />
           {!records.length && <StatusMessage type="info" text="No jobs have been added yet." />}
+          <KarenProgress
+            actionLabels={agent?.action_labels || {}}
+            events={agent?.events || []}
+            isActive={isSending}
+          />
           <div className="quick-prompts" aria-label="Karen quick prompts">
             {quickPrompts.map((prompt) => (
               <button
@@ -1826,6 +1953,108 @@ function KarenChatPanel({
         </form>
       </fieldset>
     </aside>
+  );
+}
+
+function KarenProgress({
+  actionLabels,
+  events,
+  isActive
+}: {
+  actionLabels: ApiRecord;
+  events: ApiRecord[];
+  isActive: boolean;
+}) {
+  const latestRunId = latestWorkflowRunId(events);
+  const runEvents = latestRunId
+    ? events.filter((event) => (event.run_id || event.details?.workflow_run_id) === latestRunId)
+    : events;
+  const intentEvent = [...runEvents].reverse().find((event) => event.action === "karen_workflow_intent");
+  const runStatusEvent = [...runEvents]
+    .reverse()
+    .find((event) => event.action === "karen_workflow_run");
+  const steps = karenProgressSteps(runEvents, actionLabels);
+  const currentStep = [...steps].reverse().find((step) => step.status === "running");
+  const blockedStep = [...steps].reverse().find((step) => ["blocked", "needs_input", "refused", "error"].includes(step.status));
+  const waitingEvent = runStatusEvent && ["needs_input", "waiting_for_review"].includes(String(runStatusEvent.status || runStatusEvent.result))
+    ? runStatusEvent
+    : null;
+  const blockedEvent = [...runEvents]
+    .reverse()
+    .find((event) => isBlockedKarenEvent(event) && event !== waitingEvent);
+  const completedSteps = steps.filter((step) => step.status === "completed");
+  const nextAllowedActions = Array.isArray(runStatusEvent?.next_allowed_actions)
+    ? runStatusEvent.next_allowed_actions
+    : Array.isArray(runStatusEvent?.details?.next_allowed_actions)
+      ? runStatusEvent.details.next_allowed_actions
+      : [];
+  const heading = blockedStep
+    ? `Stopped at: ${blockedStep.label}`
+    : currentStep
+      ? `Karen is working on: ${currentStep.label}`
+      : waitingEvent
+        ? "Waiting for workflow review"
+      : isActive
+        ? "Karen is working"
+        : "Latest Karen progress";
+
+  if (!isActive && !intentEvent && !steps.length && !blockedEvent) {
+    return null;
+  }
+
+  return (
+    <section className="karen-progress" aria-label="Karen workflow progress">
+      <div className="karen-progress-heading">
+        <span className={`karen-progress-dot ${isActive ? "active" : ""}`} aria-hidden="true" />
+        <strong>{heading}</strong>
+      </div>
+      {intentEvent && (
+        <KarenProgressRow
+          label="Understood"
+          value={formatKarenIntent(intentEvent)}
+        />
+      )}
+      {!!steps.length && (
+        <div className="karen-progress-steps" aria-label="Karen action history">
+          {steps.map((step, index) => (
+            <div className={`karen-progress-step ${step.status}`} key={`${step.action}-${index}`}>
+              <span aria-hidden="true">{progressStepSymbol(step.status)}</span>
+              <strong>{step.label}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      {!!completedSteps.length && (
+        <KarenProgressRow label="Completed" value={completedSteps.map((step) => step.label).join(", ")} />
+      )}
+      {waitingEvent && (
+        <KarenProgressRow
+          label="Waiting for"
+          value={waitingEvent.message || waitingEvent.details?.planner_message || "Review the current workflow state."}
+        />
+      )}
+      {!!nextAllowedActions.length && (
+        <KarenProgressRow
+          label="Next allowed"
+          value={nextAllowedActions.map((action) => actionLabels[action] || titleCase(String(action))).join(", ")}
+        />
+      )}
+      {blockedEvent && (
+        <KarenProgressRow
+          label={blockedStep ? "Blocked" : "Blocked/Needs input"}
+          value={formatKarenBlockedEvent(blockedEvent, actionLabels)}
+        />
+      )}
+    </section>
+  );
+}
+
+function KarenProgressRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="karen-progress-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -2322,6 +2551,127 @@ function chooseJobId(records: ApiRecord[], preferredJobId = "", currentJobId = "
 
 function workflowPageHandlesRefresh(pageName: string) {
   return ["Candidate Profile", "Jobs", "Tracker"].includes(pageName);
+}
+
+function isActiveKarenRunStatus(status: string) {
+  return ["queued", "running"].includes(status);
+}
+
+function isTerminalKarenRunStatus(status: string) {
+  return ["completed", "blocked", "needs_input", "refused", "error"].includes(status);
+}
+
+function latestWorkflowRunId(events: ApiRecord[]) {
+  const event = [...events]
+    .reverse()
+    .find((item) => item.run_id || item.details?.workflow_run_id);
+  return event?.run_id || event?.details?.workflow_run_id || "";
+}
+
+function shouldRefreshForKarenEvent(event: ApiRecord) {
+  return (
+    event.action &&
+    (!event.event_type || event.event_type === "workflow_action") &&
+    progressStatus(event) === "completed" &&
+    eventRefreshScopes(event).length > 0
+  );
+}
+
+function eventRefreshScopes(event: ApiRecord) {
+  const value = event.refresh_scopes || event.metadata?.refresh_scopes || event.details?.refresh_scopes || [];
+  return Array.isArray(value) ? uniqueStrings(value.map(String)) : [];
+}
+
+function karenRefreshEventKey(event: ApiRecord) {
+  const runId = event.run_id || event.details?.workflow_run_id || "run";
+  const stepIndex = event.details?.step_index ?? "";
+  const status = progressStatus(event);
+  const timestamp = event.timestamp || event.created_at || "";
+  return `${runId}:${stepIndex}:${event.action}:${status}:${timestamp}`;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function hasAnyRefreshScope(scopes: string[] = [], targets: string[]) {
+  return targets.some((target) => scopes.includes(target));
+}
+
+function isBlockedKarenEvent(event: ApiRecord) {
+  if (event.status) {
+    return ["blocked", "needs_input", "refused", "error"].includes(String(event.status));
+  }
+  return !["understood", "started", "done", "executed"].includes(String(event.result || ""));
+}
+
+function eventActionLabel(event: ApiRecord, actionLabels: ApiRecord = {}) {
+  return event.label || event.details?.action_label || actionLabels[event.action] || titleCase(String(event.action || ""));
+}
+
+function formatKarenIntent(event: ApiRecord) {
+  const goal = titleCase(String(event.details?.goal || "workflow request"));
+  const mode = event.details?.execution_mode ? `, ${titleCase(String(event.details.execution_mode))}` : "";
+  return `${goal}${mode}`;
+}
+
+function formatKarenBlockedEvent(event: ApiRecord, actionLabels: ApiRecord = {}) {
+  const blockers = Array.isArray(event.blockers) ? event.blockers.filter(Boolean) : [];
+  const reason = blockers.length
+    ? blockers.join("; ")
+    : event.message || event.details?.error || event.details?.planner_message || titleCase(String(event.result || "blocked"));
+  const route = event.route_hint ? ` Go to: ${event.route_hint}.` : "";
+  return `${eventActionLabel(event, actionLabels)}: ${reason}.${route}`.replace(/\.\./g, ".");
+}
+
+function karenProgressSteps(events: ApiRecord[], actionLabels: ApiRecord = {}) {
+  const steps: ApiRecord[] = [];
+  const stepIndexes = new Map<string, number>();
+  const progressEvents = events.filter((event) => (
+    event.action &&
+    (!event.event_type || event.event_type === "workflow_action") &&
+    !["karen_workflow_intent", "karen_workflow_run"].includes(String(event.action))
+  ));
+
+  for (const event of progressEvents) {
+    const key = karenStepKey(event, steps.length);
+    const status = progressStatus(event);
+    const existingIndex = stepIndexes.get(key);
+    const step = {
+      action: event.action,
+      label: eventActionLabel(event, actionLabels),
+      status,
+      order: Number(event.details?.step_index ?? steps.length)
+    };
+    if (existingIndex === undefined) {
+      stepIndexes.set(key, steps.length);
+      steps.push(step);
+    } else {
+      steps[existingIndex] = { ...steps[existingIndex], ...step };
+    }
+  }
+
+  return steps.slice(0, 8);
+}
+
+function karenStepKey(event: ApiRecord, fallbackIndex: number) {
+  const runId = event.run_id || event.details?.workflow_run_id || "run";
+  const stepIndex = event.details?.step_index ?? fallbackIndex;
+  return `${runId}:${stepIndex}:${event.action}`;
+}
+
+function progressStatus(event: ApiRecord) {
+  if (event.status) return String(event.status);
+  if (event.result === "started") return "running";
+  if (["done", "executed"].includes(String(event.result || ""))) return "completed";
+  return String(event.result || "blocked");
+}
+
+function progressStepSymbol(status: string) {
+  if (status === "completed") return "✓";
+  if (status === "running") return "▶";
+  if (["blocked", "needs_input", "refused", "error"].includes(status)) return "!";
+  return "○";
 }
 
 function jobBlockerCount(record: ApiRecord, workspace: ApiRecord | null) {
