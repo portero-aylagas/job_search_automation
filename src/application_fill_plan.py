@@ -145,112 +145,21 @@ def generate_application_fill_plan(
     """Create a conservative draft fill plan from reviewed application data."""
 
     candidate_profile = normalize_candidate_profile_documents(candidate_profile)
-    field_values: list[ApplicationFillFieldValue] = []
-    blocked_fields: list[ApplicationFillBlockedField] = []
+    field_values, blocked_fields, unresolved_fields, used_fields = _resolve_form_fields(
+        candidate_profile,
+        requirements,
+        package,
+        page_snapshot,
+    )
+    (
+        screening_field_values,
+        screening_blocked_fields,
+        screening_unresolved_fields,
+    ) = _resolve_screening_questions(requirements, package, page_snapshot, used_fields)
+    field_values.extend(screening_field_values)
+    blocked_fields.extend(screening_blocked_fields)
+    unresolved_fields.extend(screening_unresolved_fields)
     needs_answer_fields: list[ApplicationFillNeedsAnswerField] = []
-    unresolved_fields: list[FillPlanTargetField] = []
-    used_fields: set[str] = set()
-
-    for field in [*requirements.profile_fields, *requirements.custom_form_fields]:
-        key = _field_key(field.label or field.name)
-        dedupe_key = _field_dedupe_key(field.label, field.name)
-        if dedupe_key in used_fields:
-            continue
-        if _should_block_field(key):
-            blocked_fields.append(
-                _blocked_from_form_field(
-                    field,
-                    "Field requires user review.",
-                    page_snapshot=page_snapshot,
-                )
-            )
-            continue
-
-        candidate_value = _candidate_value_for_field(candidate_profile, field)
-        if candidate_value:
-            field_values.append(
-                _attach_fill_plan_evidence(
-                    ApplicationFillFieldValue(
-                        label=field.label,
-                        name=field.name,
-                        value=candidate_value,
-                        required=field.required,
-                        input_type=field.input_type,
-                        options=list(field.options),
-                        source=_candidate_source_for_field(field),
-                        confidence="high",
-                    ),
-                    page_snapshot,
-                    _terms_from_form_field(field),
-                )
-            )
-            used_fields.add(dedupe_key)
-            continue
-
-        package_value = _package_answer_for_label(package, field.label)
-        if package_value:
-            field_values.append(
-                _attach_fill_plan_evidence(
-                    ApplicationFillFieldValue(
-                        label=field.label,
-                        name=field.name,
-                        value=package_value,
-                        required=field.required,
-                        input_type=field.input_type,
-                        options=list(field.options),
-                        source="application_package.form_answer",
-                        confidence="medium",
-                    ),
-                    page_snapshot,
-                    _terms_from_form_field(field),
-                )
-            )
-            used_fields.add(dedupe_key)
-            continue
-
-        reason = "No safe candidate or reviewed package value is available."
-        unresolved_fields.append(_target_from_form_field(field, default_reason=reason))
-
-    for question in requirements.screening_questions:
-        key = _field_key(question.question)
-        dedupe_key = _field_dedupe_key(question.question)
-        if dedupe_key in used_fields:
-            continue
-        if _should_block_field(key):
-            blocked_fields.append(
-                _blocked_from_screening_question(
-                    question,
-                    "Field requires user review.",
-                    page_snapshot=page_snapshot,
-                )
-            )
-            continue
-
-        package_value = _package_answer_for_label(package, question.question)
-        if package_value:
-            field_values.append(
-                _attach_fill_plan_evidence(
-                    ApplicationFillFieldValue(
-                        label=question.question,
-                        value=package_value,
-                        required=question.required,
-                        input_type=question.input_type,
-                        options=[],
-                        source="application_package.form_answer",
-                        confidence="medium",
-                    ),
-                    page_snapshot,
-                    _terms_from_screening_question(question),
-                )
-            )
-            used_fields.add(dedupe_key)
-        else:
-            unresolved_fields.append(
-                _target_from_screening_question(
-                    question,
-                    default_reason="No reviewed package answer is available.",
-                )
-            )
 
     _apply_semantic_mapping(
         candidate_profile,
@@ -264,25 +173,7 @@ def generate_application_fill_plan(
         page_snapshot,
     )
 
-    for requirement in [
-        *requirements.consent_requirements,
-        *requirements.privacy_login_ats_gates,
-    ]:
-        blocked_fields.append(
-            _attach_fill_plan_evidence(
-                ApplicationFillBlockedField(
-                    label=requirement.label,
-                    reason="Consent, privacy, login, or ATS gate requires user review.",
-                    required=requirement.required,
-                    input_type="checkbox",
-                    options=["true", "false"],
-                    source=requirement.evidence,
-                    confidence=requirement.confidence,
-                ),
-                page_snapshot,
-                _terms_from_requirement_finding(requirement),
-            )
-        )
+    _append_requirement_gate_blockers(blocked_fields, requirements, page_snapshot)
 
     source_metadata = build_application_fill_plan_source_metadata(
         candidate_profile,
@@ -306,6 +197,183 @@ def generate_application_fill_plan(
         blocked_fields=_dedupe_blocked_fields(blocked_fields),
         submit_guard_labels=DEFAULT_SUBMIT_GUARD_LABELS,
     )
+
+
+def _resolve_form_fields(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> tuple[
+    list[ApplicationFillFieldValue],
+    list[ApplicationFillBlockedField],
+    list[FillPlanTargetField],
+    set[str],
+]:
+    field_values: list[ApplicationFillFieldValue] = []
+    blocked_fields: list[ApplicationFillBlockedField] = []
+    unresolved_fields: list[FillPlanTargetField] = []
+    used_fields: set[str] = set()
+
+    for field in [*requirements.profile_fields, *requirements.custom_form_fields]:
+        dedupe_key = _field_dedupe_key(field.label, field.name)
+        if dedupe_key in used_fields:
+            continue
+        if _should_block_field(_field_key(field.label or field.name)):
+            blocked_fields.append(
+                _blocked_from_form_field(
+                    field,
+                    "Field requires user review.",
+                    page_snapshot=page_snapshot,
+                )
+            )
+            continue
+
+        field_value = _resolved_form_field_value(candidate_profile, package, field, page_snapshot)
+        if field_value is not None:
+            field_values.append(field_value)
+            used_fields.add(dedupe_key)
+            continue
+
+        reason = "No safe candidate or reviewed package value is available."
+        unresolved_fields.append(_target_from_form_field(field, default_reason=reason))
+
+    return field_values, blocked_fields, unresolved_fields, used_fields
+
+
+def _resolved_form_field_value(
+    candidate_profile: CandidateProfile,
+    package: ApplicationPackage,
+    field: ApplicationFormField,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> ApplicationFillFieldValue | None:
+    candidate_value = _candidate_value_for_field(candidate_profile, field)
+    if candidate_value:
+        return _attach_fill_plan_evidence(
+            ApplicationFillFieldValue(
+                label=field.label,
+                name=field.name,
+                value=candidate_value,
+                required=field.required,
+                input_type=field.input_type,
+                options=list(field.options),
+                source=_candidate_source_for_field(field),
+                confidence="high",
+            ),
+            page_snapshot,
+            _terms_from_form_field(field),
+        )
+
+    package_value = _package_answer_for_label(package, field.label)
+    if package_value:
+        return _attach_fill_plan_evidence(
+            ApplicationFillFieldValue(
+                label=field.label,
+                name=field.name,
+                value=package_value,
+                required=field.required,
+                input_type=field.input_type,
+                options=list(field.options),
+                source="application_package.form_answer",
+                confidence="medium",
+            ),
+            page_snapshot,
+            _terms_from_form_field(field),
+        )
+    return None
+
+
+def _resolve_screening_questions(
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+    page_snapshot: ApplicationPageSnapshot | None,
+    used_fields: set[str],
+) -> tuple[
+    list[ApplicationFillFieldValue],
+    list[ApplicationFillBlockedField],
+    list[FillPlanTargetField],
+]:
+    field_values: list[ApplicationFillFieldValue] = []
+    blocked_fields: list[ApplicationFillBlockedField] = []
+    unresolved_fields: list[FillPlanTargetField] = []
+
+    for question in requirements.screening_questions:
+        dedupe_key = _field_dedupe_key(question.question)
+        if dedupe_key in used_fields:
+            continue
+        if _should_block_field(_field_key(question.question)):
+            blocked_fields.append(
+                _blocked_from_screening_question(
+                    question,
+                    "Field requires user review.",
+                    page_snapshot=page_snapshot,
+                )
+            )
+            continue
+
+        field_value = _resolved_screening_question_value(package, question, page_snapshot)
+        if field_value is not None:
+            field_values.append(field_value)
+            used_fields.add(dedupe_key)
+            continue
+
+        unresolved_fields.append(
+            _target_from_screening_question(
+                question,
+                default_reason="No reviewed package answer is available.",
+            )
+        )
+
+    return field_values, blocked_fields, unresolved_fields
+
+
+def _resolved_screening_question_value(
+    package: ApplicationPackage,
+    question: ApplicationScreeningQuestion,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> ApplicationFillFieldValue | None:
+    package_value = _package_answer_for_label(package, question.question)
+    if not package_value:
+        return None
+    return _attach_fill_plan_evidence(
+        ApplicationFillFieldValue(
+            label=question.question,
+            value=package_value,
+            required=question.required,
+            input_type=question.input_type,
+            options=[],
+            source="application_package.form_answer",
+            confidence="medium",
+        ),
+        page_snapshot,
+        _terms_from_screening_question(question),
+    )
+
+
+def _append_requirement_gate_blockers(
+    blocked_fields: list[ApplicationFillBlockedField],
+    requirements: ApplicationRequirements,
+    page_snapshot: ApplicationPageSnapshot | None,
+) -> None:
+    for requirement in [
+        *requirements.consent_requirements,
+        *requirements.privacy_login_ats_gates,
+    ]:
+        blocked_fields.append(
+            _attach_fill_plan_evidence(
+                ApplicationFillBlockedField(
+                    label=requirement.label,
+                    reason="Consent, privacy, login, or ATS gate requires user review.",
+                    required=requirement.required,
+                    input_type="checkbox",
+                    options=["true", "false"],
+                    source=requirement.evidence,
+                    confidence=requirement.confidence,
+                ),
+                page_snapshot,
+                _terms_from_requirement_finding(requirement),
+            )
+        )
 
 
 def apply_fill_plan_edits(

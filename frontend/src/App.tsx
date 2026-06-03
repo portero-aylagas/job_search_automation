@@ -9,6 +9,7 @@ import {
   useState
 } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
+import { useKarenRunPolling } from "./useKarenRunPolling";
 import karenImage from "../../assets/karen.png";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"];
@@ -61,8 +62,6 @@ function App() {
   const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
   const [isKarenSending, setIsKarenSending] = useState(false);
-  const [activeKarenRunId, setActiveKarenRunId] = useState("");
-  const [activeKarenRunStatus, setActiveKarenRunStatus] = useState("");
   const [isKarenMobileOpen, setIsKarenMobileOpen] = useState(false);
   const [workflowRefresh, setWorkflowRefresh] = useState({
     version: 0,
@@ -73,6 +72,18 @@ function App() {
   const karenSendingRef = useRef(false);
   const seenRefreshEventIdsRef = useRef<Set<string>>(new Set());
   const sessionId = agent?.context?.session_id;
+  const {
+    activeRunStatus: activeKarenRunStatus,
+    startKarenRun
+  } = useKarenRunPolling({
+    selectedJobId: selectedKarenJobId,
+    sessionId,
+    setAgent,
+    setStatus: setKarenStatus,
+    loadKarenJobs,
+    refreshFromEvents: refreshFromKarenEvents,
+    refreshVisibleWorkflow
+  });
   const isKarenBusy = isKarenSending || isActiveKarenRunStatus(activeKarenRunStatus);
 
   useEffect(() => {
@@ -145,52 +156,6 @@ function App() {
     return () => window.clearInterval(intervalId);
   }, [isKarenSending, page, selectedKarenJobId, sessionId]);
 
-  useEffect(() => {
-    if (!activeKarenRunId) return;
-    let intervalId = 0;
-    let cancelled = false;
-    seenRefreshEventIdsRef.current = new Set();
-
-    const pollKarenRun = async () => {
-      try {
-        const result = await apiRequest<ApiRecord>(`/api/agent/runs/${activeKarenRunId}`);
-        if (cancelled) return;
-        const events = result.events || [];
-        setActiveKarenRunStatus(String(result.run?.status || ""));
-        setAgent((currentAgent) => ({
-          context: result.context || currentAgent?.context || {},
-          state: result.state || currentAgent?.state || {},
-          messages: result.messages || currentAgent?.messages || [],
-          events,
-          action_labels: result.action_labels || currentAgent?.action_labels || {}
-        }));
-        refreshFromKarenEvents(events, result.context?.selected_job_id || selectedKarenJobId);
-        if (isTerminalKarenRunStatus(String(result.run?.status || ""))) {
-          window.clearInterval(intervalId);
-          setActiveKarenRunId("");
-          setActiveKarenRunStatus("");
-          const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
-          loadKarenJobs(nextJobId, result.context?.session_id || sessionId);
-          refreshVisibleWorkflow(nextJobId);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setKarenStatus({ type: "error", text: error instanceof Error ? error.message : String(error) });
-          window.clearInterval(intervalId);
-          setActiveKarenRunId("");
-          setActiveKarenRunStatus("");
-        }
-      }
-    };
-
-    void pollKarenRun();
-    intervalId = window.setInterval(pollKarenRun, 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [activeKarenRunId]);
-
   async function sendKarenChat(event: FormEvent, overrideMessage?: string) {
     event.preventDefault();
     const outgoingMessage = (overrideMessage ?? karenMessage).trim();
@@ -209,8 +174,11 @@ function App() {
       const nextJobId = result.context?.selected_job_id || selectedKarenJobId;
       if (result.context?.selected_job_id) setSelectedKarenJobId(result.context.selected_job_id);
       if (result.run_id || result.run?.run_id) {
-        setActiveKarenRunId(String(result.run_id || result.run.run_id));
-        setActiveKarenRunStatus(String(result.status || result.run?.status || "running"));
+        seenRefreshEventIdsRef.current = new Set();
+        startKarenRun(
+          String(result.run_id || result.run.run_id),
+          String(result.status || result.run?.status || "running")
+        );
         return;
       }
       const executedActions = result.tool_result?.executed_actions || result.tool_result?.event_details?.executed_actions || [];
@@ -2555,10 +2523,6 @@ function workflowPageHandlesRefresh(pageName: string) {
 
 function isActiveKarenRunStatus(status: string) {
   return ["queued", "running"].includes(status);
-}
-
-function isTerminalKarenRunStatus(status: string) {
-  return ["completed", "blocked", "needs_input", "refused", "error"].includes(status);
 }
 
 function latestWorkflowRunId(events: ApiRecord[]) {

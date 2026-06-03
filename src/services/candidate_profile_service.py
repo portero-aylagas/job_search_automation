@@ -194,13 +194,22 @@ def delete_runtime_candidate_file(base_dir: Path | str, file_path: str) -> None:
     if not candidate_path:
         return
 
+    resolved = _resolve_runtime_candidate_file_path(base_dir, candidate_path)
+    resolved.unlink(missing_ok=True)
+
+
+def _resolve_runtime_candidate_file_path(base_dir: Path | str, file_path: str) -> Path:
+    """Resolve a candidate upload path and enforce the runtime candidate boundary."""
+
     root = Path(base_dir).resolve()
-    path = Path(candidate_path)
+    path = Path(file_path)
     resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
     allowed_root = (root / RUNTIME_DATA_DIR / "candidate_profile").resolve()
     if not resolved.is_relative_to(allowed_root):
-        return
-    resolved.unlink(missing_ok=True)
+        raise CandidateProfileServiceError(
+            "Candidate upload path must stay inside data/runtime/candidate_profile."
+        )
+    return resolved
 
 
 def rebuild_candidate_cv_extracted(
@@ -262,9 +271,7 @@ def load_or_extract_optional_document_data(
 def ensure_runtime_candidate_file_exists(base_dir: Path | str, file_path: str) -> None:
     """Raise a clear error when a referenced candidate upload is missing."""
 
-    root = Path(base_dir).resolve()
-    path = Path(file_path)
-    resolved = (root / path).resolve() if not path.is_absolute() else path.resolve()
+    resolved = _resolve_runtime_candidate_file_path(base_dir, file_path)
     if not resolved.exists():
         raise CandidateProfileServiceError(
             f"Uploaded file is missing: {resolved}. Re-upload the remaining candidate "
