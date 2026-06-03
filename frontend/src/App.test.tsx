@@ -1320,7 +1320,7 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
 
     await waitFor(() => expect(workspaceLoads).toBeGreaterThanOrEqual(2), { timeout: 2500 });
-    expect(screen.getByText("Ready summary")).toBeInTheDocument();
+    expect(await screen.findByText("Ready summary")).toBeInTheDocument();
     expect(runPolls).toBeGreaterThanOrEqual(2);
   });
 
