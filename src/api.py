@@ -37,6 +37,7 @@ from src.job_workspace import (
     get_fill_plan_generation_blockers,
 )
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
+from src.monitoring import LangSmithMonitoringError, langsmith_monitoring_summary
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationFillPlan,
@@ -100,7 +101,7 @@ from src.tracker_status import (
     tracker_status_options,
 )
 
-PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"]
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]
 BASE_DIR = Path(__file__).resolve().parent.parent
 API_BROWSER_USE_STARTUP_WAIT_SECONDS = 0.0
 
@@ -232,6 +233,15 @@ def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
         """Return the top-level navigation pages."""
 
         return {"pages": PAGE_NAMES}
+
+    @app.get("/api/monitoring/langsmith")
+    async def langsmith_monitoring(days: int = 7) -> dict[str, object]:
+        """Return a LangSmith monitoring summary for the Monitoring page."""
+
+        try:
+            return langsmith_monitoring_summary(days=days)
+        except LangSmithMonitoringError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     @app.get("/api/candidate-profile")
     async def get_candidate_profile() -> dict[str, object]:

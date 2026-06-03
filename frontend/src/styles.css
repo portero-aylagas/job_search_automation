@@ -30,12 +30,6 @@ button {
   padding: 0.6rem 0.9rem;
 }
 
-button.primary {
-  background: #1f6feb;
-  border-color: #1f6feb;
-  color: #ffffff;
-}
-
 button.secondary {
   background: #eef3fb;
 }
@@ -52,6 +46,13 @@ button.success {
   color: #ffffff;
 }
 
+button.primary,
+.button-link.primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #ffffff;
+}
+
 button.warning {
   border-color: #b98500;
   background: #fff7df;
@@ -64,6 +65,29 @@ button:hover:not(:disabled) {
 }
 
 button.primary:hover:not(:disabled) {
+  border-color: #1757bd;
+  background: #1757bd;
+}
+
+.button-link {
+  display: inline-flex;
+  min-height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b8c1d1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #182131;
+  padding: 0.6rem 0.9rem;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  border-color: #1f6feb;
+  box-shadow: 0 1px 0 rgba(24, 33, 49, 0.08);
+}
+
+.button-link.primary:hover {
   border-color: #1757bd;
   background: #1757bd;
 }
@@ -513,6 +537,10 @@ label {
   margin: 0.75rem 0 1rem;
 }
 
+.filter-bar.compact {
+  margin: 0;
+}
+
 .filter-button {
   background: #ffffff;
 }
@@ -531,6 +559,11 @@ label {
 
 .grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.monitoring-metrics .field {
+  min-height: 5.5rem;
+  align-content: center;
 }
 
 .actions {

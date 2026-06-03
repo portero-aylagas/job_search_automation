@@ -12,7 +12,7 @@ import {
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import karenImage from "../../assets/karen.png";
 
-const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Agent Karen"];
+const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"];
 const careerLevel = [
   ["internship", "Internship"],
   ["working_student", "Working student"],
@@ -238,6 +238,7 @@ function App() {
               refreshSignal={workflowRefresh.version}
             />
           )}
+          {page === "Monitoring" && <MonitoringPage />}
           {page === "Agent Karen" && (
             <AgentKarenPage
               agent={agent}
@@ -1492,6 +1493,121 @@ function TrackerPage({
   );
 }
 
+function MonitoringPage() {
+  const [summary, setSummary] = useState<ApiRecord | null>(null);
+  const [windowDays, setWindowDays] = useState(7);
+  const [message, setMessage] = useState<ApiRecord | null>({ type: "info", text: "Loading LangSmith monitoring..." });
+
+  async function loadMonitoring(days = windowDays) {
+    setMessage({ type: "info", text: "Loading LangSmith monitoring..." });
+    try {
+      const payload = await apiRequest<ApiRecord>(`/api/monitoring/langsmith?days=${days}`);
+      setSummary(payload);
+      setMessage(payload.configured ? null : { type: "info", text: payload.message || "LangSmith monitoring is not configured." });
+    } catch (error) {
+      setSummary(null);
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  useEffect(() => {
+    loadMonitoring(windowDays);
+  }, [windowDays]);
+
+  const totals = summary?.totals || {};
+  const recentRuns = summary?.recent_runs || [];
+
+  return (
+    <>
+      <h1>Monitoring</h1>
+      <p>Review LangSmith activity for the configured project.</p>
+      <StatusMessage type={message?.type} text={message?.text} />
+      <section className="panel">
+        <div className="section-header">
+          <div>
+            <h2>LangSmith</h2>
+            <p className="muted">{summary?.project_name ? `Project: ${summary.project_name}` : "Project not configured"}</p>
+          </div>
+          <div className="actions">
+            <div className="filter-bar compact" aria-label="Monitoring time range">
+              {[
+                [1, "24h"],
+                [7, "7d"],
+                [30, "30d"]
+              ].map(([days, label]) => (
+                <button
+                  className={`filter-button ${windowDays === days ? "active" : ""}`}
+                  key={days}
+                  onClick={() => setWindowDays(Number(days))}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {summary?.dashboard_url && (
+              <a className="button-link primary" href={summary.dashboard_url} rel="noreferrer" target="_blank">
+                Open LangSmith Dashboard
+              </a>
+            )}
+          </div>
+        </div>
+        <div className="grid three monitoring-metrics">
+          <Field label="Runs" value={formatInteger(totals.run_count)} />
+          <Field label="Total cost" value={formatCost(totals.total_cost)} />
+          <Field label="Total tokens" value={formatInteger(totals.total_tokens)} />
+          <Field label="Error rate" value={formatPercent(totals.error_rate)} />
+          <Field label="Failed runs" value={formatInteger(totals.failed_run_count)} />
+          <Field label="Latency p50 / p99" value={`${formatLatency(totals.latency_p50)} / ${formatLatency(totals.latency_p99)}`} />
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Recent Runs</h2>
+        {!summary?.configured ? (
+          <StatusMessage type="info" text="Configure LangSmith to show recent runs." />
+        ) : !recentRuns.length ? (
+          <StatusMessage type="info" text={`No LangSmith root runs found in the last ${summary.window_days || windowDays} day${(summary.window_days || windowDays) === 1 ? "" : "s"}.`} />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Started</th>
+                  <th>Status</th>
+                  <th>Tokens</th>
+                  <th>Cost</th>
+                  <th>Trace</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentRuns.map((run: ApiRecord) => (
+                  <tr key={run.id || `${run.name}-${run.start_time}`}>
+                    <td>{run.name || "Untitled run"}</td>
+                    <td>{run.run_type || "Unknown"}</td>
+                    <td>{formatDateTime(run.start_time)}</td>
+                    <td><StatusBadge status={run.status === "error" ? "blocked" : "complete"} label={titleCase(run.status || "unknown")} /></td>
+                    <td>{formatInteger(run.total_tokens)}</td>
+                    <td>{formatCost(run.total_cost)}</td>
+                    <td>
+                      {run.url ? (
+                        <a href={run.url} rel="noreferrer" target="_blank">Open</a>
+                      ) : (
+                        "Unavailable"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </>
+  );
+}
+
 function AgentKarenPage({
   agent,
   records,
@@ -2299,6 +2415,31 @@ function karenActionTarget(actionName: string) {
   if (normalized.includes("apply") || normalized.includes("browser")) return { page: "Jobs", sectionId: "workflow-apply" };
   if (normalized.includes("track")) return { page: "Tracker" };
   return null;
+}
+
+function formatInteger(value: any) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0";
+  return Math.round(number).toLocaleString();
+}
+
+function formatCost(value: any) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "$0.00";
+  return number.toLocaleString([], { style: "currency", currency: "USD", maximumFractionDigits: 4 });
+}
+
+function formatPercent(value: any) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "0%";
+  return `${(number * 100).toFixed(number > 0 && number < 0.01 ? 2 : 1)}%`;
+}
+
+function formatLatency(value: any) {
+  if (value === null || value === undefined || value === "") return "Not tracked";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return `${number.toFixed(number >= 10 ? 1 : 2)}s`;
 }
 
 function formatDateTime(value?: string) {

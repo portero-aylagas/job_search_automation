@@ -717,4 +717,10 @@ Set the following environment variables:
 LANGSMITH_API_KEY=your_langsmith_api_key
 LANGSMITH_TRACING=true
 LANGSMITH_PROJECT=job-search-automation
+LANGSMITH_DASHBOARD_URL=https://smith.langchain.com/...
 ```
+
+The React `Monitoring` tab reads aggregate LangSmith data for
+`LANGSMITH_PROJECT` and opens `LANGSMITH_DASHBOARD_URL` when that optional
+dashboard link is configured. The dashboard link is shown as an external link
+rather than embedded in the app.

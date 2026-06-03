@@ -1176,6 +1176,105 @@ describe("App workflow pages", () => {
     expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
     expect(screen.getAllByText("Review requirements").length).toBeGreaterThan(0);
   });
+
+  it("shows LangSmith monitoring metrics and dashboard link", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      if (url.includes("/api/monitoring/langsmith")) {
+        return {
+          body: {
+            configured: true,
+            project_name: "job-search-automation",
+            dashboard_url: "https://smith.langchain.com/dashboards/1",
+            window_days: 7,
+            totals: {
+              run_count: 12,
+              failed_run_count: 1,
+              error_rate: 0.083,
+              total_cost: 1.25,
+              total_tokens: 3400,
+              latency_p50: 1.2,
+              latency_p99: 4.8
+            },
+            recent_runs: [
+              {
+                id: "run-1",
+                name: "cv_extraction",
+                run_type: "chain",
+                start_time: "2026-06-03T10:00:00Z",
+                status: "complete",
+                total_tokens: 400,
+                total_cost: 0.12,
+                url: "https://smith.langchain.com/r/run-1"
+              }
+            ]
+          }
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Monitoring" }));
+
+    expect(await screen.findByRole("heading", { name: "Monitoring" })).toBeInTheDocument();
+    expect(screen.getByText("Project: job-search-automation")).toBeInTheDocument();
+    expect(screen.getByText("cv_extraction")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open LangSmith Dashboard" })).toHaveAttribute(
+      "href",
+      "https://smith.langchain.com/dashboards/1"
+    );
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute(
+      "href",
+      "https://smith.langchain.com/r/run-1"
+    );
+  });
+
+  it("shows setup guidance when LangSmith monitoring is not configured", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [] } };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(0) };
+      }
+      if (url.includes("/api/monitoring/langsmith")) {
+        return {
+          body: {
+            configured: false,
+            project_name: "",
+            dashboard_url: "",
+            window_days: 7,
+            totals: {
+              run_count: 0,
+              failed_run_count: 0,
+              error_rate: 0,
+              total_cost: 0,
+              total_tokens: 0,
+              latency_p50: null,
+              latency_p99: null
+            },
+            recent_runs: [],
+            message: "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
+          }
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Monitoring" }));
+
+    expect(await screen.findByText(/Set LANGSMITH_API_KEY/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open LangSmith Dashboard" })).not.toBeInTheDocument();
+  });
 });
 
 function mockFetch(handler: (url: string, init?: RequestInit) => MockResponse | Promise<MockResponse>) {
