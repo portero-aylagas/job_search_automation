@@ -140,7 +140,7 @@ tests/
 - app runs with:
 
 ```bash
-uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 npm run frontend:dev
 ```
 
@@ -636,7 +636,7 @@ Help the user apply manually using the generated package.
 
 ### Not Allowed
 
-- automatic final submission
+- autonomous or ungranted final submission
 - login automation
 - captcha handling
 - LinkedIn scraping

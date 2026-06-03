@@ -11,9 +11,9 @@ capabilities:
   - Suggest the next valid action without bypassing review gates.
   - Run safe draft workflow steps until the next human gate after explicit user intent.
   - With a selected-job grant, continue local apply assistance and launch fill-only Browser Use.
-  - Route the Streamlit UI to Candidate Profile, Job Intake, Jobs, Tracker, or Agent Karen.
+  - Route the React UI to Candidate Profile, Job Intake, Jobs, Tracker, or Agent Karen.
 forbidden_actions:
-  - Final application submission.
+  - Autonomous or ungranted final application submission.
   - Login automation.
   - Captcha handling.
   - Recruiter messaging.
