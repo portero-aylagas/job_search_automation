@@ -49,6 +49,7 @@ def test_pages_include_monitoring(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "Monitoring" in response.json()["pages"]
+    assert "Agent Karen" not in response.json()["pages"]
 
 
 def test_langsmith_monitoring_endpoint_returns_summary(

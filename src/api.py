@@ -112,7 +112,7 @@ from src.tracker_status import (
 )
 from src.workflow.workflow_state import CurrentWorkflowState, load_current_workflow_state
 
-PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"]
 BASE_DIR = Path(__file__).resolve().parent.parent
 API_BROWSER_USE_STARTUP_WAIT_SECONDS = 0.0
 KAREN_RUN_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="karen-run")

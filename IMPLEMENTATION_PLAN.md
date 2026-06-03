@@ -46,12 +46,12 @@ Do not start new feature phases with web search, browser automation, or external
   human-gated workflow. Her chat now appears as a persistent app-level side
   panel with selected-job context, pending-gate hints, persisted session
   transcripts, job-scoped copies, structured event logs, and explicit workflow
-  permission flags. The top-level `Agent Karen` tab remains as a dashboard for
-  workflow status, blockers, timeline, and static next-action guidance. With
-  explicit permission, Karen can run registered job-scoped workflow actions and
-  launch Browser Use apply assistance; final submission, login, MFA, captcha,
-  account creation, recruiter messaging, and invented candidate data remain out
-  of scope.
+  permission flags. Karen is available only from the `Jobs` workspace side
+  panel, where she shows workflow status, blockers, timeline, and static
+  next-action guidance for the selected job. With explicit permission, Karen
+  can run registered job-scoped workflow actions and launch Browser Use apply
+  assistance; final submission, login, MFA, captcha, account creation,
+  recruiter messaging, and invented candidate data remain out of scope.
 - The primary UI has been migrated from Streamlit to React + TypeScript + Vite
   with a thin FastAPI adapter over the existing Python workflow functions. The
   first React version is a parity port: it preserves top-level navigation,
