@@ -1515,7 +1515,11 @@ function MonitoringPage() {
   }, [windowDays]);
 
   const totals = summary?.totals || {};
-  const recentRuns = summary?.recent_runs || [];
+  const extractionTraces = summary?.cv_certificate_traces || [];
+  const traceViewLabel = String(summary?.trace_view_label || "CV & Certificates Extraction");
+  const traceViewUrl = String(summary?.trace_view_url || "");
+  const cvDashboardLabel = String(summary?.cv_extraction_dashboard_label || "job-search-automation_cv-extraction");
+  const cvDashboardUrl = String(summary?.cv_extraction_dashboard_url || "");
 
   return (
     <>
@@ -1550,6 +1554,11 @@ function MonitoringPage() {
                 Open LangSmith Dashboard
               </a>
             )}
+            {cvDashboardUrl && (
+              <a className="button-link primary" href={cvDashboardUrl} rel="noreferrer" target="_blank">
+                Open {cvDashboardLabel}
+              </a>
+            )}
           </div>
         </div>
         <div className="grid three monitoring-metrics">
@@ -1562,11 +1571,21 @@ function MonitoringPage() {
         </div>
       </section>
       <section className="panel">
-        <h2>Recent Runs</h2>
+        <div className="section-header">
+          <div>
+            <h2>{traceViewLabel}</h2>
+            <p className="muted">LangSmith traces for CV and certificate extraction.</p>
+          </div>
+          {traceViewUrl && (
+            <a className="button-link primary" href={traceViewUrl} rel="noreferrer" target="_blank">
+              Open Trace View
+            </a>
+          )}
+        </div>
         {!summary?.configured ? (
-          <StatusMessage type="info" text="Configure LangSmith to show recent runs." />
-        ) : !recentRuns.length ? (
-          <StatusMessage type="info" text={`No LangSmith root runs found in the last ${summary.window_days || windowDays} day${(summary.window_days || windowDays) === 1 ? "" : "s"}.`} />
+          <StatusMessage type="info" text={`Configure LangSmith to show ${traceViewLabel}.`} />
+        ) : !extractionTraces.length ? (
+          <StatusMessage type="info" text={`No ${traceViewLabel} traces found in the last ${summary.window_days || windowDays} day${(summary.window_days || windowDays) === 1 ? "" : "s"}.`} />
         ) : (
           <div className="table-wrap">
             <table>
@@ -1582,7 +1601,7 @@ function MonitoringPage() {
                 </tr>
               </thead>
               <tbody>
-                {recentRuns.map((run: ApiRecord) => (
+                {extractionTraces.map((run: ApiRecord) => (
                   <tr key={run.id || `${run.name}-${run.start_time}`}>
                     <td>{run.name || "Untitled run"}</td>
                     <td>{run.run_type || "Unknown"}</td>
