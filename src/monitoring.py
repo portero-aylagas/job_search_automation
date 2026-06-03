@@ -8,6 +8,12 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+CV_CERTIFICATE_TRACE_NODE_NAMES = {
+    "extract_cv_data",
+    "inspect_cv_document_agent",
+}
+CV_CERTIFICATE_TRACE_VIEW_LABEL = "CV & Certificates Extraction"
+
 
 class LangSmithMonitoringError(RuntimeError):
     """Raised when LangSmith monitoring data cannot be loaded."""
@@ -33,6 +39,10 @@ def langsmith_monitoring_summary(
 
     project_name = os.getenv("LANGSMITH_PROJECT", "").strip()
     dashboard_url = os.getenv("LANGSMITH_DASHBOARD_URL", "").strip()
+    trace_view_url = (
+        os.getenv("LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL", "").strip()
+        or dashboard_url
+    )
     window_days = _window_days(days)
 
     if not os.getenv("LANGSMITH_API_KEY") or not project_name:
@@ -40,9 +50,11 @@ def langsmith_monitoring_summary(
             "configured": False,
             "project_name": project_name,
             "dashboard_url": dashboard_url,
+            "trace_view_label": CV_CERTIFICATE_TRACE_VIEW_LABEL,
+            "trace_view_url": trace_view_url,
             "window_days": window_days,
             "totals": _empty_totals(),
-            "recent_runs": [],
+            "cv_certificate_traces": [],
             "message": (
                 "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
             ),
@@ -62,11 +74,12 @@ def langsmith_monitoring_summary(
             is_root=True,
             error=True,
         )
-        recent_runs = list(
+        extraction_runs = list(
             client.list_runs(
                 project_name=project_name,
                 start_time=start_time,
                 is_root=True,
+                tree_filter=_cv_certificate_trace_filter(),
                 select=[
                     "id",
                     "name",
@@ -78,7 +91,7 @@ def langsmith_monitoring_summary(
                     "total_tokens",
                     "total_cost",
                 ],
-                limit=10,
+                limit=50,
             )
         )
     except Exception as exc:  # pragma: no cover - exact SDK exceptions vary.
@@ -88,10 +101,23 @@ def langsmith_monitoring_summary(
         "configured": True,
         "project_name": project_name,
         "dashboard_url": dashboard_url,
+        "trace_view_label": CV_CERTIFICATE_TRACE_VIEW_LABEL,
+        "trace_view_url": trace_view_url,
         "window_days": window_days,
         "totals": _totals_from_stats(stats, failed_stats),
-        "recent_runs": [_run_summary(client, project_name, run) for run in recent_runs],
+        "cv_certificate_traces": [
+            _run_summary(client, project_name, run)
+            for run in extraction_runs
+        ],
     }
+
+
+def _cv_certificate_trace_filter() -> str:
+    """Return a LangSmith filter for the CV/certificate trace view."""
+
+    names = sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)
+    clauses = ", ".join(f'eq(name, "{name}")' for name in names)
+    return f"or({clauses})"
 
 
 def _default_langsmith_client() -> Any:
