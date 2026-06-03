@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from src.agent_chat import (
     ACTION_LABELS,
     create_agent_run_id,
+    find_active_agent_run,
     load_agent_chat_messages,
     load_agent_events,
     load_agent_run,
@@ -112,7 +113,7 @@ from src.tracker_status import (
 )
 from src.workflow.workflow_state import CurrentWorkflowState, load_current_workflow_state
 
-PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]
+PAGE_NAMES = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"]
 BASE_DIR = Path(__file__).resolve().parent.parent
 API_BROWSER_USE_STARTUP_WAIT_SECONDS = 0.0
 KAREN_RUN_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="karen-run")
@@ -783,6 +784,21 @@ def _register_agent_routes(app: FastAPI) -> None:
             selected_job_id=payload.selected_job_id,
             session_id=payload.session_id,
         )
+        active_run = find_active_agent_run(
+            app.state.base_dir,
+            session_id=context.session_id,
+            job_id=context.selected_job_id,
+        )
+        if active_run is not None:
+            return {
+                "context": context.model_dump(mode="json"),
+                "intent": None,
+                "tool_result": None,
+                "run": active_run.model_dump(mode="json"),
+                "run_id": active_run.run_id,
+                "status": active_run.status,
+                "reused_run": True,
+            }
         run = KarenWorkflowRun(
             run_id=create_agent_run_id(),
             session_id=context.session_id,
