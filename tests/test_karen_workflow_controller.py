@@ -37,6 +37,7 @@ from src.schemas import (
     CandidateProfile,
 )
 from src.services import job_workflow_service as job_services
+from src.services.karen_permission_service import grant_job_session_permission
 from src.workflow.action_registry import (
     WORKFLOW_ACTION_REGISTRY,
     WorkflowAction,
@@ -92,6 +93,22 @@ def setup_profile_and_job(tmp_path: Path):
     save_candidate_profile(tmp_path, profile)
     persist_job_listing(tmp_path, job)
     return profile, job
+
+
+def grant_karen_workflow_permission(
+    tmp_path: Path,
+    *,
+    session_id: str,
+    job_id: str,
+    browser_launch: bool = False,
+) -> None:
+    grant_job_session_permission(
+        tmp_path,
+        session_id=session_id,
+        job_id=job_id,
+        allow_app_mutations=True,
+        allow_browser_launch=browser_launch,
+    )
 
 
 def make_requirements(job, *, reviewed: bool = False) -> ApplicationRequirements:
@@ -611,6 +628,11 @@ def test_karen_generates_package_by_calling_shared_service(
 ) -> None:
     _, job = setup_profile_and_job(tmp_path)
     save_reviewed_requirements(tmp_path, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-generate-package",
+        job_id=job.id,
+    )
     calls: list[tuple[str, str]] = []
 
     def fake_generate_package(base_dir: Path | str, job_id: str):
@@ -670,6 +692,40 @@ def test_karen_generates_package_by_calling_shared_service(
     }
     assert events[2].metadata["refresh_scopes"] == events[2].refresh_scopes
     assert events[2].details["refresh_scopes"] == events[2].refresh_scopes
+
+
+def test_karen_refuses_workflow_generation_without_session_grant(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+
+    def fail_generate_package(*_args, **_kwargs):
+        raise AssertionError("Karen should not generate without a persisted grant")
+
+    monkeypatch.setattr(
+        job_services,
+        "generate_reviewable_application_package",
+        fail_generate_package,
+    )
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Jobs",
+        selected_job_id=job.id,
+        user_message="generate application data",
+        session_id="karen-generate-package-no-grant",
+        intent_classifier=static_workflow_intent(
+            workflow_intent(goal="generate_application_data")
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "refused"
+    assert result.tool_result.executed_actions == []
+    assert "per-job session grant" in result.assistant_message
+    assert load_application_package(tmp_path, job.id) is None
 
 
 def test_karen_emits_generic_progress_for_any_registered_action(
@@ -748,6 +804,12 @@ def test_karen_multi_step_workflow_emits_action_progress_events(
     monkeypatch,
 ) -> None:
     job_id = "job-progress"
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-progress-multi",
+        job_id=job_id,
+        browser_launch=True,
+    )
     executed: list[str] = []
 
     def state_for_stage() -> CurrentWorkflowState:
@@ -889,6 +951,11 @@ def test_karen_single_action_review_progress_only_includes_actual_action(
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_draft_reviewable_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-progress-single-review",
+        job_id=job.id,
+    )
 
     result = run_karen_workflow_goal(
         tmp_path,
@@ -956,6 +1023,11 @@ def test_karen_crosses_package_review_only_with_explicit_permission(
     _, job = setup_profile_and_job(tmp_path)
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job), job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-review-permission",
+        job_id=job.id,
+    )
 
     result = process_karen_chat_turn(
         tmp_path,
@@ -989,6 +1061,36 @@ def test_karen_crosses_package_review_only_with_explicit_permission(
     assert events[2].status == "completed"
 
 
+def test_karen_refuses_review_gate_crossing_without_session_grant(
+    tmp_path: Path,
+) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job), job)
+
+    result = process_karen_chat_turn(
+        tmp_path,
+        current_page="Jobs",
+        selected_job_id=job.id,
+        user_message="approve the package because I reviewed it",
+        session_id="karen-review-no-grant",
+        intent_classifier=static_workflow_intent(
+            workflow_intent(
+                goal="mark_current_gate_reviewed",
+                allow_review_gate_crossing=True,
+            )
+        ),
+    )
+
+    assert result.tool_result is not None
+    assert result.tool_result.status == "refused"
+    assert result.tool_result.executed_actions == []
+    assert "per-job session grant" in result.assistant_message
+    package = load_application_package(tmp_path, job.id)
+    assert package is not None
+    assert package.status == "draft"
+
+
 def test_karen_blocks_missing_candidate_gender_before_package_generation(
     tmp_path: Path,
 ) -> None:
@@ -1014,6 +1116,11 @@ def test_karen_blocks_fill_plan_answers_and_routes_to_jobs(tmp_path: Path) -> No
     _, job = setup_profile_and_job(tmp_path)
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-fill-plan-blocked",
+        job_id=job.id,
+    )
     save_application_fill_plan(
         tmp_path,
         ApplicationFillPlan(
@@ -1104,6 +1211,11 @@ def test_karen_blocks_fill_plan_human_input_boundaries(
         update={"job_id": job.id, "apply_url": job.apply_url}
     )
     save_application_fill_plan(tmp_path, fill_plan)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-fill-plan-human-input",
+        job_id=job.id,
+    )
 
     result = run_karen_workflow_goal(
         tmp_path,
@@ -1144,6 +1256,11 @@ def test_karen_reports_backend_fill_plan_review_failure_after_attempt(
                 )
             ],
         ),
+    )
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-fill-plan-review-backend-blocker",
+        job_id=job.id,
     )
     calls: list[str] = []
 
@@ -1229,6 +1346,12 @@ def test_karen_browser_use_requested_continues_after_fill_plan_review(
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_draft_reviewable_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-browser-after-fill-review",
+        job_id=job.id,
+        browser_launch=True,
+    )
     calls: list[str] = []
 
     def fake_launch(base_dir, job_id, **kwargs):
@@ -1279,6 +1402,11 @@ def test_karen_manual_mode_stops_after_fill_plan_review(
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_draft_reviewable_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-manual-after-fill-review",
+        job_id=job.id,
+    )
 
     def fail_launch(*_args, **_kwargs):
         raise AssertionError("Browser Use should not launch in manual mode")
@@ -1332,6 +1460,36 @@ def test_karen_browser_use_requested_without_launch_permission_is_refused(
     assert result.message == "Browser Use launch requires permission."
 
 
+def test_karen_refuses_browser_use_without_session_launch_grant(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    profile, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_reviewed_fill_plan(tmp_path, profile, job)
+
+    def fail_launch(*_args, **_kwargs):
+        raise AssertionError("Browser Use should not launch without a persisted grant")
+
+    monkeypatch.setattr(job_services, "launch_apply_assistance", fail_launch)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-browser-no-grant",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="launch_browser_application",
+            execution_mode="browser_use",
+            allow_browser_launch=True,
+        ),
+    )
+
+    assert result.status == "refused"
+    assert result.executed_actions == []
+    assert "Browser Use launch permission" in result.message
+
+
 def test_karen_reports_backend_browser_use_launch_failure_after_fill_plan_review(
     tmp_path: Path,
     monkeypatch,
@@ -1340,6 +1498,12 @@ def test_karen_reports_backend_browser_use_launch_failure_after_fill_plan_review
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_draft_reviewable_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-browser-launch-backend-failure",
+        job_id=job.id,
+        browser_launch=True,
+    )
 
     def fail_launch(*_args, **_kwargs):
         raise job_services.JobWorkflowServiceError("Browser backend refused launch.")
@@ -1384,6 +1548,11 @@ def test_karen_manual_mode_does_not_launch_browser_use(
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_reviewed_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-manual",
+        job_id=job.id,
+    )
 
     def fail_launch(*_args, **_kwargs):
         raise AssertionError("Browser Use should not launch in manual mode")
@@ -1414,6 +1583,12 @@ def test_karen_launches_browser_use_by_calling_shared_service(
     save_reviewed_requirements(tmp_path, job)
     save_application_package(tmp_path, make_package(job, status="approved"), job)
     save_reviewed_fill_plan(tmp_path, profile, job)
+    grant_karen_workflow_permission(
+        tmp_path,
+        session_id="karen-browser",
+        job_id=job.id,
+        browser_launch=True,
+    )
     calls: list[str] = []
 
     def fake_launch(base_dir, job_id, **kwargs):

@@ -21,6 +21,7 @@ from src.agent_chat import (
 )
 from src.agents.karen.policy import PermissionLevel
 from src.schemas import AgentChatMessage, AgentWorkflowEvent
+from src.services.karen_permission_service import inspect_job_session_permission
 from src.workflow.action_registry import (
     WORKFLOW_ACTION_REGISTRY,
     WorkflowActionResult,
@@ -83,7 +84,13 @@ def run_karen_workflow_goal(
         decision = planner_next_action(state, intent)
 
         if decision.status == "action" and decision.action_name:
-            policy_message = _policy_refusal(decision.action_name, intent)
+            policy_message = _policy_refusal(
+                base_path,
+                session_id=session_id,
+                active_job_id=active_job_id,
+                action_name=decision.action_name,
+                intent=intent,
+            )
             if policy_message:
                 _log_workflow_refusal(
                     base_path,
@@ -196,29 +203,65 @@ def run_karen_workflow_goal(
     )
 
 
-def _policy_refusal(action_name: str, intent: WorkflowIntent) -> str:
+def _policy_refusal(
+    base_dir: Path,
+    *,
+    session_id: str,
+    active_job_id: str | None,
+    action_name: str,
+    intent: WorkflowIntent,
+) -> str:
     action = get_workflow_action(action_name)
     if action is None:
         return f"Workflow action is not registered: {action_name}."
+    grant = (
+        inspect_job_session_permission(
+            base_dir,
+            session_id=session_id,
+            job_id=active_job_id,
+        )
+        if active_job_id
+        else None
+    )
     if action.review_gate and not intent.allow_review_gate_crossing:
         return "Karen needs explicit review-gate permission before marking this artifact reviewed."
     if action.external_effect:
         if action.permission_level == PermissionLevel.EXTERNAL_BROWSER_ACTION:
             if action.name in {"stop_browser_use_session", "kill_browser_use_processes"}:
                 if intent.allow_browser_launch or intent.allow_local_mutations:
-                    return ""
+                    if grant is not None and grant.allow_browser_launch:
+                        return ""
             if not intent.allow_browser_launch or intent.execution_mode != "browser_use":
                 return "Browser Use launch requires permission."
+            if grant is None or not grant.allow_browser_launch:
+                return (
+                    "Karen needs a per-job session grant with Browser Use launch "
+                    "permission before running this action."
+                )
     if action.permission_level == PermissionLevel.DRAFT_ONLY and not (
         intent.allow_draft_generation or intent.allow_local_mutations
     ):
         return "Karen needs explicit draft-generation permission for this action."
+    if action.permission_level == PermissionLevel.DRAFT_ONLY and (
+        grant is None or not grant.allow_app_mutations
+    ):
+        return (
+            "Karen needs a per-job session grant with app mutation permission "
+            "before generating workflow artifacts."
+        )
     if (
         action.permission_level == PermissionLevel.MUTATES_LOCAL_STATE
-        and not action.review_gate
         and not intent.allow_local_mutations
+        and not action.review_gate
     ):
         return "Karen needs explicit local workflow mutation permission for this action."
+    if action.permission_level == PermissionLevel.MUTATES_LOCAL_STATE and (
+        grant is None or not grant.allow_app_mutations
+    ):
+        return (
+            "Karen needs a per-job session grant with app mutation permission "
+            "before changing workflow state."
+        )
     return ""
 
 
