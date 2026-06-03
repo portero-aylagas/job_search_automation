@@ -10,6 +10,7 @@ capabilities:
     tracker records, and existing artifacts.
   - Suggest the next valid action without bypassing review gates.
   - Run safe draft workflow steps until the next human gate after explicit user intent.
+  - With a selected-job grant, continue local apply assistance and launch fill-only Browser Use.
   - Route the Streamlit UI to Candidate Profile, Job Intake, Jobs, Tracker, or Agent Karen.
 forbidden_actions:
   - Final application submission.
@@ -22,5 +23,5 @@ autonomy_rules:
   - Read-only explanation and state inspection may be answered directly.
   - Draft or local-state workflow actions require explicit user intent.
   - Human review gates are route-only from chat and remain in the existing UI panels.
-  - Browser Use launch is never auto-executed from free-form chat.
-  - Final submission is always blocked.
+  - Browser Use launch from chat requires explicit user intent and a selected-job grant.
+  - Final-submit mode requires explicit submit intent and selected-job final submission permission.

@@ -897,6 +897,8 @@ class TrackerRecord(BaseModel):
     status: TrackerStatus = "new"
     notes: str | None = None
     generated_package_path: str | None = None
+    archived_at: str | None = None
+    archive_reason: str | None = None
 
     @field_validator("job_id")
     @classmethod
@@ -981,6 +983,7 @@ class AgentSession(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     selected_job_id: str | None = None
+    job_permissions: dict[str, "AgentJobPermissionGrant"] = Field(default_factory=dict)
 
     @field_validator("selected_job_id")
     @classmethod
@@ -988,3 +991,23 @@ class AgentSession(BaseModel):
         if value is None:
             return None
         return _validate_storage_identifier(value, "Job ID")
+
+    @field_validator("job_permissions")
+    @classmethod
+    def _validate_job_permission_ids(
+        cls,
+        value: dict[str, "AgentJobPermissionGrant"],
+    ) -> dict[str, "AgentJobPermissionGrant"]:
+        for job_id in value:
+            _validate_storage_identifier(job_id, "Job ID")
+        return value
+
+
+class AgentJobPermissionGrant(BaseModel):
+    """Per-job permission grant for one Karen session."""
+
+    allow_app_mutations: bool = False
+    allow_browser_launch: bool = False
+    allow_final_submission: bool = False
+    granted_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

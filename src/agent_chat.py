@@ -26,6 +26,7 @@ SESSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 ACTION_LABELS = {
     "continue": "Continue workflow",
+    "continue_to_apply_assistance": "Continue to apply assistance",
     "analyze_match": "Analyze candidate/job match",
     "review_match": "Approve match analysis",
     "reject_match": "Reject match",
@@ -46,7 +47,7 @@ GATE_LABELS = {
     "requirements_review": "Review the discovered application requirements.",
     "package_review": "Review and approve the generated application package.",
     "fill_plan_review": "Review every fill-plan field before Browser Use can receive it.",
-    "browser_use_launch": "Browser Use is ready, but launch requires explicit approval.",
+    "browser_use_launch": "Browser Use apply assistance is ready to launch or already running.",
 }
 
 
@@ -163,8 +164,9 @@ def build_agent_response(
 
     if _asks_for_safety_boundary(user_message):
         lines.append(
-            "Safety boundary: I will not submit applications, automate login or captcha "
-            "handling, message recruiters, or launch Browser Use without explicit approval."
+            "Safety boundary: Browser launch and final submission require explicit "
+            "per-job session permission. I will not automate login, MFA, captcha "
+            "handling, account creation, recruiter messaging, or invented candidate data."
         )
 
     return AgentChatMessage(

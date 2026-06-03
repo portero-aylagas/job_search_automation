@@ -5,6 +5,16 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 
 from src.agents.karen.policy import PermissionLevel
+from src.schemas import AgentJobPermissionGrant
+
+
+class KarenPermissionGrantIntent(BaseModel):
+    """Structured intent to grant selected-job permissions for this session."""
+
+    grant_selected_job_permissions: bool = False
+    allow_app_mutations: bool = False
+    allow_browser_launch: bool = False
+    allow_final_submission_permission: bool = False
 
 
 class KarenIntentResponse(BaseModel):
@@ -16,6 +26,7 @@ class KarenIntentResponse(BaseModel):
     auto_execute: bool = False
     target_job_id: str | None = None
     route_page: str | None = None
+    permission_grant: KarenPermissionGrantIntent | None = None
     safety_reason: str = ""
 
     @field_validator("proposed_tool", "target_job_id", "route_page", mode="before")
@@ -40,6 +51,7 @@ class KarenContext(BaseModel):
     pending_gate: str | None = None
     next_allowed_actions: list[str] = Field(default_factory=list)
     recent_transcript_summary: str = ""
+    job_permissions: dict[str, AgentJobPermissionGrant] = Field(default_factory=dict)
 
     @field_validator("selected_job_id", mode="before")
     @classmethod
@@ -68,4 +80,3 @@ class KarenChatTurnResult(BaseModel):
     intent: KarenIntentResponse | None = None
     tool_result: KarenToolResult | None = None
     context: KarenContext
-

@@ -25,6 +25,10 @@ from src.application_fill_plan import (
     mark_application_fill_plan_reviewed,
     save_application_fill_plan,
 )
+from src.application_fill_plan_review import (
+    apply_fill_plan_review_submission,
+    build_fill_plan_review_submission_from_defaults,
+)
 from src.application_package import (
     generate_application_package,
     reject_application_package,
@@ -349,6 +353,8 @@ def _execute_action_node(state: AgentGraphState) -> AgentGraphState:
     try:
         if action == "continue":
             events.extend(_execute_continue_until_gate(state))
+        elif action == "continue_to_apply_assistance":
+            events.extend(_execute_continue_to_apply_assistance(state))
         else:
             events.append(_execute_single_action(state, action))
     except (RuntimeError, ValueError) as exc:
@@ -403,6 +409,24 @@ def _execute_continue_until_gate(state: AgentGraphState) -> list[ActionResult]:
         events.append(event)
         current_state.update(_load_context_node(current_state))
         if event.gate:
+            break
+    return events
+
+
+def _execute_continue_to_apply_assistance(state: AgentGraphState) -> list[ActionResult]:
+    events: list[ActionResult] = []
+    current_state = dict(state)
+    for _ in range(12):
+        snapshot = _build_workflow_state(current_state)
+        if snapshot.blockers and not _has_regeneration_action(snapshot):
+            break
+        next_action = _next_permissioned_apply_action(current_state, snapshot)
+        if next_action is None:
+            break
+        event = _execute_single_action(current_state, next_action)
+        events.append(event)
+        current_state.update(_load_context_node(current_state))
+        if event.action == "launch_browser_use":
             break
     return events
 
@@ -638,7 +662,9 @@ def _generate_fill_plan_action(state: AgentGraphState) -> ActionResult:
 
 def _review_fill_plan_action(state: AgentGraphState) -> ActionResult:
     fill_plan = _require_fill_plan(state)
-    reviewed = mark_application_fill_plan_reviewed(fill_plan)
+    submission = build_fill_plan_review_submission_from_defaults(fill_plan)
+    edited = apply_fill_plan_review_submission(fill_plan, submission)
+    reviewed = mark_application_fill_plan_reviewed(edited)
     path = save_application_fill_plan(state["base_dir"], reviewed)
     _update_tracker_status(state["base_dir"], reviewed.job_id, "ready_to_apply")
     return ActionResult(
@@ -688,6 +714,7 @@ def _launch_browser_use_action(state: AgentGraphState) -> ActionResult:
         requirements=requirements,
         package=package,
     )
+    _update_tracker_status(state["base_dir"], job.id, "agent_assistance_attempted")
     return ActionResult(
         action="launch_browser_use",
         result="browser_use_started",
@@ -729,6 +756,9 @@ def _current_blockers(state: AgentGraphState) -> list[str]:
         return blockers
     if job is None:
         blockers.append("Reviewed normalized job data is missing.")
+        return blockers
+    if _selected_job_is_archived(state):
+        blockers.append("Restore this archived job before running workflow actions.")
         return blockers
     if candidate_profile is not None:
         profile_errors = validate_candidate_profile(candidate_profile)
@@ -841,6 +871,46 @@ def _next_auto_action(
     return "prepare_apply_assistance"
 
 
+def _next_permissioned_apply_action(
+    state: AgentGraphState,
+    snapshot: AgentWorkflowState,
+) -> str | None:
+    if snapshot.blockers and not _only_regeneration_blockers(snapshot.blockers):
+        return None
+    job = state.get("job")
+    if job is None:
+        return None
+
+    requirements = state.get("requirements")
+    if requirements is None:
+        return "discover_requirements"
+    if requirements.review_status != "reviewed":
+        if requirements.status == "discovered" and requirements.job_preserving:
+            return "review_requirements"
+        return None
+
+    package = state.get("package")
+    if package is None:
+        return "generate_package"
+    if package.status != "approved":
+        if _package_status_can_be_permission_approved(package.status):
+            return "approve_package"
+        return None
+
+    fill_plan = state.get("fill_plan")
+    if fill_plan is None:
+        return "generate_fill_plan"
+    if fill_plan.review_status != "reviewed":
+        return "review_fill_plan"
+    return "launch_browser_use"
+
+
+def _package_status_can_be_permission_approved(status: str) -> bool:
+    """Return whether a granted apply flow may mark the package reviewed."""
+
+    return status in {"draft", "needs_review", "regenerated", "manually_edited"}
+
+
 def _build_minimal_state(state: AgentGraphState) -> AgentWorkflowState:
     return AgentWorkflowState(
         session_id=state["session_id"],
@@ -901,10 +971,22 @@ def _load_application_fill_plan(
 
 
 def _require_job(state: AgentGraphState) -> JobListing:
+    if _selected_job_is_archived(state):
+        raise ValueError("Restore this archived job before running workflow actions.")
     job = state.get("job")
     if job is None:
         raise ValueError("Reviewed normalized job data is missing.")
     return job
+
+
+def _selected_job_is_archived(state: AgentGraphState) -> bool:
+    selected_job_id = state.get("selected_job_id")
+    if not selected_job_id:
+        return False
+    return any(
+        record.job_id == selected_job_id and bool(record.archived_at)
+        for record in state.get("tracker_records", [])
+    )
 
 
 def _require_analysis(state: AgentGraphState) -> MatchAnalysis:

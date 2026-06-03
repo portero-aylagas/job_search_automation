@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from src.paths import jobs_index_paths, runtime_jobs_index_path
-from src.storage import load_model, save_model
+from src.paths import (
+    AGENT_SESSIONS_DIR,
+    OUTPUTS_DIR,
+    agent_session_chat_path,
+    agent_session_events_path,
+    jobs_index_paths,
+    runtime_job_dir,
+    runtime_jobs_index_path,
+)
+from src.storage import load_jsonl, load_model, save_model
 
 if TYPE_CHECKING:
     from src.schemas import JobListing, TrackerRecord
@@ -59,7 +70,7 @@ TRACKER_STATUS_LABELS: dict[TrackerStatus, str] = {
     "new": "New",
     "analyzed": "Analyzed",
     "interesting": "Interesting",
-    "rejected_by_user": "Rejected by user",
+    "rejected_by_user": "Not interested",
     "application_draft": "Application Draft",
     "ready_to_apply": "Ready to Apply",
     "agent_assistance_attempted": "Agent Assistance Attempted",
@@ -96,7 +107,8 @@ TRACKER_STATUS_FILTERS: tuple[dict[str, object], ...] = (
     {"label": "Agent Attempted", "statuses": ["agent_assistance_attempted"]},
     {"label": "Applied", "statuses": ["applied_manually", "applied_with_agent_assistance"]},
     {"label": "Interview / Offer", "statuses": ["interview", "offer"]},
-    {"label": "Closed", "statuses": ["rejected_by_user", "rejected", "closed"]},
+    {"label": "Closed", "statuses": ["rejected", "closed"]},
+    {"label": "Not interested", "statuses": ["rejected_by_user"]},
 )
 
 
@@ -162,6 +174,12 @@ def load_tracker_records(base_dir: Path | str) -> list["TrackerRecord"]:
     return []
 
 
+def active_tracker_records(records: list["TrackerRecord"]) -> list["TrackerRecord"]:
+    """Return records that are still part of the active workflow."""
+
+    return [record for record in records if not record.archived_at]
+
+
 def save_tracker_records(base_dir: Path | str, records: list["TrackerRecord"]) -> Path:
     """Persist tracker records to the canonical runtime jobs index."""
 
@@ -224,6 +242,54 @@ def update_tracker_record(
     raise ValueError(f"Tracker record not found for job {job_id}.")
 
 
+def archive_tracker_record(
+    base_dir: Path | str,
+    job_id: str,
+    *,
+    reason: str = "removed_from_active_jobs",
+) -> list["TrackerRecord"]:
+    """Remove a job from active workflow views without deleting its data."""
+
+    tracker_records = load_tracker_records(base_dir)
+    for record in tracker_records:
+        if record.job_id != job_id:
+            continue
+        record.archived_at = datetime.now(timezone.utc).isoformat()
+        record.archive_reason = reason
+        save_tracker_records(base_dir, tracker_records)
+        return tracker_records
+    raise ValueError(f"Tracker record not found for job {job_id}.")
+
+
+def restore_tracker_record(base_dir: Path | str, job_id: str) -> list["TrackerRecord"]:
+    """Return an archived job to active workflow views."""
+
+    tracker_records = load_tracker_records(base_dir)
+    for record in tracker_records:
+        if record.job_id != job_id:
+            continue
+        record.archived_at = None
+        record.archive_reason = None
+        save_tracker_records(base_dir, tracker_records)
+        return tracker_records
+    raise ValueError(f"Tracker record not found for job {job_id}.")
+
+
+def purge_job_data(base_dir: Path | str, job_id: str) -> list["TrackerRecord"]:
+    """Delete one job's local data, outputs, and job-scoped Karen traces."""
+
+    tracker_records = load_tracker_records(base_dir)
+    remaining_records = [record for record in tracker_records if record.job_id != job_id]
+    if len(remaining_records) == len(tracker_records):
+        raise ValueError(f"Tracker record not found for job {job_id}.")
+
+    save_tracker_records(base_dir, remaining_records)
+    shutil.rmtree(runtime_job_dir(base_dir, job_id), ignore_errors=True)
+    shutil.rmtree(Path(base_dir) / OUTPUTS_DIR / job_id, ignore_errors=True)
+    _redact_job_from_agent_sessions(base_dir, job_id)
+    return remaining_records
+
+
 def update_manual_tracker_status(
     base_dir: Path | str,
     job_id: str,
@@ -235,3 +301,34 @@ def update_manual_tracker_status(
     if next_status not in USER_EDITABLE_TRACKER_STATUSES:
         raise ValueError(f"Status {TRACKER_STATUS_LABELS[next_status]} cannot be set manually.")
     return update_tracker_record(base_dir, job_id, status=next_status)
+
+
+def _redact_job_from_agent_sessions(base_dir: Path | str, job_id: str) -> None:
+    sessions_dir = Path(base_dir) / AGENT_SESSIONS_DIR
+    if not sessions_dir.exists():
+        return
+    for session_dir in sessions_dir.iterdir():
+        if not session_dir.is_dir():
+            continue
+        _remove_job_records_from_jsonl(agent_session_chat_path(base_dir, session_dir.name), job_id)
+        _remove_job_records_from_jsonl(
+            agent_session_events_path(base_dir, session_dir.name),
+            job_id,
+        )
+
+
+def _remove_job_records_from_jsonl(path: Path, job_id: str) -> None:
+    if not path.exists():
+        return
+    kept_records = [
+        record
+        for record in load_jsonl(path)
+        if not isinstance(record, dict) or record.get("job_id") != job_id
+    ]
+    if not kept_records:
+        path.unlink()
+        return
+    with path.open("w", encoding="utf-8") as file:
+        for record in kept_records:
+            json.dump(record, file, ensure_ascii=True)
+            file.write("\n")

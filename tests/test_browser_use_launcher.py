@@ -327,6 +327,21 @@ def test_build_fill_plan_application_task_contains_reviewed_contract_only() -> N
     assert "cv_extracted" not in task
 
 
+def test_build_fill_plan_application_task_final_submit_mode_is_explicit() -> None:
+    default_task = build_fill_plan_application_task(make_fill_plan())
+    final_task = build_fill_plan_application_task(make_fill_plan(), final_submit=True)
+
+    assert "Fill-only mode:" in default_task
+    assert "Never click, press, or activate" in default_task
+    assert "Final-submit mode:" not in default_task
+
+    assert "Final-submit mode:" in final_task
+    assert "explicit per-job session permission" in final_task
+    assert "you may activate the final submit/apply control once" in final_task
+    assert "Never submit through login, MFA, captcha, account creation" in final_task
+    assert "If any listed required action failed, do not submit" in final_task
+
+
 def test_build_fill_plan_application_task_highlights_true_checkboxes_only() -> None:
     task = build_fill_plan_application_task(make_fill_plan())
 

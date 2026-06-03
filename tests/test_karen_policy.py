@@ -5,6 +5,7 @@ from src.agents.karen.policy import (
     evaluate_karen_tool_request,
 )
 from src.agents.karen.tools import KAREN_TOOL_REGISTRY
+from src.schemas import AgentJobPermissionGrant
 
 
 def test_karen_policy_allows_read_only_without_auto_execute() -> None:
@@ -29,11 +30,87 @@ def test_karen_policy_requires_explicit_intent_for_local_actions() -> None:
     assert decision.allowed is False
     assert "explicit request" in decision.reason
 
+    blocked_without_grant = evaluate_karen_tool_request(
+        tool_name="generate_application_package",
+        permission_level=PermissionLevel.DRAFT_ONLY,
+        auto_execute=True,
+        user_message="Generate the application package now.",
+        selected_job_id="job-1",
+        job_permissions={},
+        requires_job_permission=True,
+    )
+
+    assert blocked_without_grant.allowed is False
+    assert "session grant" in blocked_without_grant.reason
+
     allowed = evaluate_karen_tool_request(
         tool_name="generate_application_package",
         permission_level=PermissionLevel.DRAFT_ONLY,
         auto_execute=True,
         user_message="Generate the application package now.",
+        selected_job_id="job-1",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+    assert allowed.allowed is True
+
+
+def test_karen_policy_allows_explicit_delete_job_request() -> None:
+    decision = evaluate_karen_tool_request(
+        tool_name="delete_job_data",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Delete this job data now.",
+        selected_job_id="job-1",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+
+    assert decision.allowed is True
+
+
+def test_karen_policy_grant_is_job_scoped() -> None:
+    decision = evaluate_karen_tool_request(
+        tool_name="generate_application_package",
+        permission_level=PermissionLevel.DRAFT_ONLY,
+        auto_execute=True,
+        user_message="Generate the application package now.",
+        selected_job_id="job-2",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+
+    assert decision.allowed is False
+    assert "session grant" in decision.reason
+
+
+def test_karen_policy_continue_to_apply_requires_app_and_browser_permission() -> None:
+    blocked_with_app_only = evaluate_karen_tool_request(
+        tool_name="continue_to_apply_assistance",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Do all steps needed to apply.",
+        selected_job_id="job-1",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+
+    assert blocked_with_app_only.allowed is False
+    assert "app mutations and Browser Use launch" in blocked_with_app_only.reason
+
+    allowed = evaluate_karen_tool_request(
+        tool_name="continue_to_apply_assistance",
+        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
+        auto_execute=True,
+        user_message="Do all steps needed to apply.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+            )
+        },
+        requires_job_permission=True,
     )
 
     assert allowed.allowed is True
@@ -45,10 +122,13 @@ def test_karen_policy_blocks_review_gate_actions_from_chat() -> None:
         permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
         auto_execute=True,
         user_message="Approve this package.",
+        selected_job_id="job-1",
+        job_permissions={},
+        requires_job_permission=True,
     )
 
     assert decision.allowed is False
-    assert "free-form chat" in decision.reason
+    assert "session grant" in decision.reason
 
 
 def test_karen_policy_blocks_browser_use_launch_from_chat() -> None:
@@ -60,12 +140,58 @@ def test_karen_policy_blocks_browser_use_launch_from_chat() -> None:
     )
 
     assert decision.allowed is False
-    assert "free-form chat" in decision.reason
+    assert "Browser Use launch" in decision.reason
 
 
 def test_karen_policy_blocks_final_submission_and_unsafe_actions() -> None:
+    final_submission = evaluate_karen_tool_request(
+        tool_name="final_submission",
+        permission_level=PermissionLevel.FINAL_SUBMISSION,
+        auto_execute=True,
+        user_message="Submit the application now.",
+        selected_job_id="job-1",
+        job_permissions={"job-1": AgentJobPermissionGrant(allow_app_mutations=True)},
+        requires_job_permission=True,
+    )
+    assert final_submission.allowed is False
+    assert "final submission enabled" in final_submission.reason
+
+    allowed_final_submission = evaluate_karen_tool_request(
+        tool_name="final_submission",
+        permission_level=PermissionLevel.FINAL_SUBMISSION,
+        auto_execute=True,
+        user_message="Submit the application now.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+                allow_final_submission=True,
+            )
+        },
+        requires_job_permission=True,
+    )
+    assert allowed_final_submission.allowed is True
+
+    blocked_without_submit_intent = evaluate_karen_tool_request(
+        tool_name="final_submission",
+        permission_level=PermissionLevel.FINAL_SUBMISSION,
+        auto_execute=True,
+        user_message="Apply to this job now.",
+        selected_job_id="job-1",
+        job_permissions={
+            "job-1": AgentJobPermissionGrant(
+                allow_app_mutations=True,
+                allow_browser_launch=True,
+                allow_final_submission=True,
+            )
+        },
+        requires_job_permission=True,
+    )
+    assert blocked_without_submit_intent.allowed is False
+    assert "explicit submit" in blocked_without_submit_intent.reason
+
     for tool_name in (
-        "final_submission",
         "login_automation",
         "captcha_handling",
         "recruiter_messaging",
