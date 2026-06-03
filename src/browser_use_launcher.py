@@ -212,6 +212,19 @@ def build_fill_plan_application_task(
 ) -> str:
     """Return the guarded Browser Use task for a reviewed application fill plan."""
 
+    execution_payload = _build_fill_plan_execution_payload(fill_plan)
+    payload = json.dumps(execution_payload, indent=2, ensure_ascii=True)
+    mode_instructions = (
+        _final_submit_mode_instructions(fill_plan)
+        if final_submit
+        else _fill_only_mode_instructions(fill_plan)
+    )
+    return _render_fill_plan_application_task(payload, mode_instructions)
+
+
+def _build_fill_plan_execution_payload(fill_plan: ApplicationFillPlan) -> dict[str, object]:
+    """Return the reviewed fill-plan payload grouped by Browser Use action intent."""
+
     field_values_before_upload = _dedupe_browser_action_fields(
         [
             field
@@ -261,13 +274,11 @@ def build_fill_plan_application_task(
         ],
         "submit_guard_labels": fill_plan.submit_guard_labels,
     }
-    payload = json.dumps(execution_payload, indent=2, ensure_ascii=True)
+    return execution_payload
 
-    mode_instructions = (
-        _final_submit_mode_instructions(fill_plan)
-        if final_submit
-        else _fill_only_mode_instructions(fill_plan)
-    )
+
+def _render_fill_plan_application_task(payload: str, mode_instructions: str) -> str:
+    """Render Browser Use instructions from an already serialized fill-plan payload."""
 
     return f"""
 Use the job application page already open in the browser and execute only this
