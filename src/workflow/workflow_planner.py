@@ -95,27 +95,28 @@ def planner_next_action(state, intent: WorkflowIntent) -> PlannerDecision:
             blockers=["Select a job before running the workflow."],
         )
 
+    if state.pending_gate in REVIEW_ACTION_BY_GATE:
+        action_name = REVIEW_ACTION_BY_GATE[state.pending_gate]
+        if _review_gate_can_be_attempted(state, action_name):
+            if _intent_allows_current_review_gate(intent):
+                return PlannerDecision(
+                    status="action",
+                    action_name=action_name,
+                    message=f"Reviewing the current gate: {state.pending_gate}.",
+                    route_hint="Jobs",
+                )
+            return PlannerDecision(
+                status="waiting_for_review",
+                message=f"Waiting for human review at {state.pending_gate}.",
+                route_hint="Jobs",
+            )
+
     if state.current_blockers:
         return PlannerDecision(
             status="blocked",
             message="Karen is blocked by the current workflow state.",
             route_hint=state.route_hint,
             blockers=list(state.current_blockers),
-        )
-
-    if state.pending_gate in REVIEW_ACTION_BY_GATE:
-        action_name = REVIEW_ACTION_BY_GATE[state.pending_gate]
-        if _intent_allows_current_review_gate(intent):
-            return PlannerDecision(
-                status="action",
-                action_name=action_name,
-                message=f"Reviewing the current gate: {state.pending_gate}.",
-                route_hint="Jobs",
-            )
-        return PlannerDecision(
-            status="waiting_for_review",
-            message=f"Waiting for human review at {state.pending_gate}.",
-            route_hint="Jobs",
         )
 
     if intent.goal == "mark_current_gate_reviewed":
@@ -219,6 +220,15 @@ def _intent_allows_current_review_gate(intent: WorkflowIntent) -> bool:
         "prepare_manual_application",
         "apply_without_browser_use",
     }
+
+
+def _review_gate_can_be_attempted(state, action_name: str) -> bool:
+    if not state.current_blockers:
+        return True
+    return (
+        state.pending_gate == "fill_plan_review"
+        and action_name in state.next_allowed_actions
+    )
 
 
 def _intent_is_manual_only(intent: WorkflowIntent) -> bool:

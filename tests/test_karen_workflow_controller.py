@@ -462,14 +462,15 @@ def _minimal_karen_context():
                 fill_plan_review_status="draft",
                 current_blockers=["Save reviewed values for all fields needing answers."],
                 pending_gate="fill_plan_review",
+                next_allowed_actions=["review_fill_plan", "generate_fill_plan"],
                 route_hint="Jobs",
             ),
             workflow_intent(
                 goal="continue_until_blocked",
                 allow_review_gate_crossing=True,
             ),
-            None,
-            "blocked",
+            "review_fill_plan",
+            "action",
         ),
         (
             CurrentWorkflowState(
@@ -519,6 +520,34 @@ def test_workflow_planner_next_actions(
 
     assert decision.status == expected_status
     assert decision.action_name == expected_action
+
+
+def test_workflow_planner_waits_at_blocked_fill_plan_gate_without_review_permission() -> None:
+    state = CurrentWorkflowState(
+        selected_job_id="job-1",
+        job_exists=True,
+        requirements_exists=True,
+        requirements_review_status="reviewed",
+        package_exists=True,
+        package_status="approved",
+        fill_plan_exists=True,
+        fill_plan_review_status="draft",
+        current_blockers=["Save reviewed values for all previously blocked fields."],
+        pending_gate="fill_plan_review",
+        next_allowed_actions=["review_fill_plan", "generate_fill_plan"],
+        route_hint="Jobs",
+    )
+
+    decision = planner_next_action(
+        state,
+        workflow_intent(
+            goal="continue_until_blocked",
+            allow_review_gate_crossing=False,
+        ),
+    )
+
+    assert decision.status == "waiting_for_review"
+    assert decision.action_name is None
 
 
 def test_karen_generates_package_by_calling_shared_service(
@@ -672,9 +701,11 @@ def test_karen_blocks_fill_plan_answers_and_routes_to_jobs(tmp_path: Path) -> No
     )
 
     assert state.pending_gate == "fill_plan_review"
-    assert result.status == "blocked"
+    assert state.next_allowed_actions[0] == "review_fill_plan"
+    assert result.status == "needs_input"
     assert result.route_hint == "Jobs"
-    assert "fields needing answers" in result.blockers[0]
+    assert result.executed_actions == ["review_fill_plan"]
+    assert "Provide values for required fields" in result.message
     fill_plan = load_application_fill_plan(tmp_path, job.id)
     assert fill_plan is not None
     assert fill_plan.review_status == "draft"
@@ -683,20 +714,6 @@ def test_karen_blocks_fill_plan_answers_and_routes_to_jobs(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     ("fill_plan", "expected_reason"),
     [
-        (
-            ApplicationFillPlan(
-                job_id="placeholder",
-                apply_url="https://example.com/apply/automation-engineer",
-                review_status="draft",
-                blocked_fields=[
-                    ApplicationFillBlockedField(
-                        label="Voluntary disclosure",
-                        reason="Requires a user decision.",
-                    )
-                ],
-            ),
-            "previously blocked fields",
-        ),
         (
             ApplicationFillPlan(
                 job_id="placeholder",
@@ -757,12 +774,103 @@ def test_karen_blocks_fill_plan_human_input_boundaries(
         ),
     )
 
-    assert result.status == "blocked"
+    assert result.status == "needs_input"
     assert result.route_hint == "Jobs"
+    assert result.executed_actions == ["review_fill_plan"]
     assert any(expected_reason in blocker for blocker in result.blockers)
     saved = load_application_fill_plan(tmp_path, job.id)
     assert saved is not None
     assert saved.review_status == "draft"
+
+
+def test_karen_reports_backend_fill_plan_review_failure_after_attempt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_application_fill_plan(
+        tmp_path,
+        ApplicationFillPlan(
+            job_id=job.id,
+            apply_url=str(job.apply_url),
+            review_status="draft",
+            blocked_fields=[
+                ApplicationFillBlockedField(
+                    label="Voluntary disclosure",
+                    reason="Requires a user decision.",
+                )
+            ],
+        ),
+    )
+    calls: list[str] = []
+
+    def fail_review_fill_plan(base_dir, job_id, **kwargs):
+        calls.append(job_id)
+        raise job_services.JobWorkflowServiceError(
+            "Save reviewed values for all previously blocked fields."
+        )
+
+    monkeypatch.setattr(job_services, "review_fill_plan", fail_review_fill_plan)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-fill-plan-review-backend-blocker",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="continue_until_blocked",
+            allow_review_gate_crossing=True,
+        ),
+    )
+
+    assert calls == [job.id]
+    assert result.executed_actions == ["review_fill_plan"]
+    assert result.status == "needs_input"
+    assert result.route_hint == "Jobs"
+    assert "previously blocked fields" in result.message
+
+
+def test_karen_does_not_attempt_fill_plan_review_without_permission(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    _, job = setup_profile_and_job(tmp_path)
+    save_reviewed_requirements(tmp_path, job)
+    save_application_package(tmp_path, make_package(job, status="approved"), job)
+    save_application_fill_plan(
+        tmp_path,
+        ApplicationFillPlan(
+            job_id=job.id,
+            apply_url=str(job.apply_url),
+            review_status="draft",
+            blocked_fields=[
+                ApplicationFillBlockedField(
+                    label="Voluntary disclosure",
+                    reason="Requires a user decision.",
+                )
+            ],
+        ),
+    )
+
+    def fail_review_fill_plan(*_args, **_kwargs):
+        raise AssertionError("Karen should not review a fill plan without permission")
+
+    monkeypatch.setattr(job_services, "review_fill_plan", fail_review_fill_plan)
+
+    result = run_karen_workflow_goal(
+        tmp_path,
+        session_id="karen-fill-plan-no-review-permission",
+        selected_job_id=job.id,
+        intent=workflow_intent(
+            goal="continue_until_blocked",
+            allow_review_gate_crossing=False,
+        ),
+    )
+
+    assert result.status == "waiting_for_review"
+    assert result.executed_actions == []
+    assert result.pending_gate == "fill_plan_review"
 
 
 def test_karen_manual_mode_does_not_launch_browser_use(

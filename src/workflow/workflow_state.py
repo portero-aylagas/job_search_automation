@@ -166,6 +166,7 @@ def load_current_workflow_state(
     if fill_review_blockers:
         state.current_blockers = fill_review_blockers
         state.pending_gate = "fill_plan_review"
+        state.next_allowed_actions = ["review_fill_plan", "generate_fill_plan"]
         state.route_hint = "Jobs"
         return state
 
@@ -208,4 +209,3 @@ def _route_for_blockers(blockers: list[str]) -> str | None:
     if "tracker" in text or "archived" in text:
         return "Tracker"
     return "Jobs"
-
