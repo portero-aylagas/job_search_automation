@@ -45,11 +45,11 @@ Do not start new feature phases with web search, browser automation, or external
 - Karen is implemented as the runtime product assistant for the current
   human-gated workflow. Her chat now appears as a persistent app-level side
   panel with selected-job context, pending-gate hints, persisted session
-  transcripts, job-scoped copies, structured event logs, and per-job session
-  permission grants. The top-level `Agent Karen` tab remains as a dashboard for
-  workflow status, blockers, timeline, and static next-action guidance. With a
-  grant, Karen can run job-scoped workflow actions, launch Browser Use, and
-  launch explicit final-submit mode for the selected job; login, MFA, captcha,
+  transcripts, job-scoped copies, structured event logs, and explicit workflow
+  permission flags. The top-level `Agent Karen` tab remains as a dashboard for
+  workflow status, blockers, timeline, and static next-action guidance. With
+  explicit permission, Karen can run registered job-scoped workflow actions and
+  launch Browser Use apply assistance; final submission, login, MFA, captcha,
   account creation, recruiter messaging, and invented candidate data remain out
   of scope.
 - The primary UI has been migrated from Streamlit to React + TypeScript + Vite
@@ -636,7 +636,7 @@ Help the user apply manually using the generated package.
 
 ### Not Allowed
 
-- autonomous or ungranted final submission
+- final submission through Karen
 - login automation
 - captcha handling
 - LinkedIn scraping

@@ -8,18 +8,18 @@ test("top-level navigation renders without a backend server", async ({ page }) =
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Candidate Profile" })).toBeVisible();
-  await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
-  await expect(page.getByPlaceholder("Ask Karen")).toBeVisible();
-  await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
-  for (const name of ["Job Intake", "Jobs", "Tracker", "Monitoring", "Agent Karen"]) {
+  await expect(page.getByRole("complementary", { name: "Karen chat" })).toHaveCount(0);
+  for (const name of ["Job Intake", "Jobs", "Tracker", "Monitoring"]) {
     await page.getByRole("button", { name }).click();
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
-    await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
-    await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
+    if (name === "Jobs") {
+      await expect(page.getByRole("complementary", { name: "Karen chat" })).toBeVisible();
+      await expect(page.getByRole("separator", { name: "Resize Karen panel" })).toBeVisible();
+    } else {
+      await expect(page.getByRole("complementary", { name: "Karen chat" })).toHaveCount(0);
+    }
   }
-  await expect(page.getByRole("heading", { name: "Karen Dashboard" })).toBeVisible();
-  await expect(page.getByPlaceholder("Ask Karen")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Ask Karen" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Agent Karen" })).toHaveCount(0);
 });
 
 test("Job Intake happy path extracts, reviews, and saves a job", async ({ page }) => {
@@ -74,6 +74,8 @@ test("Jobs workspace shows review gates and blocks Apply until ready", async ({ 
 test("mobile viewport collapses Karen into a bottom drawer", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await expect(page.getByRole("complementary", { name: "Karen chat" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Jobs" }).click();
 
   const karenPanel = page.getByRole("complementary", { name: "Karen chat" });
   await expect(karenPanel).toHaveClass(/mobile-closed/);

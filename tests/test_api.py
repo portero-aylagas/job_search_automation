@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import httpx
 import pytest
 
+from src.agent_chat import log_agent_event
+from src.agents.karen.state import KarenContext
 from src.api import create_app
 from src.app_workflow import load_candidate_profile, load_jobs_index, save_candidate_profile
 from src.application_fill_plan import load_application_fill_plan, save_application_fill_plan
@@ -15,7 +19,7 @@ from src.application_package_storage import load_application_package, save_appli
 from src.application_requirements import save_application_requirements
 from src.job_intake import create_job_listing, persist_job_listing
 from src.schemas import (
-    AgentWorkflowState,
+    AgentWorkflowEvent,
     ApplicationArtifact,
     ApplicationFillFieldValue,
     ApplicationFillPlan,
@@ -619,27 +623,62 @@ def test_agent_routes_return_stable_json_shapes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    context = SimpleNamespace(session_id="session-1", selected_job_id="job-1")
-    state = AgentWorkflowState(
-        session_id="session-1",
-        selected_job_id="job-1",
-        blockers=[],
-        next_allowed_actions=["review_requirements"],
+    job = create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
     )
-    monkeypatch.setattr("src.api.build_karen_context", lambda *args, **kwargs: context)
-    monkeypatch.setattr("src.api.run_agent_workflow", lambda *args, **kwargs: state)
-    monkeypatch.setattr("src.api.load_agent_chat_messages", lambda *args, **kwargs: [])
+    persist_job_listing(tmp_path, job)
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-1",
+            job_id=job.id,
+            action="karen_workflow_intent",
+            result="understood",
+            details={"goal": "continue_until_blocked"},
+        ),
+    )
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-1",
+            job_id="other-job",
+            action="review_requirements",
+            result="started",
+        ),
+    )
+    log_agent_event(
+        tmp_path,
+        AgentWorkflowEvent(
+            session_id="session-2",
+            job_id=job.id,
+            action="generate_application_package",
+            result="started",
+        ),
+    )
 
     agent = asyncio.run(api_request(
         tmp_path,
         "GET",
-        "/api/agent?selected_job_id=job-1&session_id=session-1",
+        f"/api/agent?selected_job_id={job.id}&session_id=session-1",
     ))
 
     assert agent.status_code == 200
-    assert set(agent.json()) == {"context", "state", "messages", "action_labels"}
-    assert agent.json()["state"]["selected_job_id"] == "job-1"
+    assert set(agent.json()) == {"context", "state", "messages", "events", "action_labels"}
+    assert agent.json()["state"]["selected_job_id"] == job.id
+    assert agent.json()["state"]["artifacts_present"]["normalized_job"] is True
+    assert [
+        (event["action"], event["result"])
+        for event in agent.json()["events"]
+    ] == [("karen_workflow_intent", "understood")]
 
+    context = KarenContext(
+        session_id="session-1",
+        current_page="Agent Karen",
+        selected_job_id=job.id,
+    )
     chat_result = SimpleNamespace(
         context=context,
         intent=None,
@@ -655,8 +694,178 @@ def test_agent_routes_return_stable_json_shapes(
     ))
 
     assert chat.status_code == 200
-    assert set(chat.json()) == {"context", "intent", "tool_result"}
+    assert set(chat.json()) == {"context", "intent", "tool_result", "run", "run_id", "status"}
     assert chat.json()["context"]["session_id"] == "session-1"
+    assert chat.json()["status"] == "running"
+
+
+def test_agent_chat_returns_before_background_karen_turn_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started = Event()
+    release = Event()
+    finished = Event()
+
+    def slow_chat_turn(*_args, **_kwargs):
+        started.set()
+        release.wait(timeout=2)
+        finished.set()
+        return SimpleNamespace(
+            assistant_message="Done.",
+            context=KarenContext(
+                session_id="session-1",
+                current_page="Agent Karen",
+                selected_job_id="job-1",
+            ),
+            intent=None,
+            tool_result=SimpleNamespace(status="done"),
+        )
+
+    monkeypatch.setattr("src.api.process_karen_chat_turn", slow_chat_turn)
+
+    async def exercise() -> None:
+        app = create_app(tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            before = time.monotonic()
+            response = await client.post(
+                "/api/agent/chat",
+                json={
+                    "message": "run a long workflow",
+                    "selected_job_id": "job-1",
+                    "session_id": "session-1",
+                },
+            )
+            elapsed = time.monotonic() - before
+
+            assert response.status_code == 200
+            assert elapsed < 0.5
+            assert response.json()["status"] == "running"
+            assert response.json()["run_id"]
+            assert not finished.is_set()
+
+            release.set()
+            for _ in range(20):
+                run_response = await client.get(f"/api/agent/runs/{response.json()['run_id']}")
+                if run_response.json()["run"]["status"] == "completed":
+                    break
+                await asyncio.sleep(0.05)
+            assert finished.is_set()
+            assert run_response.json()["run"]["status"] == "completed"
+
+    asyncio.run(exercise())
+
+
+def test_agent_run_endpoint_shows_progress_while_background_turn_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    started = Event()
+    release = Event()
+
+    def slow_progress_turn(base_dir, **kwargs):
+        workflow_run_id = kwargs["workflow_run_id"]
+        log_agent_event(
+            base_dir,
+            AgentWorkflowEvent(
+                event_type="workflow_action",
+                session_id=kwargs["session_id"],
+                job_id=kwargs["selected_job_id"],
+                run_id=workflow_run_id,
+                action="action_1",
+                label="Action 1",
+                result="started",
+                status="running",
+                message="Action 1 started.",
+                details={"workflow_run_id": workflow_run_id, "step_index": 0},
+            ),
+        )
+        started.set()
+        release.wait(timeout=2)
+        log_agent_event(
+            base_dir,
+            AgentWorkflowEvent(
+                event_type="workflow_action",
+                session_id=kwargs["session_id"],
+                job_id=kwargs["selected_job_id"],
+                run_id=workflow_run_id,
+                action="action_1",
+                label="Action 1",
+                result="done",
+                status="completed",
+                message="Action 1 completed.",
+                details={"workflow_run_id": workflow_run_id, "step_index": 0},
+            ),
+        )
+        log_agent_event(
+            base_dir,
+            AgentWorkflowEvent(
+                event_type="workflow_action",
+                session_id=kwargs["session_id"],
+                job_id=kwargs["selected_job_id"],
+                run_id=workflow_run_id,
+                action="action_2",
+                label="Action 2",
+                result="started",
+                status="running",
+                message="Action 2 started.",
+                details={"workflow_run_id": workflow_run_id, "step_index": 1},
+            ),
+        )
+        return SimpleNamespace(
+            assistant_message="Workflow complete.",
+            context=KarenContext(
+                session_id=kwargs["session_id"],
+                current_page="Agent Karen",
+                selected_job_id=kwargs["selected_job_id"],
+            ),
+            intent=None,
+            tool_result=SimpleNamespace(status="done"),
+        )
+
+    monkeypatch.setattr("src.api.process_karen_chat_turn", slow_progress_turn)
+
+    async def exercise() -> None:
+        app = create_app(tmp_path)
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/api/agent/chat",
+                json={
+                    "message": "run workflow",
+                    "selected_job_id": "job-1",
+                    "session_id": "session-1",
+                },
+            )
+            run_id = response.json()["run_id"]
+            assert started.wait(timeout=1)
+
+            mid_run = await client.get(f"/api/agent/runs/{run_id}")
+            assert mid_run.json()["run"]["status"] == "running"
+            assert mid_run.json()["run"]["current_action"] == "action_1"
+            assert [
+                (event["action"], event["status"])
+                for event in mid_run.json()["events"]
+            ] == [("action_1", "running")]
+
+            release.set()
+            for _ in range(20):
+                final_run = await client.get(f"/api/agent/runs/{run_id}")
+                if final_run.json()["run"]["status"] == "completed":
+                    break
+                await asyncio.sleep(0.05)
+            assert final_run.json()["run"]["status"] == "completed"
+            assert [
+                (event["action"], event["status"])
+                for event in final_run.json()["events"]
+            ] == [
+                ("action_1", "running"),
+                ("action_1", "completed"),
+                ("action_2", "running"),
+            ]
+
+    asyncio.run(exercise())
 
 
 async def api_request(

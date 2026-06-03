@@ -26,10 +26,12 @@ AGENT_SESSION_FILENAME = "session.json"
 AGENT_CHAT_FILENAME = "chat.jsonl"
 AGENT_JOB_CHAT_FILENAME = "agent_chat.jsonl"
 AGENT_EVENTS_FILENAME = "events.jsonl"
+AGENT_RUN_FILENAME = "run.json"
 
 CV_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "cv"
 OPTIONAL_DOCUMENT_UPLOAD_DIR = RUNTIME_DATA_DIR / "candidate_profile" / "optional_documents"
 AGENT_SESSIONS_DIR = RUNTIME_DATA_DIR / "agent_sessions"
+AGENT_RUNS_DIR = RUNTIME_DATA_DIR / "agent_runs"
 
 
 def candidate_profile_path(base_dir: Path | str) -> Path:
@@ -232,6 +234,12 @@ def agent_session_events_path(base_dir: Path | str, session_id: str) -> Path:
     """Return the JSONL workflow event path for one agent session."""
 
     return agent_session_dir(base_dir, session_id) / AGENT_EVENTS_FILENAME
+
+
+def agent_run_path(base_dir: Path | str, run_id: str) -> Path:
+    """Return the persisted status path for one Karen workflow run."""
+
+    return Path(base_dir) / AGENT_RUNS_DIR / run_id / AGENT_RUN_FILENAME
 
 
 def job_agent_chat_path(base_dir: Path | str, job_id: str) -> Path:

@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.agents.karen.policy import PermissionLevel
 from src.schemas import AgentJobPermissionGrant
+from src.workflow.workflow_planner import WorkflowIntent
+
+KarenWorkflowIntent = WorkflowIntent
 
 
 class KarenPermissionGrantIntent(BaseModel):
@@ -14,13 +17,13 @@ class KarenPermissionGrantIntent(BaseModel):
     grant_selected_job_permissions: bool = False
     allow_app_mutations: bool = False
     allow_browser_launch: bool = False
-    allow_final_submission_permission: bool = False
 
 
 class KarenIntentResponse(BaseModel):
     """Structured LLM response for one Karen chat turn."""
 
     assistant_message: str
+    workflow_intent: WorkflowIntent | None = None
     proposed_tool: str | None = None
     permission_level: PermissionLevel = PermissionLevel.READ_ONLY
     auto_execute: bool = False
@@ -68,6 +71,11 @@ class KarenToolResult(BaseModel):
     tool_name: str
     status: str
     message: str
+    blockers: list[str] = Field(default_factory=list)
+    executed_actions: list[str] = Field(default_factory=list)
+    pending_gate: str | None = None
+    next_allowed_actions: list[str] = Field(default_factory=list)
+    selected_job_id: str | None = None
     artifact_paths: list[str] = Field(default_factory=list)
     route_hint: str | None = None
     event_details: dict[str, object] = Field(default_factory=dict)

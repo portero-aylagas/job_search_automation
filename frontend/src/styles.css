@@ -242,12 +242,17 @@ label {
 
 .workspace-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(320px, var(--karen-panel-width, 380px), 560px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   width: 100%;
   margin: 0;
-  padding: 1.25rem 0 3rem clamp(1rem, 4vw, 2rem);
+  padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
   align-items: start;
+}
+
+.workspace-layout.with-karen {
+  grid-template-columns: minmax(0, 1fr) clamp(320px, var(--karen-panel-width, 380px), 560px);
+  padding-right: 0;
 }
 
 .page {
@@ -427,6 +432,29 @@ label {
 
 .job-management .split-actions {
   justify-content: space-between;
+}
+
+.job-management-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+}
+
+.job-management-summary > div {
+  min-width: 0;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #fbfcfe;
+  padding: 0.6rem;
+}
+
+.job-management-summary strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.2rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-list-panel {
@@ -766,6 +794,102 @@ summary {
   background: #eaf3ff;
 }
 
+.karen-progress {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #fbfcfe;
+  padding: 0.7rem;
+}
+
+.karen-progress-heading {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.karen-progress-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+
+.karen-progress-dot.active {
+  background: #1f6feb;
+  box-shadow: 0 0 0 0.22rem rgba(31, 111, 235, 0.12);
+}
+
+.karen-progress-row {
+  display: grid;
+  grid-template-columns: 7.4rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  color: #1d2433;
+  font-size: 0.86rem;
+}
+
+.karen-progress-row > span {
+  color: #647085;
+  font-weight: 700;
+}
+
+.karen-progress-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.karen-progress-row ul {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.karen-progress-steps {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.karen-progress-step {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+  min-height: 1.4rem;
+  color: #1d2433;
+  font-size: 0.88rem;
+}
+
+.karen-progress-step > span {
+  color: #647085;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.karen-progress-step.completed > span {
+  color: #16703a;
+}
+
+.karen-progress-step.running > span {
+  color: #1f6feb;
+}
+
+.karen-progress-step.blocked > span,
+.karen-progress-step.needs_input > span,
+.karen-progress-step.refused > span,
+.karen-progress-step.error > span {
+  color: #b42318;
+}
+
+.karen-progress-step strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .karen-chat-form {
   flex: 0 0 auto;
   margin-top: 1rem;
@@ -934,6 +1058,11 @@ summary {
     padding: 1.25rem clamp(1rem, 4vw, 2rem) 3rem;
   }
 
+  .workspace-layout.with-karen {
+    grid-template-columns: 1fr;
+    padding-right: clamp(1rem, 4vw, 2rem);
+  }
+
   .jobs-master-detail {
     grid-template-columns: 1fr;
   }
@@ -1000,7 +1129,9 @@ summary {
   .grid,
   .grid.three,
   .check-grid,
-  .karen-context-summary {
+  .job-management-summary,
+  .karen-context-summary,
+  .karen-progress-row {
     grid-template-columns: 1fr;
   }
 }

@@ -9,8 +9,12 @@ from typing import Any, TypedDict
 import yaml
 
 from src import llm_client
-from src.agent_chat import append_agent_chat_message, log_agent_event
-from src.agent_workflow import AgentWorkflowDependencies
+from src.agent_chat import (
+    ACTION_LABELS,
+    GATE_LABELS,
+    append_agent_chat_message,
+    log_agent_event,
+)
 from src.agents.karen.policy import evaluate_karen_tool_request
 from src.agents.karen.state import (
     KarenChatTurnResult,
@@ -25,6 +29,8 @@ from src.agents.karen.tools import (
 )
 from src.schemas import AgentChatMessage, AgentWorkflowEvent
 from src.services.karen_permission_service import grant_job_session_permission
+from src.workflow.workflow_executor import WorkflowRunResult, run_karen_workflow_goal
+from src.workflow.workflow_planner import WorkflowIntent
 
 KAREN_PROMPTS_PATH = Path(__file__).with_name("prompts.yaml")
 KarenIntentClassifier = Callable[[KarenContext, str], KarenIntentResponse]
@@ -39,7 +45,7 @@ class KarenGraphState(TypedDict, total=False):
     session_id: str | None
     user_message: str
     intent_classifier: KarenIntentClassifier | None
-    dependencies: AgentWorkflowDependencies | None
+    workflow_run_id: str | None
     context: KarenContext
     intent: KarenIntentResponse | None
     tool_result: KarenToolResult | None
@@ -55,7 +61,7 @@ def process_karen_chat_turn(
     user_message: str,
     session_id: str | None = None,
     intent_classifier: KarenIntentClassifier | None = None,
-    dependencies: AgentWorkflowDependencies | None = None,
+    workflow_run_id: str | None = None,
 ) -> KarenChatTurnResult:
     """Persist and process one Karen chat turn."""
 
@@ -66,7 +72,7 @@ def process_karen_chat_turn(
         "session_id": session_id,
         "user_message": user_message,
         "intent_classifier": intent_classifier,
-        "dependencies": dependencies,
+        "workflow_run_id": workflow_run_id,
     }
     graph = build_karen_graph()
     result = graph.invoke(initial_state)
@@ -124,6 +130,29 @@ def classify_karen_intent_with_llm(
     )
 
 
+def classify_karen_workflow_intent_with_llm(
+    context: KarenContext,
+    user_message: str,
+) -> WorkflowIntent:
+    """Classify one user message into a structured workflow goal."""
+
+    prompts = _load_karen_prompts()
+    system_prompt = _prompt(prompts, "runtime_system")
+    user_prompt = _prompt(prompts, "workflow_intent_classification").format(
+        context_json=context.model_dump_json(indent=2),
+        user_message=user_message,
+    )
+    return llm_client.parse_structured_response(
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        text_format=WorkflowIntent,
+        operation="Karen intent classification",
+        profile=llm_client.KAREN_INTENT_PROFILE,
+    )
+
+
 class _SequentialKarenGraph:
     def invoke(self, state: KarenGraphState) -> KarenGraphState:
         next_state = dict(state)
@@ -141,7 +170,6 @@ def _build_context_node(state: KarenGraphState) -> KarenGraphState:
         current_page=state["current_page"],
         selected_job_id=state.get("selected_job_id"),
         session_id=state.get("session_id"),
-        dependencies=state.get("dependencies"),
     )
     return {"context": context}
 
@@ -166,7 +194,7 @@ def _classify_intent_node(state: KarenGraphState) -> KarenGraphState:
     try:
         intent = classifier(context, state["user_message"])
     except RuntimeError as exc:
-        message = _llm_error_message(exc)
+        message = _llm_error_message(exc, context)
         log_agent_event(
             state["base_dir"],
             AgentWorkflowEvent(
@@ -193,6 +221,21 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
     intent = state["intent"]
     if intent is None:
         return {"assistant_message": "Karen could not classify that request."}
+
+    if intent.workflow_intent is not None:
+        workflow_result = run_karen_workflow_goal(
+            state["base_dir"],
+            session_id=context.session_id,
+            selected_job_id=context.selected_job_id,
+            intent=intent.workflow_intent,
+            workflow_run_id=state.get("workflow_run_id"),
+        )
+        tool_result = _workflow_result_to_tool_result(workflow_result)
+        return {
+            "context": context,
+            "tool_result": tool_result,
+            "assistant_message": _workflow_assistant_message(workflow_result),
+        }
 
     tool_name = intent.proposed_tool
     definition = get_karen_tool_definition(tool_name)
@@ -247,9 +290,8 @@ def _apply_policy_and_tools_node(state: KarenGraphState) -> KarenGraphState:
         tool_name,
         target_job_id=intent.target_job_id,
         route_page=intent.route_page,
-        dependencies=state.get("dependencies"),
     )
-    if _should_log_tool_result(definition, tool_result):
+    if _should_log_tool_result(tool_result):
         _log_tool_event(state, tool_result)
     assistant_message = intent.assistant_message
     if state.get("inline_permission_granted") and tool_result.status == "executed":
@@ -302,14 +344,26 @@ def _prompt(prompts: dict[str, Any], name: str) -> str:
     return value
 
 
-def _llm_error_message(exc: RuntimeError) -> str:
+def _llm_error_message(exc: RuntimeError, context: KarenContext) -> str:
     text = str(exc)
+    state_lines = [
+        f"Selected job: {context.selected_job_id or 'None'}.",
+        f"Pending gate: {context.pending_gate or 'None'}.",
+    ]
+    if context.blockers:
+        state_lines.append("Current blockers: " + "; ".join(context.blockers) + ".")
+    if context.next_allowed_actions:
+        state_lines.append(
+            "Next allowed actions: " + "; ".join(context.next_allowed_actions) + "."
+        )
+    state_summary = " ".join(state_lines)
     if "OPENAI_API_KEY" in text:
         return (
             "Karen needs OPENAI_API_KEY to answer chat requests with the configured "
-            "LLM. Your message was saved, and no workflow action was executed."
+            "LLM. Your message was saved, and no workflow action was executed.\n\n"
+            f"{state_summary}"
         )
-    return f"Karen could not process that chat request: {text}"
+    return f"Karen could not process that chat request: {text}\n\n{state_summary}"
 
 
 def _combine_messages(primary: str, secondary: str) -> str:
@@ -322,12 +376,80 @@ def _combine_messages(primary: str, secondary: str) -> str:
     return f"{primary_text}\n\n{secondary_text}"
 
 
-def _should_log_tool_result(
-    definition: object,
-    tool_result: KarenToolResult,
-) -> bool:
-    if getattr(definition, "workflow_action", None):
-        return False
+def _workflow_assistant_message(result: WorkflowRunResult) -> str:
+    """Return concise chat copy for deterministic workflow-controller turns."""
+
+    lines = [_sentence(result.message)]
+    blocker_text = _joined_blockers(result.blockers)
+    if blocker_text and blocker_text.casefold() not in lines[0].casefold():
+        lines.append(f"Blocked: {blocker_text}")
+
+    next_line = _workflow_next_line(result)
+    if next_line:
+        lines.append(next_line)
+
+    return "\n\n".join(line for line in lines if line)
+
+
+def _workflow_next_line(result: WorkflowRunResult) -> str:
+    if result.executed_actions and result.executed_actions[-1] == "launch_browser_use":
+        return ""
+    if result.status == "waiting_for_review" and result.pending_gate:
+        return f"Needs review: {_gate_label(result.pending_gate)}"
+    if result.status in {"blocked", "needs_input", "refused"}:
+        return ""
+    if result.pending_gate:
+        return f"Next: {_gate_label(result.pending_gate)}"
+    if result.next_allowed_actions:
+        return "Next: " + ", ".join(
+            ACTION_LABELS.get(action, action.replace("_", " ").title())
+            for action in result.next_allowed_actions[:3]
+        )
+    return ""
+
+
+def _gate_label(gate: str) -> str:
+    return GATE_LABELS.get(gate, gate.replace("_", " ").title())
+
+
+def _joined_blockers(blockers: list[str]) -> str:
+    return "; ".join(blocker.strip().rstrip(".") for blocker in blockers if blocker.strip())
+
+
+def _sentence(text: str) -> str:
+    value = text.strip()
+    if not value:
+        return "Workflow checked."
+    if value.endswith((".", "!", "?")):
+        return value
+    return f"{value}."
+
+
+def _workflow_result_to_tool_result(result: WorkflowRunResult) -> KarenToolResult:
+    details: dict[str, object] = {
+        "status": result.status,
+        "executed_actions": result.executed_actions,
+        "pending_gate": result.pending_gate or "",
+        "next_allowed_actions": result.next_allowed_actions,
+        "selected_job_id": result.selected_job_id or "",
+    }
+    details.update(result.event_details)
+    return KarenToolResult(
+        tool_name="workflow_controller",
+        status=result.status,
+        message=result.message,
+        blockers=result.blockers,
+        executed_actions=result.executed_actions,
+        pending_gate=result.pending_gate,
+        next_allowed_actions=result.next_allowed_actions,
+        selected_job_id=result.selected_job_id,
+        artifact_paths=result.artifact_paths,
+        route_hint=result.route_hint,
+        event_details=details,
+    )
+
+
+def _should_log_tool_result(tool_result: KarenToolResult) -> bool:
     return tool_result.status in {
         "answered",
         "error",
@@ -363,7 +485,6 @@ def _apply_inline_permission_grant_if_requested(
         job_id=context.selected_job_id,
         allow_app_mutations=grant_intent.allow_app_mutations,
         allow_browser_launch=grant_intent.allow_browser_launch,
-        allow_final_submission=grant_intent.allow_final_submission_permission,
     )
     granted_context = context.model_copy(
         update={"job_permissions": session.job_permissions},
@@ -381,9 +502,6 @@ def _apply_inline_permission_grant_if_requested(
                 "source": "inline_chat_permission",
                 "allow_app_mutations": grant_intent.allow_app_mutations,
                 "allow_browser_launch": grant_intent.allow_browser_launch,
-                "allow_final_submission": (
-                    grant_intent.allow_final_submission_permission
-                ),
             },
         ),
     )

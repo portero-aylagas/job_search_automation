@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, TypeAdapter
 
 from src.paths import (
+    AGENT_RUNS_DIR,
     AGENT_SESSIONS_DIR,
     DATA_DIR,
     OUTPUTS_DIR,
@@ -39,6 +40,7 @@ def ensure_data_dirs(base_dir: Path | str = ".") -> None:
         RUNTIME_DATA_DIR,
         RUNTIME_JOBS_DIR,
         AGENT_SESSIONS_DIR,
+        AGENT_RUNS_DIR,
         OUTPUTS_DIR,
     ):
         (root / relative_path).mkdir(parents=True, exist_ok=True)

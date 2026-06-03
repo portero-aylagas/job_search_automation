@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -15,6 +15,7 @@ describe("apiRequest", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
+    vi.useRealTimers();
   });
 
   it("returns JSON success payloads", async () => {
@@ -312,6 +313,42 @@ describe("App workflow pages", () => {
     expect(await screen.findAllByText("Not interested")).not.toHaveLength(0);
     expect(screen.getByRole("button", { name: "Remove from active jobs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Permanently delete job data" })).toBeInTheDocument();
+  });
+
+  it("omits repeated job id and suppresses action-style next text after agent apply attempt", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return {
+          body: {
+            records: [{ ...jobRecord(), status: "agent_assistance_attempted" }],
+            status_options: trackerStatusOptions()
+          }
+        };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: attemptedApplyWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentFillPlanState(true) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const jobManagement = await screen.findByLabelText("Job management");
+    expect(within(jobManagement).queryByText("job-1")).not.toBeInTheDocument();
+    expect(within(jobManagement).getByLabelText("Selected job workflow summary")).toHaveTextContent(
+      "Apply assistance attempted"
+    );
+    expect(within(jobManagement).getByLabelText("Selected job workflow summary")).not.toHaveTextContent(
+      "Prepare apply assistance"
+    );
+    expect(screen.getByRole("list", { name: "Selected job workflow steps" })).toHaveTextContent("Agent attempted");
   });
 
   it("shows pending feedback while requirements discovery is running", async () => {
@@ -647,7 +684,7 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Apply to job with AI" })).toBeEnabled());
   });
 
-  it("refreshes Karen workflow summary after fill plan review without a new chat turn", async () => {
+  it("refreshes selected job workflow summary after fill plan review without a new chat turn", async () => {
     let fillPlanReviewed = false;
     mockFetch((url, init) => {
       if (url.endsWith("/api/candidate-profile")) {
@@ -673,14 +710,14 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect((await screen.findAllByText("Approve fill plan")).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers1");
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Blockers1");
 
     await userEvent.click(screen.getByRole("button", { name: "Save fill plan review" }));
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Prepare apply assistance" })).toBeInTheDocument()
+      expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Prepare apply assistance")
     );
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Blockers0");
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Blockers0");
     expect(screen.queryByText("Approve fill plan")).not.toBeInTheDocument();
   });
 
@@ -826,7 +863,7 @@ describe("App workflow pages", () => {
     expect(screen.queryByText("Example Co")).not.toBeInTheDocument();
   });
 
-  it("navigates Karen action shortcuts to the matching workflow section", async () => {
+  it("shows workflow actions in Job Management but not as Karen quick prompts", async () => {
     mockFetch((url) => {
       if (url.endsWith("/api/candidate-profile")) {
         return { body: { profile: candidateProfile(), options: {} } };
@@ -844,13 +881,14 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
-    await userEvent.click((await screen.findAllByRole("button", { name: "Review requirements" }))[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByRole("heading", { name: "Jobs" })).toBeInTheDocument();
-    expect(screen.getByText("Application Requirements")).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Review requirements");
+    expect(screen.getByLabelText("Karen quick prompts")).not.toHaveTextContent("Review requirements");
   });
 
-  it("loads persistent Karen chat, sends chat payloads, and reloads state", async () => {
+  it("loads Jobs Karen chat, sends chat payloads, and reloads state", async () => {
     const chatBodies: unknown[] = [];
     let agentLoads = 0;
     mockFetch((url, init) => {
@@ -859,6 +897,9 @@ describe("App workflow pages", () => {
       }
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
       }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
@@ -872,11 +913,15 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    const karenChat = screen.getByRole("complementary", { name: "Karen chat" });
     expect(screen.getByPlaceholderText("Ask Karen")).toBeInTheDocument();
     expect(screen.getByText("No messages yet.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Karen workflow summary")).toHaveTextContent("Requirements Review");
+    expect(within(karenChat).queryByLabelText("Job")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Selected job workflow summary")).toHaveTextContent("Requirements Review");
     await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "What next?");
     await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
 
@@ -951,6 +996,531 @@ describe("App workflow pages", () => {
     ]);
   });
 
+  it("polls Karen progress without reloading the Jobs workspace while chat is pending", async () => {
+    const chatBodies: unknown[] = [];
+    let resolveChat: (value: MockResponse) => void = () => undefined;
+    const pendingChat = new Promise<MockResponse>((resolve) => {
+      resolveChat = resolve;
+    });
+    let workspaceLoads = 0;
+    let agentLoadsAfterChatStarted = 0;
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/chat")) {
+        chatBodies.push(JSON.parse(String(init?.body)));
+        return pendingChat;
+      }
+      if (url.includes("/api/agent")) {
+        if (chatBodies.length) agentLoadsAfterChatStarted += 1;
+        return {
+          body: agentState(2, [], [
+            {
+              action: "karen_workflow_intent",
+              result: "understood",
+              details: {
+                workflow_run_id: "run-1",
+                goal: "generate_application_data",
+                execution_mode: "manual"
+              }
+            },
+            {
+              action: "generate_application_package",
+              result: "started",
+              event_type: "workflow_action",
+              status: "running",
+              label: "Generate application package",
+              details: {
+                workflow_run_id: "run-1",
+                step_index: 0,
+                action_label: "Generate application package"
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(await screen.findByText("No application requirements have been discovered yet.")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Generate package");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(agentLoadsAfterChatStarted).toBeGreaterThanOrEqual(1), { timeout: 1800 });
+
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Karen is working");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Understood");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate Application Data, Manual");
+    expect(screen.getByLabelText("Karen workflow progress")).toHaveTextContent("Generate application package");
+    expect(screen.getByLabelText("Karen workflow progress")).not.toHaveTextContent("Pending");
+    expect(workspaceLoads).toBe(1);
+    expect(agentLoadsAfterChatStarted).toBeGreaterThanOrEqual(1);
+
+    resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask Karen" })).toBeInTheDocument());
+    const workspaceLoadsAfterResolve = workspaceLoads;
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    expect(workspaceLoads).toBe(workspaceLoadsAfterResolve);
+  });
+
+  it("shows completed and blocked Karen progress events", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [], [
+            {
+              action: "karen_workflow_intent",
+              result: "understood",
+              details: {
+                workflow_run_id: "run-2",
+                goal: "continue_until_blocked",
+                execution_mode: "manual"
+              }
+            },
+            {
+              action: "review_requirements",
+              result: "executed",
+              details: {
+                workflow_run_id: "run-2",
+                step_index: 0,
+                action_label: "Review requirements"
+              }
+            },
+            {
+              action: "review_fill_plan",
+              result: "needs_input",
+              details: {
+                workflow_run_id: "run-2",
+                step_index: 1,
+                action_label: "Approve fill plan",
+                error: "Provide values for required fields."
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const progress = await screen.findByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Stopped at: Approve fill plan");
+    expect(progress).toHaveTextContent("Completed");
+    expect(progress).toHaveTextContent("Review requirements");
+    expect(progress).toHaveTextContent("Blocked");
+    expect(progress).toHaveTextContent("Approve fill plan: Provide values for required fields.");
+  });
+
+  it("polls a Karen run after chat returns a run id", async () => {
+    const runRequests: string[] = [];
+    mockFetch((url, init) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-1")) {
+        runRequests.push(url);
+        return {
+          body: runState("running", [
+            {
+              action: "review_requirements",
+              event_type: "workflow_action",
+              run_id: "run-1",
+              result: "started",
+              status: "running",
+              label: "Review application requirements",
+              details: { workflow_run_id: "run-1", step_index: 0 }
+            }
+          ])
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        expect(JSON.parse(String(init?.body)).message).toBe("Apply with browser use");
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-1",
+            status: "running",
+            run: { run_id: "run-1", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Apply with browser use");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(runRequests.length).toBeGreaterThan(0));
+    const progress = screen.getByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Karen is working on: Review application requirements");
+    expect(progress).toHaveTextContent("Review application requirements");
+  });
+
+  it("updates Karen progress across polling responses before completion", async () => {
+    let runPolls = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-progress")) {
+        runPolls += 1;
+        if (runPolls === 1) {
+          return {
+            body: runState("running", [
+              karenRunEvent("review_requirements", "Review application requirements", "running", 0)
+            ])
+          };
+        }
+        if (runPolls === 2) {
+          return {
+            body: runState("running", [
+              karenRunEvent("review_requirements", "Review application requirements", "completed", 0),
+              karenRunEvent("generate_application_package", "Generate application package", "running", 1)
+            ])
+          };
+        }
+        return {
+          body: runState("completed", [
+            karenRunEvent("review_requirements", "Review application requirements", "completed", 0),
+            karenRunEvent("generate_application_package", "Generate application package", "completed", 1)
+          ])
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-progress",
+            status: "running",
+            run: { run_id: "run-progress", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Continue workflow");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    expect(await screen.findByLabelText("Karen workflow progress")).toHaveTextContent(
+      "Karen is working on: Review application requirements"
+    );
+    await waitFor(
+      () => {
+        const progress = screen.getByLabelText("Karen workflow progress");
+        expect(progress).toHaveTextContent("✓Review application requirements");
+        expect(progress).toHaveTextContent("▶Generate application package");
+      },
+      { timeout: 2500 }
+    );
+    expect(runPolls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("reloads the visible Jobs workspace after a completed Karen action refresh event", async () => {
+    let runPolls = 0;
+    let workspaceLoads = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-live-refresh")) {
+        runPolls += 1;
+        if (runPolls === 1) {
+          return {
+            body: runState("running", [
+              karenRunEvent("generate_application_package", "Generate application package", "running", 0, "run-live-refresh")
+            ], "run-live-refresh")
+          };
+        }
+        return {
+          body: runState("running", [
+            karenRunEvent(
+              "generate_application_package",
+              "Generate application package",
+              "completed",
+              0,
+              "run-live-refresh",
+              ["job_workspace"]
+            )
+          ], "run-live-refresh")
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-live-refresh",
+            status: "running",
+            run: { run_id: "run-live-refresh", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    expect(await screen.findByText("No application requirements have been discovered yet.")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Generate package");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(workspaceLoads).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+    expect(screen.getByText("Ready summary")).toBeInTheDocument();
+    expect(runPolls).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does not reload the workspace twice for a duplicate Karen refresh event", async () => {
+    let runPolls = 0;
+    let workspaceLoads = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-duplicate-refresh")) {
+        runPolls += 1;
+        return {
+          body: runState("running", [
+            karenRunEvent(
+              "generate_fill_plan",
+              "Generate fill plan",
+              runPolls === 1 ? "running" : "completed",
+              0,
+              "run-duplicate-refresh",
+              runPolls === 1 ? [] : ["job_workspace"]
+            )
+          ], "run-duplicate-refresh")
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-duplicate-refresh",
+            status: "running",
+            run: { run_id: "run-duplicate-refresh", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await screen.findByText("No application requirements have been discovered yet.");
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Generate fill plan");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(runPolls).toBeGreaterThanOrEqual(3), { timeout: 3200 });
+    expect(workspaceLoads).toBe(2);
+  });
+
+  it("refreshes the Jobs index for a Karen tracker refresh event", async () => {
+    let jobsLoads = 0;
+    let workspaceLoads = 0;
+    let runPolls = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        jobsLoads += 1;
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-tracker-refresh")) {
+        runPolls += 1;
+        return {
+          body: runState("running", [
+            karenRunEvent(
+              "review_application_package",
+              "Review application package",
+              runPolls === 1 ? "running" : "completed",
+              0,
+              "run-tracker-refresh",
+              runPolls === 1 ? [] : ["tracker"]
+            )
+          ], "run-tracker-refresh")
+        };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-tracker-refresh",
+            status: "running",
+            run: { run_id: "run-tracker-refresh", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await screen.findByText("Ready summary");
+    const jobsLoadsBeforeKarenRefresh = jobsLoads;
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Approve package");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    await waitFor(() => expect(runPolls).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+    await waitFor(() => expect(jobsLoads).toBeGreaterThan(jobsLoadsBeforeKarenRefresh));
+    expect(workspaceLoads).toBe(1);
+  });
+
+  it("keeps the terminal Karen run full workspace refresh", async () => {
+    let workspaceLoads = 0;
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()], status_options: trackerStatusOptions() } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        workspaceLoads += 1;
+        return { body: workspaceLoads === 1 ? blockedWorkspace() : readyWorkspace() };
+      }
+      if (url.includes("/api/agent/runs/run-terminal-refresh")) {
+        return { body: runState("completed", [], "run-terminal-refresh") };
+      }
+      if (url.includes("/api/agent/chat")) {
+        return {
+          body: {
+            context: { selected_job_id: "job-1", session_id: "session-1" },
+            run_id: "run-terminal-refresh",
+            status: "running",
+            run: { run_id: "run-terminal-refresh", status: "running" }
+          }
+        };
+      }
+      if (url.includes("/api/agent")) {
+        return { body: agentState(1) };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+    await screen.findByText("No application requirements have been discovered yet.");
+
+    await userEvent.type(screen.getByPlaceholderText("Ask Karen"), "Continue workflow");
+    await userEvent.click(screen.getByRole("button", { name: "Ask Karen" }));
+
+    expect(await screen.findByText("Ready summary")).toBeInTheDocument();
+    expect(workspaceLoads).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders unknown registered action progress generically", async () => {
+    mockFetch((url) => {
+      if (url.endsWith("/api/candidate-profile")) {
+        return { body: { profile: candidateProfile(), options: {} } };
+      }
+      if (url.endsWith("/api/jobs")) {
+        return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: readyWorkspace() };
+      }
+      if (url.includes("/api/agent")) {
+        return {
+          body: agentState(1, [], [
+            {
+              action: "new_future_action",
+              event_type: "workflow_action",
+              result: "started",
+              status: "running",
+              label: "New future action",
+              details: {
+                workflow_run_id: "run-future",
+                step_index: 0
+              }
+            }
+          ])
+        };
+      }
+      return { body: {} };
+    });
+
+    render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
+
+    const progress = await screen.findByLabelText("Karen workflow progress");
+    expect(progress).toHaveTextContent("Karen is working on: New future action");
+  });
+
   it("sends Karen quick prompts without changing typed composer text", async () => {
     const chatBodies: unknown[] = [];
     mockFetch((url, init) => {
@@ -959,6 +1529,9 @@ describe("App workflow pages", () => {
       }
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
       }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
@@ -971,6 +1544,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Draft question");
@@ -994,6 +1568,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
         return pendingChat;
@@ -1005,6 +1582,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Only once");
@@ -1016,7 +1594,6 @@ describe("App workflow pages", () => {
     await waitFor(() => expect(chatBodies).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Asking Karen..." })).toHaveAttribute("aria-busy", "true");
-    expect(screen.getByLabelText("Job")).toBeDisabled();
     expect(screen.getByRole("button", { name: "What should I do next?" })).toBeDisabled();
     expect(composer).toBeDisabled();
     resolveChat({ body: { context: { selected_job_id: "job-1", session_id: "session-1" } } });
@@ -1030,6 +1607,9 @@ describe("App workflow pages", () => {
       }
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
+      }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
       }
       if (url.includes("/api/agent")) {
         return {
@@ -1052,6 +1632,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     expect(await screen.findByText("You")).toBeInTheDocument();
     expect(screen.getByText("Karen")).toBeInTheDocument();
@@ -1074,6 +1655,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent")) {
         return {
           body: agentState(1, [
@@ -1089,6 +1673,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     await screen.findByText("Latest reply");
     await waitFor(() => expect(scrollTo).toHaveBeenCalled());
@@ -1109,6 +1694,9 @@ describe("App workflow pages", () => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
+      if (url.includes("/api/jobs/job-1/workspace")) {
+        return { body: blockedWorkspace() };
+      }
       if (url.includes("/api/agent/chat")) {
         chatBodies.push(JSON.parse(String(init?.body)));
         return { body: { context: { selected_job_id: "job-1", session_id: "session-1" } } };
@@ -1120,6 +1708,7 @@ describe("App workflow pages", () => {
     });
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
 
     const composer = await screen.findByPlaceholderText("Ask Karen");
     await userEvent.type(composer, "Line one{Shift>}{Enter}{/Shift}Line two");
@@ -1130,7 +1719,7 @@ describe("App workflow pages", () => {
     expect(chatBodies[0]).toMatchObject({ message: "Line one\nLine two" });
   });
 
-  it("keeps one Karen chat panel available while switching pages", async () => {
+  it("shows Karen chat only on Jobs while switching pages", async () => {
     mockFetch((url) => {
       if (url.endsWith("/api/candidate-profile")) {
         return { body: { profile: candidateProfile(), options: {} } };
@@ -1158,13 +1747,9 @@ describe("App workflow pages", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Jobs" }));
-    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
-    expect(screen.getByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Agent Karen" }));
-
+    expect(await screen.findByRole("complementary", { name: "Karen chat" })).toBeInTheDocument();
     expect(screen.getAllByPlaceholderText("Ask Karen")).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Ask Karen" })).toHaveLength(1);
     expect(screen.getByRole("log", { name: "Karen transcript" })).toBeInTheDocument();
@@ -1173,8 +1758,9 @@ describe("App workflow pages", () => {
     fireEvent.keyDown(resizeHandle, { key: "ArrowLeft" });
     expect(resizeHandle).toHaveAttribute("aria-valuenow", "400");
     expect(localStorage.getItem("karenPanelWidth")).toBe("400");
-    expect(screen.getByRole("heading", { name: "Karen Dashboard" })).toBeInTheDocument();
-    expect(screen.getAllByText("Review requirements").length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: "Tracker" }));
+    expect(screen.queryByRole("complementary", { name: "Karen chat" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agent Karen" })).not.toBeInTheDocument();
   });
 
   it("shows LangSmith monitoring metrics and CV certificate trace view", async () => {
@@ -1674,6 +2260,16 @@ function readyWorkspace() {
   };
 }
 
+function attemptedApplyWorkspace() {
+  return {
+    ...readyWorkspace(),
+    job: {
+      ...normalizedJob(),
+      status: "agent_assistance_attempted"
+    }
+  };
+}
+
 function packageReadyWorkspace() {
   return {
     ...readyWorkspace(),
@@ -1703,7 +2299,7 @@ function fillPlanReviewWorkspace() {
   };
 }
 
-function agentState(loadCount: number, messages: ApiRecord[] = []) {
+function agentState(loadCount: number, messages: ApiRecord[] = [], events: ApiRecord[] = []) {
   return {
     context: { selected_job_id: "job-1", session_id: "session-1" },
     state: {
@@ -1716,7 +2312,57 @@ function agentState(loadCount: number, messages: ApiRecord[] = []) {
       artifacts_present: { requirements: loadCount > 1 }
     },
     messages,
-    action_labels: { review_requirements: "Review requirements" }
+    events,
+    action_labels: {
+      review_requirements: "Review requirements",
+      generate_application_package: "Generate application package",
+      review_application_package: "Review application package",
+      generate_fill_plan: "Generate fill plan",
+      review_fill_plan: "Review fill plan",
+      launch_browser_use: "Launch Browser Use"
+    }
+  };
+}
+
+function runState(status: string, events: ApiRecord[], runId = "run-1") {
+  return {
+    run: {
+      run_id: runId,
+      session_id: "session-1",
+      job_id: "job-1",
+      status,
+      current_action: events.find((event) => event.status === "running")?.action || null
+    },
+    context: { selected_job_id: "job-1", session_id: "session-1" },
+    state: agentState(1).state,
+    messages: [],
+    events,
+    action_labels: agentState(1).action_labels
+  };
+}
+
+function karenRunEvent(
+  action: string,
+  label: string,
+  status: string,
+  stepIndex: number,
+  runId = "run-progress",
+  refreshScopes: string[] = []
+) {
+  return {
+    action,
+    event_type: "workflow_action",
+    run_id: runId,
+    result: status === "running" ? "started" : "done",
+    status,
+    label,
+    refresh_scopes: refreshScopes,
+    metadata: { refresh_scopes: refreshScopes },
+    details: {
+      workflow_run_id: runId,
+      step_index: stepIndex,
+      refresh_scopes: refreshScopes
+    }
   };
 }
 

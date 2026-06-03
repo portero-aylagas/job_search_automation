@@ -915,6 +915,28 @@ AgentGate = Literal[
     "browser_use_launch",
 ]
 AgentChatRole = Literal["user", "assistant", "system"]
+KarenWorkflowRunStatus = Literal[
+    "queued",
+    "running",
+    "completed",
+    "blocked",
+    "needs_input",
+    "refused",
+    "error",
+]
+
+
+class KarenWorkflowRun(BaseModel):
+    """Persisted status for one observable Karen workflow run."""
+
+    run_id: str
+    session_id: str
+    job_id: str | None = None
+    status: KarenWorkflowRunStatus = "queued"
+    current_action: str | None = None
+    started_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    finished_at: str | None = None
+    final_message: str = ""
 
 
 class AgentWorkflowState(BaseModel):
@@ -941,13 +963,31 @@ class AgentWorkflowEvent(BaseModel):
     """Structured audit event emitted by the agent workflow controller."""
 
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = ""
+    event_type: str = "workflow_action"
     session_id: str
     job_id: str | None = None
+    run_id: str | None = None
     action: str
+    label: str = ""
     result: str
+    status: str = ""
+    message: str = ""
     gate: AgentGate | None = None
+    blockers: list[str] = Field(default_factory=list)
+    route_hint: str | None = None
     artifact_paths: list[str] = Field(default_factory=list)
+    refresh_scopes: list[str] = Field(default_factory=list)
+    planned_actions: list[str] = Field(default_factory=list)
+    next_allowed_actions: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
     details: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _default_created_at(self) -> AgentWorkflowEvent:
+        if not self.created_at:
+            self.created_at = self.timestamp
+        return self
 
     @field_validator("job_id")
     @classmethod
@@ -1008,6 +1048,5 @@ class AgentJobPermissionGrant(BaseModel):
 
     allow_app_mutations: bool = False
     allow_browser_launch: bool = False
-    allow_final_submission: bool = False
     granted_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
