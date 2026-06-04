@@ -59,7 +59,7 @@ International transfer note: OpenAI processing may involve data leaving the EEA 
 | Store candidate profile and CV-derived professional data | Contract, or consent if user-directed self-service | The data is necessary to provide the job-application workflow requested by the user | Yes, if commercial deployment |
 | Extract structured data from CV and supporting documents | Contract | Extraction is necessary to transform user-provided documents into application material | Yes, especially if documents include sensitive data |
 | Generate tailored application material | Contract | Cover letters, form answers, and recruiter messages are the core service output | Low / medium |
-| Candidate/job match analysis and scoring | Contract or legitimate interests | The user requests suitability analysis; however scoring/profiling should be transparent | Yes |
+| Future candidate/job match analysis and scoring | Contract or legitimate interests | Disabled in the current known-job workflow; reassess transparency and profiling controls before enabling suitability analysis | Yes |
 | Store tracker status and notes | Contract | Tracking application state is part of the requested service | Low |
 | Send personal data to OpenAI API | Contract + processor arrangement | Provider processing is necessary for AI-assisted functions, but requires DPA and transfer safeguards | Yes |
 | Reuse profile data across many jobs | Contract, with clear purpose statement | Reuse is expected by the user if the tool is explicitly for repeated applications | Medium |

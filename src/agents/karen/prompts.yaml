@@ -138,7 +138,6 @@ intent_classification: |
   - go_to_job_intake
   - go_to_jobs
   - go_to_tracker
-  - go_to_agent
   - login_automation
   - captcha_handling
   - recruiter_messaging

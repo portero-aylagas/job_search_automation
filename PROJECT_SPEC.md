@@ -232,7 +232,7 @@ tracker progression must not depend on it.
 Future job-discovery or ranking scope may compare a normalized job against the
 candidate profile and experience units.
 
-Possible future output includes:
+Possible future output may include:
 
 - match score
 - matched skills
@@ -242,8 +242,8 @@ Possible future output includes:
 - recommended positioning
 - application strategy
 
-The score should be deterministic where possible. AI may explain the score, but
-should not be the only source of scoring logic.
+Any future score should be deterministic where possible. AI may explain the
+score, but should not be the only source of scoring logic.
 
 ### Application Package Generation
 
@@ -608,18 +608,22 @@ Suggested structure:
 
 ```text
 data/
-├── profile.json
+├── candidate_profile.json
 ├── experience_units.json
 ├── jobs.json
-├── jobs/
-│   └── job_001/
-│       ├── raw_input.txt
-│       ├── normalized_job.json
-│       ├── analysis.json
-│       ├── application_page_snapshot.json
-│       ├── application_requirements.json
-│       ├── application_package.json
-│       └── events.jsonl
+├── runtime/
+│   ├── candidate_profile.json
+│   ├── jobs.json
+│   └── jobs/
+│       └── job_001/
+│           ├── normalized_job.json
+│           ├── application_page_snapshot.json
+│           ├── application_requirements.json
+│           ├── application_fill_plan.json
+│           └── application_package.json
+└── jobs/
+    └── job_001/
+        └── normalized_job.json
 
 outputs/
 └── job_001/

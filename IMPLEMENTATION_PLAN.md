@@ -57,9 +57,11 @@ Do not start new feature phases with web search, browser automation, or external
   first React version is a parity port: it preserves top-level navigation,
   button labels, structured review forms, review gates, and Browser Use launch
   semantics.
-- The React UI uses `assets/karen.png` for Karen's page portrait and browser
-  tab icon. Fresh local state is supported through the API returning an empty
-  draft candidate profile when private runtime files have been cleaned.
+- The React UI uses `assets/karen_office.png` for Karen's side-panel portrait,
+  `assets/karen_emoji.png` for the browser tab icon, and
+  `assets/karen_working.gif` for active-work status. Fresh local state is
+  supported through the API returning an empty draft candidate profile when
+  private runtime files have been cleaned.
 
 ### Not Delivered Yet
 
@@ -262,7 +264,7 @@ normalized job offer.
 ### Data Output
 
 ```text
-data/jobs/<job_id>/normalized_job.json
+data/runtime/jobs/<job_id>/normalized_job.json
 data/runtime/jobs.json
 ```
 
@@ -304,7 +306,7 @@ gate before requirements discovery or package generation.
 - relevant experience units
 - weak points
 
-### Suggested Score
+### Possible Future Score
 
 ```text
 role_match: 30%
@@ -317,7 +319,7 @@ completeness/freshness: 5%
 ### Data Output
 
 ```text
-data/jobs/<job_id>/analysis.json
+data/runtime/jobs/<job_id>/analysis.json
 ```
 
 ### Acceptance Criteria
@@ -374,10 +376,10 @@ units + job data guided by those requirements.
 ### Generated Outputs
 
 ```text
-data/jobs/<job_id>/application_page_snapshot.json
-data/jobs/<job_id>/application_requirements.json
-data/jobs/<job_id>/application_package.json
-data/jobs/<job_id>/application_fill_plan.json
+data/runtime/jobs/<job_id>/application_page_snapshot.json
+data/runtime/jobs/<job_id>/application_requirements.json
+data/runtime/jobs/<job_id>/application_package.json
+data/runtime/jobs/<job_id>/application_fill_plan.json
 outputs/<job_id>/application_package.md
 ```
 
@@ -678,14 +680,11 @@ job_search_automation/
 │   ├── profile.json
 │   ├── experience_units.json
 │   ├── jobs.json
-│   ├── tracker.json
 │   ├── runtime/
 │   │   ├── jobs.json
-│   │   ├── tracker.json
 │   │   └── jobs/
 │   │       └── <job_id>/
 │   │           ├── normalized_job.json
-│   │           ├── analysis.json
 │   │           ├── application_page_snapshot.json
 │   │           ├── application_requirements.json
 │   │           ├── application_fill_plan.json
@@ -693,7 +692,6 @@ job_search_automation/
 │   └── jobs/
 │       └── <job_id>/
 │           ├── normalized_job.json
-│           ├── analysis.json
 │           ├── application_page_snapshot.json
 │           ├── application_requirements.json
 │           ├── application_fill_plan.json

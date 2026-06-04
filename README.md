@@ -493,14 +493,7 @@ closed
 
 ## Installation
 
-Use the repository-local Python environment when available:
-
-```bash
-PATH="$PWD/.conda/bin:$PATH"
-```
-
-If you are setting up from scratch without the repository-local environment,
-create and activate a Python environment.
+Create and activate a Python environment.
 
 ```bash
 python -m venv .venv
@@ -602,7 +595,7 @@ Notes:
 Start the FastAPI backend in one terminal:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Start the Vite frontend in another terminal:
@@ -625,7 +618,7 @@ missing, the API returns an empty draft candidate profile.
 ## Verification
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" make verify
+make verify
 ```
 
 `make verify` runs Ruff linting, including public docstring checks for
@@ -641,8 +634,7 @@ uploaded as the `test-reports` artifact. On pushes to `main`, the latest
 Playwright HTML report is also published to GitHub Pages and linked from the
 `publish-playwright-report` job summary.
 
-If you are using a standard virtual environment instead of the repository-local
-`.conda` environment, activate it first and run `make verify` from the
+Activate your Python environment first, then run `make verify` from the
 repository root.
 
 To reset local private/runtime state while keeping checked-in templates:

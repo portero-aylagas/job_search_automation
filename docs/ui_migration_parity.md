@@ -12,7 +12,7 @@ platform parity, not product redesign.
 | Job Intake | Job Intake tab | Top-level tab preserved. |
 | Jobs | Jobs tab | Top-level tab preserved. |
 | Tracker | Tracker tab | Top-level tab preserved. |
-| Agent Karen | Agent Karen tab plus persistent side panel | Agent Karen tab remains as a dashboard; chat is app-level and persistent. |
+| Agent Karen | Jobs-side Karen panel | Karen is no longer a top-level page; chat and status are scoped to the selected job in Jobs. |
 
 ## Candidate Profile
 
@@ -77,21 +77,22 @@ platform parity, not product redesign.
 | --- | --- | --- |
 | Tracker table | Tracker table | Same tracker record fields shown from JSON data. |
 
-## Agent Karen
+## Karen Side Panel
 
 | Streamlit section/action | React/FastAPI equivalent | Parity notes |
 | --- | --- | --- |
-| Karen portrait/title | Agent Karen dashboard header and side-panel header | Top-level page preserved; chat remains visible across pages. |
-| Job selector | Persistent side-panel job select control | Same selected-job concept without duplicating chat controls in the dashboard. |
-| Workflow status metrics | Dashboard status summary | Job, gate, action count, blockers, errors, and timeline preserved. |
+| Karen portrait/title | Jobs side-panel header | Karen appears only in the Jobs workspace. |
+| Job selector | Side-panel job select control | Same selected-job concept without a separate dashboard. |
+| Workflow status metrics | Side-panel status summary | Job, gate, action count, blockers, errors, and timeline preserved. |
 | Next Actions | Static guidance | Review-gated actions point users to Jobs page panels rather than executing hidden workflow actions. |
-| Chat transcript | Persistent side-panel transcript | Persisted Karen messages rendered across top-level pages. |
-| Ask Karen | Persistent side-panel chat input | Chat turn routed through existing Karen graph. |
+| Chat transcript | Side-panel transcript | Persisted Karen messages render in the selected-job workspace. |
+| Ask Karen | Side-panel chat input | Chat turn routed through existing Karen graph. |
 
 ## Intentional Deviations
 
-- Karen chat intentionally moved from the `Agent Karen` tab into a persistent
-  app-level side panel. The tab remains as a status/dashboard view.
+- Karen chat intentionally moved from the historical `Agent Karen` tab into
+  the Jobs side panel. There is no separate top-level Karen page in the current
+  React UI.
 
 ## Pending Follow-Up Tasks
 

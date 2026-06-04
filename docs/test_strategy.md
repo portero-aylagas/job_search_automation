@@ -53,7 +53,7 @@ Vitest tests in `frontend/src/` cover frontend workflow behavior in jsdom:
 - editable review fields
 - save and error handling
 - job workspace blockers and enabled actions
-- Agent Karen chat request shape and reload behavior
+- Karen side-panel chat request shape and reload behavior
 - `apiRequest` JSON success and error handling
 
 These tests mock `fetch` per test. They should not start FastAPI or Vite, and
@@ -84,6 +84,12 @@ product behavior changed. In particular, do not add tests for:
 - delivery-status prose in planning docs
 - broad source scans that duplicate a more focused architecture contract
 - long exact prompt substrings when a structured payload can be parsed instead
+
+Policy-focused documentation tests are allowed when they prevent a recurring
+source-of-truth regression. For example, it is acceptable to test that the
+public README does not include repo-local Conda setup instructions, because
+`AGENTS.md` owns that agent workflow while the README stays portable for normal
+users.
 
 For Browser Use launcher prompts, prefer parsing the embedded fill-plan JSON and
 asserting the reviewed payload structure plus core safety invariants.

@@ -677,7 +677,7 @@ def test_agent_routes_return_stable_json_shapes(
 
     context = KarenContext(
         session_id="session-1",
-        current_page="Agent Karen",
+        current_page="Jobs",
         selected_job_id=job.id,
     )
     chat_result = SimpleNamespace(
@@ -716,7 +716,7 @@ def test_agent_chat_returns_before_background_karen_turn_finishes(
             assistant_message="Done.",
             context=KarenContext(
                 session_id="session-1",
-                current_page="Agent Karen",
+                current_page="Jobs",
                 selected_job_id="job-1",
             ),
             intent=None,
@@ -775,7 +775,7 @@ def test_agent_chat_reuses_active_run_for_same_session_and_job(
             assistant_message="Done.",
             context=KarenContext(
                 session_id="session-1",
-                current_page="Agent Karen",
+                current_page="Jobs",
                 selected_job_id="job-1",
             ),
             intent=None,
@@ -878,7 +878,7 @@ def test_agent_run_endpoint_shows_progress_while_background_turn_runs(
             assistant_message="Workflow complete.",
             context=KarenContext(
                 session_id=kwargs["session_id"],
-                current_page="Agent Karen",
+                current_page="Jobs",
                 selected_job_id=kwargs["selected_job_id"],
             ),
             intent=None,

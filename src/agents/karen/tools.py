@@ -45,8 +45,7 @@ from src.services.karen_permission_service import (
 from src.tracker_status import tracker_status_label
 from src.workflow.workflow_state import load_current_workflow_state
 
-AGENT_PAGE_NAME = "Agent Karen"
-PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", AGENT_PAGE_NAME, "Agent")
+PAGE_NAMES = ("Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring")
 
 
 @dataclass(frozen=True)
@@ -214,12 +213,6 @@ ROUTE_TOOLS = {
         description="Route to Tracker.",
         route_page="Tracker",
     ),
-    "go_to_agent": KarenToolDefinition(
-        name="go_to_agent",
-        permission_level=PermissionLevel.MUTATES_LOCAL_STATE,
-        description="Route to Karen's Agent tab.",
-        route_page=AGENT_PAGE_NAME,
-    ),
 }
 
 BLOCKED_TOOLS = {
@@ -320,7 +313,7 @@ def execute_karen_tool(
             tool_name=tool_name,
             status="needs_job",
             message=(
-                "Select a job on the Jobs page or Agent Karen tab before asking Karen "
+                "Select a job on the Jobs page before asking Karen "
                 "to run a job-scoped workflow action."
             ),
             route_hint="Jobs",
@@ -519,7 +512,7 @@ def _check_execution_permission(
             message=(
                 "This job-scoped action requires a per-job Karen session grant."
             ),
-            route_hint="Agent Karen",
+            route_hint="Jobs",
         )
     if definition.permission_level in {
         PermissionLevel.DRAFT_ONLY,
@@ -713,7 +706,7 @@ def _recent_transcript_summary(messages: list[object]) -> str:
 
 def _selected_job_summary(base_dir: Path | str, job_id: str | None) -> str:
     if not job_id:
-        return "No job is selected. Select one on the Jobs page or Agent Karen tab."
+        return "No job is selected. Select one on the Jobs page."
 
     job = load_normalized_job(base_dir, job_id)
     if job is None:

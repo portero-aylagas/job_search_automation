@@ -91,18 +91,17 @@ Costs and rate limits should be documented when a live provider is added. Until 
 
 Core outputs:
 
-- normalized job JSON in `data/jobs/<job_id>/normalized_job.json`
+- normalized job JSON in `data/runtime/jobs/<job_id>/normalized_job.json`
 - shared job index in `data/runtime/jobs.json`
-- application page snapshot JSON in `data/jobs/<job_id>/application_page_snapshot.json`
-- application requirements JSON in `data/jobs/<job_id>/application_requirements.json`
-- match analysis JSON in `data/jobs/<job_id>/analysis.json`
-- application package JSON in `data/jobs/<job_id>/application_package.json`
+- application page snapshot JSON in `data/runtime/jobs/<job_id>/application_page_snapshot.json`
+- application requirements JSON in `data/runtime/jobs/<job_id>/application_requirements.json`
+- application package JSON in `data/runtime/jobs/<job_id>/application_package.json`
+- application fill plan JSON in `data/runtime/jobs/<job_id>/application_fill_plan.json`
 - generated Markdown exports in `outputs/<job_id>/`
-- tracker state in `data/runtime/tracker.json`
 
-Runtime `data/` files are the source of truth. Markdown files in `outputs/` are
-derived from structured JSON. Test, mock, example, and template-style data
-belong in `tests/fixtures/`.
+Runtime files under `data/runtime/` are the source of truth. Markdown files in
+`outputs/` are derived from structured JSON. Test, mock, example, and
+template-style data belong in `tests/fixtures/`.
 
 `normalized_job.json` describes the job offer only. The working apply-page
 requirements flow first stores `application_page_snapshot.json` from a read-only
@@ -112,8 +111,10 @@ motivation letter requirements, screening questions, form fields, and any
 missing information that needs human review.
 
 `data/runtime/jobs.json` is the canonical shared index for the Tracker and Jobs
-views. The tracked `data/jobs.json` and `data/tracker.json` files can be treated
-as templates and bootstrap mirrors.
+views. The tracked `data/jobs.json` file and any `data/jobs/<job_id>/...`
+artifacts are templates or bootstrap fallback data, not the primary runtime
+write location. Legacy `tracker.json` files may be read as fallback only when
+the canonical jobs index is missing.
 
 The core pipeline remains:
 

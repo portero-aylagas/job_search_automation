@@ -10,7 +10,7 @@
 
 ## 1. System brief
 
-Job Search Automation is a Python and Streamlit application that helps a job applicant prepare job applications in a controlled human-in-the-loop workflow. The system takes a candidate profile, a CV, optional supporting documents, and a job URL, then helps transform that information into structured application material.
+Job Search Automation is a React + FastAPI application with Python workflow modules that helps a job applicant prepare job applications in a controlled human-in-the-loop workflow. The system takes a candidate profile, a CV, optional supporting documents, and a job URL, then helps transform that information into structured application material.
 
 The application can extract candidate information from an uploaded CV, store reviewed identity/contact/profile information, extract structured job-offer data from a public job URL, resolve an application URL, inspect the application page, identify required documents and form fields, generate application materials, and prepare a reviewed fill plan for browser-assisted form completion.
 
@@ -20,7 +20,7 @@ The main outputs are normalized job listings, application requirements, applicat
 
 Human review is central to the design. Candidate data is reviewed, extracted job data is reviewed, requirements are reviewed, package materials are editable, sensitive or user-decision fields are blocked or require explicit values, and Browser Use receives only a reviewed fill plan. The browser agent is instructed not to submit the application and to stop with the page ready for manual inspection.
 
-The system was built by the project developer as a custom application. In a production scenario, the provider would be whoever places this application into service under their name. The deployer would usually be the person or organization using it for job-application preparation. OpenAI is an upstream GPAI/model provider for the LLM calls. Browser Use, Playwright, Streamlit, LangGraph, and related libraries are technical components or frameworks, not the main regulatory provider of the downstream job-search product.
+The system was built by the project developer as a custom application. In a production scenario, the provider would be whoever places this application into service under their name. The deployer would usually be the person or organization using it for job-application preparation. OpenAI is an upstream GPAI/model provider for the LLM calls. Browser Use, Playwright, FastAPI, React, LangGraph, and related libraries are technical components or frameworks, not the main regulatory provider of the downstream job-search product.
 
 ---
 
@@ -48,7 +48,7 @@ The classification changes if the product is repurposed. If an employer, recruit
 | Provider | The developer or organization that places Job Search Automation into service under its own name. For this lab, assume the project team is the provider. | Define intended use, document system capabilities and limits, provide user information, implement transparency controls, maintain appropriate technical documentation, and avoid prohibited or high-risk repurposing without reassessment. |
 | Deployer | The user or organization using the system to prepare applications. For private individual use, AI Act deployer obligations may be limited or not apply. For a career agency or professional use, the organization using it would be the deployer. | Use the system within intended limits, review outputs before use, avoid automated submission without review, handle personal data lawfully, and maintain appropriate records if used professionally. |
 | GPAI / model provider | OpenAI, when OpenAI models are used through the API. | GPAI obligations sit upstream: model documentation, copyright/transparency duties, and systemic-risk obligations where applicable. The downstream application provider cannot pass all product-level responsibility to the model provider. |
-| Tooling / automation framework | Browser Use, Playwright, Streamlit, LangGraph, requests, BeautifulSoup, Pydantic. | These are supporting tools. They do not remove responsibility from the downstream application provider or deployer. Browser automation creates operational and privacy controls that the provider/deployer must manage. |
+| Tooling / automation framework | Browser Use, Playwright, FastAPI, React, LangGraph, requests, BeautifulSoup, Pydantic. | These are supporting tools. They do not remove responsibility from the downstream application provider or deployer. Browser automation creates operational and privacy controls that the provider/deployer must manage. |
 | Affected third parties | Employers, recruiters, ATS platforms, and application-page operators receiving materials or interacting with automated browser activity. | They are not deployers of this system, but their terms of service, privacy notices, and application-process rules may create separate obligations or constraints. |
 
 ---

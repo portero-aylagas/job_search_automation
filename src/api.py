@@ -215,7 +215,7 @@ class TrackerStatusUpdateRequest(BaseModel):
 
 
 class KarenChatRequest(BaseModel):
-    """One Karen chat turn from the Agent Karen page."""
+    """One Karen chat turn from the Jobs side panel."""
 
     message: str
     selected_job_id: str | None = None
@@ -751,11 +751,11 @@ def _register_agent_routes(app: FastAPI) -> None:
         selected_job_id: str | None = None,
         session_id: str | None = None,
     ) -> dict[str, object]:
-        """Return Agent Karen page state and transcript."""
+        """Return Karen side-panel state and transcript."""
 
         context = build_karen_context(
             app.state.base_dir,
-            current_page="Agent Karen",
+            current_page="Jobs",
             selected_job_id=selected_job_id,
             session_id=session_id,
         )
@@ -776,11 +776,11 @@ def _register_agent_routes(app: FastAPI) -> None:
 
     @app.post("/api/agent/chat")
     async def agent_chat(payload: KarenChatRequest) -> dict[str, object]:
-        """Process one Agent Karen chat turn."""
+        """Process one Karen side-panel chat turn."""
 
         context = build_karen_context(
             app.state.base_dir,
-            current_page="Agent Karen",
+            current_page="Jobs",
             selected_job_id=payload.selected_job_id,
             session_id=payload.session_id,
         )
@@ -810,7 +810,7 @@ def _register_agent_routes(app: FastAPI) -> None:
             partial(
                 _run_karen_chat_background,
                 app.state.base_dir,
-                current_page="Agent Karen",
+                current_page="Jobs",
                 selected_job_id=context.selected_job_id,
                 user_message=payload.message,
                 session_id=context.session_id,
@@ -893,7 +893,7 @@ def _run_status_from_chat_result(status: str) -> str:
 
 
 def _agent_run_payload(base_dir: Path | str, run: KarenWorkflowRun) -> dict[str, object]:
-    """Return run status plus the latest visible Agent Karen state."""
+    """Return run status plus the latest visible Karen side-panel state."""
 
     events = [
         event

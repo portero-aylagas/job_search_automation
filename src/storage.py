@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -56,9 +57,19 @@ def save_json(path: Path | str, data: Any) -> None:
 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as file:
+    temp_path: Path | None = None
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=target.parent,
+        prefix=f".{target.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as file:
+        temp_path = Path(file.name)
         json.dump(data, file, indent=2, ensure_ascii=True)
         file.write("\n")
+    temp_path.replace(target)
 
 
 def load_json(path: Path | str, default: Any | None = None) -> Any:
