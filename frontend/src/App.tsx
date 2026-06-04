@@ -10,7 +10,9 @@ import {
 } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import { useKarenRunPolling } from "./useKarenRunPolling";
-import karenImage from "../../assets/karen.png";
+import karenChatImage from "../../assets/karen_office.png";
+import karenEmojiImage from "../../assets/karen_emoji.png";
+import karenWorkingImage from "../../assets/karen_working.gif";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"];
 const careerLevel = [
@@ -93,7 +95,7 @@ function App() {
       favicon.rel = "icon";
       document.head.appendChild(favicon);
     }
-    favicon.href = karenImage;
+    favicon.href = karenEmojiImage;
   }, []);
 
   function loadAgent(jobId = selectedKarenJobId, nextSessionId = sessionId) {
@@ -1841,7 +1843,12 @@ function KarenChatPanel({
       <fieldset aria-busy={isSending} className="ai-blocking-surface karen-chat-controls" disabled={isSending}>
         <div className="karen-panel-top">
           <div className="karen-panel-header">
-            <img src={karenImage} width="56" height="56" alt="Agent Karen" />
+            <img
+              src={isSending ? karenWorkingImage : karenChatImage}
+              width="112"
+              height="112"
+              alt="Agent Karen"
+            />
             <div>
               <h2>Karen Chat</h2>
               <p className="muted">Workflow assistant</p>

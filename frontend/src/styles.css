@@ -737,8 +737,8 @@ summary {
 }
 
 .karen-panel-header img {
-  width: 56px;
-  height: 56px;
+  width: 112px;
+  height: 112px;
   border-radius: 8px;
   object-fit: cover;
 }
