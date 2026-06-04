@@ -37,13 +37,14 @@ Core scope:
 - local JSON storage
 - URL-only LLM-assisted extraction with manual review fallback
 - normalized job data
-- match analysis
+- application requirements discovery
 - application package generation
 - reviewable UI and tracker
 - basic reliability and documentation
 
 Add-ons:
 
+- future match analysis or prioritization
 - public job search through API, MCP, or web search
 - LangGraph orchestration
 - assisted application support
@@ -196,8 +197,13 @@ Definition of done:
 ### 7. Match Analysis & Prioritization
 
 - Estimate: 3
-- Priority: High
+- Priority: Future / disabled
 - Dependencies: Job URL Intake & Normalization
+
+This story is not part of the current known-job apply workflow. Existing
+match-analysis artifacts are historical/future scope and do not gate
+requirements discovery, package generation, Karen actions, or tracker
+progression.
 
 Tasks:
 
@@ -209,7 +215,7 @@ Tasks:
 Definition of done:
 
 - user can select a saved job
-- match analysis is displayed
+- match analysis is displayed only if this future scope is intentionally restored
 - analysis is saved locally
 - tracker can show analyzed status or score
 
@@ -227,7 +233,7 @@ Tasks:
   `application page inspection -> requirements extraction`
 - persist page evidence in `application_page_snapshot.json` before interpreting
   requirements
-- save application requirements in `data/jobs/<job_id>/application_requirements.json`
+- save application requirements in `data/runtime/jobs/<job_id>/application_requirements.json`
 - keep discovered requirements human-reviewable
 - generate a manifest-driven application package
 - support variable job-specific materials and application answers

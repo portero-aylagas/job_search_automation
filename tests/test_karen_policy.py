@@ -135,6 +135,7 @@ def test_karen_runtime_registry_excludes_legacy_workflow_actions() -> None:
         "generate_fill_plan",
         "review_fill_plan",
         "launch_browser_use",
+        "go_to_agent",
         "final_submission",
     ):
         assert tool_name not in KAREN_TOOL_REGISTRY

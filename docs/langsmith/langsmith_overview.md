@@ -161,9 +161,7 @@ Value:
 - helps identify recurring failure patterns
 - prepares data for later evaluation
 
-**Screenshot placeholder**
-
-![Manual feedback example](./screenshots/06-manual-feedback.png)
+**Screenshot placeholder:** capture a manual feedback example when this view is available.
 
 ---
 
@@ -186,9 +184,7 @@ Value:
 - prevents relying only on manual spot checks
 - makes quality comparisons reproducible
 
-**Screenshot placeholder**
-
-![Dataset example](./screenshots/07-dataset-example.png)
+**Screenshot placeholder:** capture a dataset example when this view is available.
 
 ---
 
@@ -212,9 +208,7 @@ Value:
 - supports quality gates before changing prompts or models
 - helps measure whether outputs are usable, accurate, and grounded
 
-**Screenshot placeholder**
-
-![Evaluator results](./screenshots/08-evaluator-results.png)
+**Screenshot placeholder:** capture evaluator results when this view is available.
 
 ---
 
@@ -236,9 +230,7 @@ Value:
 - combines quality, latency, and cost comparison
 - makes AI workflow changes testable instead of subjective
 
-**Screenshot placeholder**
-
-![Experiment comparison](./screenshots/09-experiment-comparison.png)
+**Screenshot placeholder:** capture an experiment comparison when this view is available.
 
 ---
 
@@ -259,9 +251,7 @@ Value:
 - exposes tradeoffs between quality, speed, and cost
 - helps justify technical decisions with data
 
-**Screenshot placeholder**
-
-![A/B comparison](./screenshots/10-ab-comparison.png)
+**Screenshot placeholder:** capture an A/B comparison when this view is available.
 
 ---
 
