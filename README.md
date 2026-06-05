@@ -10,6 +10,8 @@ The core feature is:
 candidate profile + job position -> validated application package
 ```
 
+![Job Search Automation product flow](assets/product/images/karen_flow.png)
+
 The application helps transform candidate data and a specific job position into structured application material such as cover letters, CV tailoring notes, recruiter messages, form answers, and application summaries.
 
 The system is designed to keep the user in control. AI can assist with extraction, requirements discovery, generation, future job discovery, and application preparation, but the user validates the important steps.
@@ -60,7 +62,8 @@ application tracking
 - historical deterministic candidate/job match analysis backend, disabled from
   the current known-job apply workflow
 - Persistent Agent Karen side chat with persisted chat transcripts and audit
-  events, using `assets/karen.png` in the panel, dashboard, and browser tab icon
+  events, using `assets/ui/` images in the panel, active-work state, and browser
+  tab icon
 - per-job workspace for saved intake data
 - tailored application package generation
 - editable AI-generated material
@@ -150,7 +153,10 @@ job_search_automation/
 │   │       └── graph.py
 │   └── ...
 ├── assets/
-│   └── karen.png
+│   ├── product/
+│   │   ├── images/
+│   │   └── videos/
+│   └── ui/
 ├── data/
 │   ├── profile.json
 │   ├── experience_units.json
@@ -338,7 +344,7 @@ gate stay at the top, the transcript scrolls in the middle and auto-scrolls to
 new replies, and the icon-based message composer remains at the bottom. Its
 width is adjustable from the divider between the page and chat panel. The
 top-level `Agent Karen` tab remains as a dashboard-only page showing
-Karen's portrait from `assets/karen.png`, selected-job workflow status,
+Karen's portrait from `assets/ui/karen_office.png`, selected-job workflow status,
 blockers, pending gate, timeline, and static next-action guidance. Karen is
 separate from `AGENTS.md`, which remains development-agent guidance.
 
