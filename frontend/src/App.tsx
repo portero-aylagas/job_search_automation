@@ -10,9 +10,9 @@ import {
 } from "react";
 import { apiRequest, ApiRecord, fileToPayload } from "./api";
 import { useKarenRunPolling } from "./useKarenRunPolling";
-import karenChatImage from "../../assets/karen_office.png";
-import karenEmojiImage from "../../assets/karen_emoji.png";
-import karenWorkingImage from "../../assets/karen_working.gif";
+import karenChatImage from "../../assets/ui/karen_office.png";
+import karenEmojiImage from "../../assets/ui/karen_emoji.png";
+import karenWorkingImage from "../../assets/ui/karen_working.gif";
 
 const pages = ["Candidate Profile", "Job Intake", "Jobs", "Tracker", "Monitoring"];
 const careerLevel = [
