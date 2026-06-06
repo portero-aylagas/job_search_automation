@@ -17,6 +17,15 @@ referenced yet.
 - `thumbnails/05_karen_job_process_automatic.jpg`: clickable README thumbnail for the Karen-assisted workflow walkthrough.
 - `thumbnails/07_karen_helping_process.jpg`: clickable README thumbnail for the Karen blocker guidance walkthrough.
 
+## GIFs
+
+- `gifs/01_candidate_profile_full.gif`: full candidate profile walkthrough opened from the README thumbnail.
+- `gifs/02_job_intake_full.gif`: full job intake walkthrough opened from the README thumbnail.
+- `gifs/03_job_application_manual_full.gif`: full manual application workflow walkthrough opened from the README thumbnail.
+- `gifs/04_agentic_browser_navigation_full.gif`: full browser navigation walkthrough opened from the README thumbnail.
+- `gifs/05_karen_job_process_automatic.gif`: full Karen-assisted workflow walkthrough opened from the README thumbnail.
+- `gifs/07_karen_helping_process.gif`: full Karen blocker guidance walkthrough opened from the README thumbnail.
+
 ## Videos
 
 - `videos/01_candidate_profile_full.mp4`: candidate profile walkthrough.
