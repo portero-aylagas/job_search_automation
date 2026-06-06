@@ -57,9 +57,9 @@ Do not start new feature phases with web search, browser automation, or external
   first React version is a parity port: it preserves top-level navigation,
   button labels, structured review forms, review gates, and Browser Use launch
   semantics.
-- The React UI uses `assets/karen_office.png` for Karen's side-panel portrait,
-  `assets/karen_emoji.png` for the browser tab icon, and
-  `assets/karen_working.gif` for active-work status. Fresh local state is
+- The React UI uses `assets/ui/karen_office.png` for Karen's side-panel portrait,
+  `assets/ui/karen_emoji.png` for the browser tab icon, and
+  `assets/ui/karen_working.gif` for active-work status. Fresh local state is
   supported through the API returning an empty draft candidate profile when
   private runtime files have been cleaned.
 

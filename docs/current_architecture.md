@@ -63,9 +63,9 @@ Karen's runtime code lives under `src/agents/karen/`:
 - `state.py` defines her state models.
 - `graph.py` runs each chat turn.
 
-The UI uses `assets/karen_office.png` for Karen's side-panel portrait,
-`assets/karen_emoji.png` for the browser tab icon, and
-`assets/karen_working.gif` for active-work status. Chat transcripts are stored under
+The UI uses `assets/ui/karen_office.png` for Karen's side-panel portrait,
+`assets/ui/karen_emoji.png` for the browser tab icon, and
+`assets/ui/karen_working.gif` for active-work status. Chat transcripts are stored under
 `data/runtime/agent_sessions/<session_id>/`. Job-scoped copies and workflow
 events are stored under `data/runtime/jobs/<job_id>/`.
 
