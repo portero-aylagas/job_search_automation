@@ -49,6 +49,51 @@ forms rather than raw JSON editors.
 
 The parity checklist for the migration lives in `docs/ui_migration_parity.md`.
 
+## Frontend Code Organization
+
+The React frontend is split by application responsibility instead of keeping
+all workflow UI in `frontend/src/App.tsx`.
+
+```text
+frontend/src/
+├── App.tsx
+├── app/
+│   ├── AppShell.tsx
+│   ├── navigation.ts
+│   └── workflowRefresh.ts
+├── features/
+│   ├── candidateProfile/
+│   ├── jobIntake/
+│   ├── jobs/
+│   ├── karen/
+│   ├── monitoring/
+│   └── tracker/
+└── shared/
+    ├── components/
+    ├── types.ts
+    └── utils/
+```
+
+`App.tsx` is only the public entrypoint. `app/AppShell.tsx` owns top-level
+navigation, page composition, and Karen side-panel placement. Page-level
+workflow behavior lives under `features/<feature>/`.
+
+Karen frontend behavior is intentionally centralized under `features/karen/`:
+
+- `useKarenController.ts` owns Karen UI state, selected-job synchronization,
+  workflow refresh signals, chat submission, and panel resize state.
+- `useKarenRunPolling.ts` polls active Karen workflow runs.
+- `KarenChatPanel.tsx` renders the side panel, transcript, quick prompts, and
+  workflow progress display.
+- `karenUtils.ts` contains Karen-specific formatting, progress, routing, and
+  panel sizing helpers.
+
+Shared components and helpers live under `shared/`. They should stay generic
+to the existing workflow UI. Do not put feature-specific review logic in
+`shared/`, and do not create Karen-only workflow business rules in the
+frontend. Karen should continue to trigger the same backend actions that the
+visible workflow controls use.
+
 ## Agent Karen
 
 Karen is a runtime product assistant. She is separate from `AGENTS.md`, which
