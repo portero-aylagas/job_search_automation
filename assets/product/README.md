@@ -9,6 +9,7 @@ referenced yet.
 - `images/karen_flow.png`: product flow overview used near the top of the README.
 - `../images/apply_job_short.gif`: animated README thumbnail for the Agentic Navigation walkthrough.
 - `../images/karen_applies_to_position.gif`: animated README thumbnail for the Karen Automation walkthrough.
+- `../images/karen_support_short.gif`: animated README thumbnail for the Karen Blocker Guidance walkthrough.
 
 ## Thumbnails
 
