@@ -8,6 +8,15 @@ referenced yet.
 
 - `images/karen_flow.png`: product flow overview used near the top of the README.
 
+## Thumbnails
+
+- `thumbnails/01_candidate_profile_full.jpg`: clickable README thumbnail for the candidate profile walkthrough.
+- `thumbnails/02_job_intake_full.jpg`: clickable README thumbnail for the job intake walkthrough.
+- `thumbnails/03_job_application_manual_full.jpg`: clickable README thumbnail for the manual application workflow walkthrough.
+- `thumbnails/04_agentic_browser_navigation_full.jpg`: clickable README thumbnail for the browser navigation walkthrough.
+- `thumbnails/05_karen_job_process_automatic.jpg`: clickable README thumbnail for the Karen-assisted workflow walkthrough.
+- `thumbnails/07_karen_helping_process.jpg`: clickable README thumbnail for the Karen blocker guidance walkthrough.
+
 ## Videos
 
 - `videos/01_candidate_profile_full.mp4`: candidate profile walkthrough.
