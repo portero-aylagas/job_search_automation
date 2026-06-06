@@ -41,7 +41,7 @@ Click any thumbnail to open the matching walkthrough video.
 | **Agentic Navigation**<br>1. **Generate fill details** -> **review and confirm**.<br>2. **Launch Browser Use** -> **review before final submission**. | [![Agentic Navigation walkthrough thumbnail](assets/product/thumbnails/04_agentic_browser_navigation_full.jpg)](assets/product/videos/04_agentic_browser_navigation_full.mp4) |
 | **Karen Automation**<br>1. **Ask Karen** and **grant permission**.<br>2. **Run workflow action** -> **review and confirm**.<br>3. **Complete blocked steps** yourself. | [![Karen Automation walkthrough thumbnail](assets/product/thumbnails/05_karen_job_process_automatic.jpg)](assets/product/videos/05_karen_job_process_automatic.mp4) |
 | **Karen Blocker Guidance**<br>1. **Ask Karen** why it is blocked -> **review missing data**.<br>2. **Add missing data**.<br>3. **Continue workflow**. | [![Karen Blocker Guidance walkthrough thumbnail](assets/product/thumbnails/07_karen_helping_process.jpg)](assets/product/videos/07_karen_helping_process.mp4) |
-| **Job Tracker**<br><br>![Job Tracker screenshot](assets/images/tracker_screenshot.png) | **LangSmith Monitoring**<br><br>![LangSmith Monitoring screenshot](assets/images/monitoring_screenshot.png) |
+| **Job Tracker**<br><br>![Job Tracker screenshot](assets/images/tracker_screenshot.png) | **LangSmith Monitoring**<br><br>![LangSmith Monitoring screenshot](docs/langsmith/screenshots/06-tab-monitoring-langsmith.png) |
 
 ## Product Flow
 
