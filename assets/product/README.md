@@ -7,6 +7,7 @@ referenced yet.
 ## Images
 
 - `images/karen_flow.png`: product flow overview used near the top of the README.
+- `../images/karen_applies_to_position.gif`: animated README thumbnail for the Karen Automation walkthrough.
 
 ## Thumbnails
 

@@ -55,6 +55,7 @@ test-results/
 # OS files
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # Logs
 *.log
