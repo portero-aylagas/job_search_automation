@@ -24,7 +24,7 @@ state, validation, blockers, review gates, and final-submit protection under
 control.
 
 ```text
-candidate profile + job position -> validated application package
+candidate profile + job position -> validated application package -> automatic application via agentic internet browser
 ```
 
 ![Job Search Automation product flow](assets/product/images/karen_flow.png)
@@ -41,6 +41,7 @@ Click any thumbnail to open the matching walkthrough video.
 | **Agentic Navigation**<br>1. **Generate fill details** -> **review and confirm**.<br>2. **Launch Browser Use** -> **review before final submission**. | [![Agentic Navigation walkthrough thumbnail](assets/product/thumbnails/04_agentic_browser_navigation_full.jpg)](assets/product/videos/04_agentic_browser_navigation_full.mp4) |
 | **Karen Automation**<br>1. **Ask Karen** and **grant permission**.<br>2. **Run workflow action** -> **review and confirm**.<br>3. **Complete blocked steps** yourself. | [![Karen Automation walkthrough thumbnail](assets/product/thumbnails/05_karen_job_process_automatic.jpg)](assets/product/videos/05_karen_job_process_automatic.mp4) |
 | **Karen Blocker Guidance**<br>1. **Ask Karen** why it is blocked -> **review missing data**.<br>2. **Add missing data**.<br>3. **Continue workflow**. | [![Karen Blocker Guidance walkthrough thumbnail](assets/product/thumbnails/07_karen_helping_process.jpg)](assets/product/videos/07_karen_helping_process.mp4) |
+| **Job Tracker**<br><br>![Job Tracker screenshot](assets/images/tracker_screenshot.png) | **LangSmith Monitoring**<br><br>![LangSmith Monitoring screenshot](assets/images/monitoring_screenshot.png) |
 
 ## Product Flow
 
@@ -110,37 +111,35 @@ requested user-provided materials and form fields.
 
 ## Why This Project Matters
 
-Job applications are repetitive, but the risky parts should stay controlled.
-This project explores how AI can support a real workflow while keeping the
-important decisions inspectable, reversible, and testable.
+Job applications are repetitive, but the important decisions should stay visible
+and controlled. This project shows how AI can help without turning the workflow
+into an opaque auto-apply system.
 
-The implementation is intentionally split between language-reasoning steps and
-deterministic workflow logic:
-
-- AI is used for tasks that benefit from language understanding, such as CV
-  extraction, job-offer interpretation, requirement discovery, field mapping,
-  and application draft generation.
-- Deterministic code owns workflow state, validation, review gates, blockers,
-  storage, URL checks, package quality checks, and Browser Use launch rules.
-- External services are wrapped behind narrow boundaries so they can be traced,
-  mocked, retried, replaced, or disabled without rewriting the workflow.
-- Generated artifacts preserve links back to reviewed requirements and candidate
-  evidence, making outputs easier to audit before use.
-- The assistant uses the same backend workflow actions as the UI, so agent
-  behavior stays aligned with the product rather than becoming a parallel path.
-- Verification covers Python workflow logic, API contracts, frontend behavior,
-  type checks, production build, and browser smoke flows.
+- **AI handles language-heavy work:** CV extraction, job-offer interpretation,
+  requirement discovery, field mapping, and application drafts.
+- **Deterministic code controls the workflow:** state, validation, review gates,
+  blockers, storage, URL checks, package quality checks, and Browser Use launch
+  rules.
+- **Human review stays central:** generated packages link back to reviewed job
+  requirements and candidate evidence before use.
+- **Karen follows the same path as the UI:** assistant actions call the same
+  backend workflow actions instead of creating a separate automation path.
+- **External services stay replaceable:** integrations are wrapped behind narrow
+  boundaries that can be traced, mocked, retried, disabled, or replaced.
+- **Verification is broad:** tests cover Python workflow logic, API contracts,
+  frontend behavior, type checks, production build, and browser smoke flows.
 
 ## Engineering Approach
 
-The project treats AI output as draft workflow data, not as trusted state.
-Important steps produce structured artifacts that can be reviewed, edited,
-approved, rejected, regenerated, traced, and tested.
-
-The same principle applies to Karen, the runtime assistant. Karen can explain
-state and request permitted actions, but she dispatches through the shared
-workflow registry used by the UI. This keeps agent behavior inside the same
-review gates, blockers, and persistence rules as direct user actions.
+- **AI output is draft data, not trusted state.** Generated content must pass
+  through reviewable workflow steps before it is used.
+- **Workflow artifacts are structured.** Key outputs can be reviewed, edited,
+  approved, rejected, regenerated, traced, and tested.
+- **State changes are explicit.** Review gates, blockers, and persistence rules
+  live in deterministic backend workflow logic.
+- **Karen is a workflow controller.** She can explain state and request allowed
+  actions, but she dispatches through the same shared workflow registry as the
+  UI.
 
 ## LangSmith Observability
 
