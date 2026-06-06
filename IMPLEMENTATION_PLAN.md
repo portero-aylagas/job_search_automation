@@ -666,6 +666,17 @@ job_search_automation/
 ├── vite.config.ts
 ├── index.html
 ├── frontend/
+│   └── src/
+│       ├── App.tsx
+│       ├── app/
+│       ├── features/
+│       │   ├── candidateProfile/
+│       │   ├── jobIntake/
+│       │   ├── jobs/
+│       │   ├── karen/
+│       │   ├── monitoring/
+│       │   └── tracker/
+│       └── shared/
 ├── src/
 │   ├── __init__.py
 │   ├── api.py
