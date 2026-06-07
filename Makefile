@@ -1,4 +1,4 @@
-.PHONY: verify lint test clean-local-state
+.PHONY: verify lint test dev clean-local-state
 
 verify:
 	./verify.sh
@@ -12,6 +12,9 @@ test:
 	else \
 		echo "No tests found; skipping pytest."; \
 	fi
+
+dev:
+	./scripts/dev_start.sh
 
 clean-local-state:
 	# Removes data/runtime, data/candidate_profile.json, generated outputs, reports, and caches.

@@ -224,6 +224,17 @@ OPENAI_MODEL=gpt-5.4
 
 ## Run Locally
 
+Start both development servers with one command:
+
+```bash
+make dev
+```
+
+This runs the FastAPI backend at `http://127.0.0.1:8001` and the Vite frontend
+at `http://127.0.0.1:5173`. Press `Ctrl+C` in that terminal to stop both.
+
+The separate commands still work if you prefer two terminals.
+
 Start the FastAPI backend:
 
 ```bash
