@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# data/runtime includes job workspaces, candidate uploads, Karen transcripts,
+# and Browser Use runtime state. It is local private/generated state.
 rm -rf \
   "$ROOT_DIR/data/runtime" \
   "$ROOT_DIR/data/candidate_profile.json" \

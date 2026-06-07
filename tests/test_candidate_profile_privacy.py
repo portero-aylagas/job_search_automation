@@ -25,6 +25,20 @@ def test_makefile_has_local_state_cleanup_target() -> None:
     assert "data/runtime" in makefile
     assert "data/candidate_profile.json" in makefile
     assert "outputs" in makefile
+    assert "browser artifacts" in makefile
+
+
+def test_readme_documents_private_local_cleanup_paths() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "## Local Cleanup And Privacy" in readme
+    assert "make clean-local-state" in readme
+    assert "data/runtime/" in readme
+    assert "data/candidate_profile.json" in readme
+    assert "outputs/" in readme
+    assert "reports/" in readme
+    assert "Browser Use runtime state" in readme
+    assert "Normal app use does not delete this data automatically." in readme
 
 
 def test_runtime_candidate_file_check_accepts_candidate_upload_path(tmp_path: Path) -> None:

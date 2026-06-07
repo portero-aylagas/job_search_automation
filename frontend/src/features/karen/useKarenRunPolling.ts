@@ -1,13 +1,14 @@
 import { Dispatch, SetStateAction, useEffect, useState } from "react";
-import { apiRequest, ApiRecord } from "../../api";
+import { apiRequest } from "../../api";
+import type { ApiRecord, KarenAgentPayload, KarenEventPayload, KarenRunProgressPayload } from "../../shared/types";
 
 type UseKarenRunPollingParams = {
   selectedJobId: string;
   sessionId?: string;
-  setAgent: Dispatch<SetStateAction<ApiRecord | null>>;
+  setAgent: Dispatch<SetStateAction<KarenAgentPayload | null>>;
   setStatus: (status: ApiRecord | null) => void;
   loadKarenJobs: (preferredJobId?: string, nextSessionId?: string) => void;
-  refreshFromEvents: (events: ApiRecord[], fallbackJobId?: string) => void;
+  refreshFromEvents: (events: KarenEventPayload[], fallbackJobId?: string) => void;
   refreshVisibleWorkflow: (jobId?: string, scopes?: string[]) => void;
 };
 
@@ -30,13 +31,23 @@ export function useKarenRunPolling({
 
     const pollKarenRun = async () => {
       try {
-        const result = await apiRequest<ApiRecord>(`/api/agent/runs/${activeRunId}`);
+        const result = await apiRequest<KarenRunProgressPayload>(`/api/agent/runs/${activeRunId}`);
         if (cancelled) return;
         const events = result.events || [];
         setActiveRunStatus(String(result.run?.status || ""));
         setAgent((currentAgent) => ({
-          context: result.context || currentAgent?.context || {},
-          state: result.state || currentAgent?.state || {},
+          context: result.context || currentAgent?.context || {
+            session_id: sessionId || "",
+            selected_job_id: selectedJobId || null
+          },
+          state: result.state || currentAgent?.state || {
+            session_id: sessionId || "",
+            selected_job_id: selectedJobId || null,
+            artifacts_present: {},
+            blockers: [],
+            next_allowed_actions: [],
+            errors: []
+          },
           messages: result.messages || currentAgent?.messages || [],
           events,
           action_labels: result.action_labels || currentAgent?.action_labels || {}

@@ -5,6 +5,8 @@ mkdir -p reports
 
 ruff check .
 
+python scripts/report_large_files.py
+
 python - <<'PY'
 from pathlib import Path
 import compileall

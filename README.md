@@ -224,6 +224,17 @@ OPENAI_MODEL=gpt-5.4
 
 ## Run Locally
 
+Start both development servers with one command:
+
+```bash
+make dev
+```
+
+This runs the FastAPI backend at `http://127.0.0.1:8001` and the Vite frontend
+at `http://127.0.0.1:5173`. Press `Ctrl+C` in that terminal to stop both.
+
+The separate commands still work if you prefer two terminals.
+
 Start the FastAPI backend:
 
 ```bash
@@ -259,6 +270,25 @@ To reset private local runtime state while keeping checked-in templates:
 ```bash
 make clean-local-state
 ```
+
+## Local Cleanup And Privacy
+
+The app stores private and generated local state on disk so you can inspect and
+review it. Normal app use does not delete this data automatically.
+
+Use `make clean-local-state` when you want to remove local private/generated
+state from this checkout. It removes:
+
+- `data/runtime/`, including saved job workspaces, uploaded CV/supporting
+  document copies, Karen transcripts, and Browser Use runtime state.
+- `data/candidate_profile.json`, which can contain CV-derived personal data.
+- Generated exports under `outputs/`, while keeping `outputs/.gitkeep`.
+- Verification and build outputs such as `reports/`, `playwright-report/`,
+  `test-results/`, and `dist/`.
+- Local Python/frontend caches.
+
+Tracked template files remain in place. Re-upload any CV or supporting
+documents after cleanup before continuing a workflow.
 
 ## Documentation
 

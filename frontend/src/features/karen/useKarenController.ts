@@ -1,7 +1,7 @@
 import { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction, useEffect, useRef, useState } from "react";
 import { apiRequest } from "../../api";
 import { eventRefreshScopes, fullWorkflowRefreshScopes, karenRefreshEventKey, shouldRefreshForKarenEvent, uniqueStrings, workflowPageHandlesRefresh } from "../../app/workflowRefresh";
-import type { ApiRecord } from "../../shared/types";
+import type { ApiRecord, JobIndexRecord, JobsIndexPayload, KarenAgentPayload, KarenChatResponse, KarenEventPayload } from "../../shared/types";
 import { runBusy } from "../../shared/utils/apiActions";
 import { clampNumber, isActiveKarenRunStatus, karenActionTarget, karenPanelWidthKey, karenPanelWidthMax, karenPanelWidthMin, readKarenPanelWidth } from "./karenUtils";
 import { useKarenRunPolling } from "./useKarenRunPolling";
@@ -12,9 +12,9 @@ type UseKarenControllerParams = {
 };
 
 export function useKarenController({ page, setPage }: UseKarenControllerParams) {
-  const [karenRecords, setKarenRecords] = useState<ApiRecord[]>([]);
+  const [karenRecords, setKarenRecords] = useState<JobIndexRecord[]>([]);
   const [selectedKarenJobId, setSelectedKarenJobId] = useState("");
-  const [agent, setAgent] = useState<ApiRecord | null>(null);
+  const [agent, setAgent] = useState<KarenAgentPayload | null>(null);
   const [karenMessage, setKarenMessage] = useState("");
   const [karenStatus, setKarenStatus] = useState<ApiRecord | null>(null);
   const [karenPanelWidth, setKarenPanelWidth] = useState(readKarenPanelWidth);
@@ -47,16 +47,16 @@ export function useKarenController({ page, setPage }: UseKarenControllerParams) 
     const query = new URLSearchParams();
     if (jobId) query.set("selected_job_id", jobId);
     if (nextSessionId) query.set("session_id", nextSessionId);
-    apiRequest<ApiRecord>(`/api/agent?${query.toString()}`)
+    apiRequest<KarenAgentPayload>(`/api/agent?${query.toString()}`)
       .then(setAgent)
       .catch((error) => setKarenStatus({ type: "error", text: error.message }));
   }
 
   function loadKarenJobs(preferredJobId = selectedKarenJobId, nextSessionId = sessionId) {
-    apiRequest<ApiRecord>("/api/jobs")
+    apiRequest<JobsIndexPayload>("/api/jobs")
       .then((payload) => {
         const records = payload.records || [];
-        const nextJobId = records.some((record: ApiRecord) => record.job_id === preferredJobId)
+        const nextJobId = records.some((record: JobIndexRecord) => record.job_id === preferredJobId)
           ? preferredJobId
           : records[0]?.job_id || "";
         setKarenRecords(records);
@@ -109,7 +109,7 @@ export function useKarenController({ page, setPage }: UseKarenControllerParams) 
     if (!outgoingMessage || karenSendingRef.current) return;
     karenSendingRef.current = true;
     await runBusy(setIsKarenSending, setKarenStatus, async () => {
-      const result = await apiRequest<ApiRecord>("/api/agent/chat", {
+      const result = await apiRequest<KarenChatResponse>("/api/agent/chat", {
         method: "POST",
         body: JSON.stringify({
           message: outgoingMessage,
@@ -143,7 +143,7 @@ export function useKarenController({ page, setPage }: UseKarenControllerParams) 
     karenSendingRef.current = false;
   }
 
-  function refreshFromKarenEvents(events: ApiRecord[], fallbackJobId = "") {
+  function refreshFromKarenEvents(events: KarenEventPayload[], fallbackJobId = "") {
     const refreshScopes = new Set<string>();
     let refreshJobId = fallbackJobId;
 

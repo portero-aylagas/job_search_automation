@@ -1,4 +1,4 @@
-import type { ApiRecord } from "../shared/types";
+import type { KarenEventPayload } from "../shared/types";
 
 export const fullWorkflowRefreshScopes = [
   "job_workspace",
@@ -12,7 +12,7 @@ export function workflowPageHandlesRefresh(pageName: string) {
   return ["Candidate Profile", "Jobs", "Tracker"].includes(pageName);
 }
 
-export function shouldRefreshForKarenEvent(event: ApiRecord) {
+export function shouldRefreshForKarenEvent(event: KarenEventPayload) {
   return (
     event.action &&
     (!event.event_type || event.event_type === "workflow_action") &&
@@ -21,12 +21,12 @@ export function shouldRefreshForKarenEvent(event: ApiRecord) {
   );
 }
 
-export function eventRefreshScopes(event: ApiRecord) {
+export function eventRefreshScopes(event: KarenEventPayload) {
   const value = event.refresh_scopes || event.metadata?.refresh_scopes || event.details?.refresh_scopes || [];
   return Array.isArray(value) ? uniqueStrings(value.map(String)) : [];
 }
 
-export function karenRefreshEventKey(event: ApiRecord) {
+export function karenRefreshEventKey(event: KarenEventPayload) {
   const runId = event.run_id || event.details?.workflow_run_id || "run";
   const stepIndex = event.details?.step_index ?? "";
   const status = progressStatus(event);
@@ -42,7 +42,7 @@ export function hasAnyRefreshScope(scopes: string[] = [], targets: string[]) {
   return targets.some((target) => scopes.includes(target));
 }
 
-export function progressStatus(event: ApiRecord) {
+export function progressStatus(event: KarenEventPayload) {
   if (event.status) return String(event.status);
   if (event.result === "started") return "running";
   if (["done", "executed"].includes(String(event.result || ""))) return "completed";

@@ -30,6 +30,23 @@ describe("apiRequest", () => {
     await expect(apiRequest("/api/fail")).rejects.toThrow("Bad request");
   });
 
+  it("surfaces structured JSON error messages", async () => {
+    mockFetch(() => ({
+      status: 400,
+      body: {
+        detail: {
+          code: "workflow_error",
+          message: "Complete all package prerequisites.",
+          blockers: ["Complete all package prerequisites."]
+        }
+      }
+    }));
+
+    await expect(apiRequest("/api/fail")).rejects.toThrow(
+      "Complete all package prerequisites."
+    );
+  });
+
   it("rejects non-JSON success responses", async () => {
     mockFetch(() => ({ body: "ok", contentType: "text/plain" }));
 
