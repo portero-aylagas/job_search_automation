@@ -887,6 +887,20 @@ class ApplicationFillPlan(BaseModel):
         return _validate_storage_identifier(value, "Job ID")
 
 
+class AIQualityCounters(BaseModel):
+    """Deterministic counters derived from saved AI workflow artifacts."""
+
+    generated_sensitive_user_decision_answers: int = 0
+    unsupported_claim_findings: int = 0
+    missing_information_count: int = 0
+    missing_or_uncertain_requirements: int = 0
+    low_confidence_requirements: int = 0
+    manual_apply_url_override: int = 0
+    blocked_requirements: int = 0
+    blocked_apply_fields: int = 0
+    apply_blockers: int = 0
+
+
 class TrackerRecord(BaseModel):
     """Application tracker row for a saved job."""
 

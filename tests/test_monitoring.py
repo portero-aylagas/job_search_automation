@@ -5,10 +5,22 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.job_intake import create_job_listing
 from src.monitoring import (
     LangSmithMonitoringError,
     _discover_custom_dashboard_url,
+    compute_ai_quality_counters,
     langsmith_monitoring_summary,
+)
+from src.schemas import (
+    ApplicationArtifact,
+    ApplicationFillBlockedField,
+    ApplicationFillPlan,
+    ApplicationFormField,
+    ApplicationPackage,
+    ApplicationRequirementFinding,
+    ApplicationRequirements,
+    ApplicationScreeningQuestion,
 )
 
 
@@ -27,6 +39,118 @@ def test_langsmith_monitoring_returns_unconfigured_without_credentials(
     assert payload["cv_extraction_dashboard_label"] == "job-search-automation_cv-extraction"
     assert payload["cv_extraction_dashboard_url"] == ""
     assert payload["cv_certificate_traces"] == []
+
+
+def test_ai_quality_counters_summarize_saved_models() -> None:
+    job = create_job_listing(
+        title="Automation Engineer",
+        company="Example Co",
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/apply/automation-engineer",
+        job_details={
+            "apply_url_resolution": {
+                "manual_override": True,
+                "manual_apply_url": "https://example.com/apply/automation-engineer",
+            }
+        },
+    )
+    requirements = ApplicationRequirements(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        source_url=str(job.source_url),
+        status="blocked",
+        job_preserving=False,
+        blocked_reason="Apply page does not preserve the selected job.",
+        required_documents=[
+            ApplicationRequirementFinding(label="CV", required=True, confidence="high"),
+            ApplicationRequirementFinding(
+                label="Certificates",
+                required=False,
+                confidence="low",
+            ),
+        ],
+        screening_questions=[
+            ApplicationScreeningQuestion(
+                question="Are you authorized to work in Germany?",
+                required=True,
+                confidence="low",
+            )
+        ],
+        custom_form_fields=[
+            ApplicationFormField(
+                label="Portfolio URL",
+                required=False,
+                confidence="medium",
+            )
+        ],
+        missing_or_uncertain=["Confirm earliest start date."],
+        confidence="low",
+    )
+    package = ApplicationPackage(
+        job_id=job.id,
+        missing_information=[
+            "Review generated artifact 'Cover Letter': unsupported claim.",
+            "Candidate phone is missing.",
+        ],
+        artifacts=[
+            ApplicationArtifact(
+                id="answer-1",
+                type="form_answer",
+                label="Disability disclosure",
+                content="No.",
+                metadata={
+                    "quality_findings": [
+                        "Generated answer for a sensitive or user-decision field.",
+                        "Claims experience with unsupported requirement: Kubernetes",
+                    ]
+                },
+            )
+        ],
+    )
+    fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=str(job.apply_url),
+        blocked_fields=[
+            ApplicationFillBlockedField(
+                label="Privacy consent",
+                reason="Consent requires user review.",
+            )
+        ],
+    )
+
+    counters = compute_ai_quality_counters(
+        job=job,
+        requirements=requirements,
+        package=package,
+        fill_plan=fill_plan,
+        apply_blockers=["Resolve reviewed application requirements before applying."],
+    )
+
+    assert counters.model_dump(mode="json") == {
+        "generated_sensitive_user_decision_answers": 1,
+        "unsupported_claim_findings": 1,
+        "missing_information_count": 2,
+        "missing_or_uncertain_requirements": 1,
+        "low_confidence_requirements": 3,
+        "manual_apply_url_override": 1,
+        "blocked_requirements": 1,
+        "blocked_apply_fields": 1,
+        "apply_blockers": 1,
+    }
+
+
+def test_ai_quality_counters_return_zeroes_for_missing_artifacts() -> None:
+    assert compute_ai_quality_counters().model_dump(mode="json") == {
+        "generated_sensitive_user_decision_answers": 0,
+        "unsupported_claim_findings": 0,
+        "missing_information_count": 0,
+        "missing_or_uncertain_requirements": 0,
+        "low_confidence_requirements": 0,
+        "manual_apply_url_override": 0,
+        "blocked_requirements": 0,
+        "blocked_apply_fields": 0,
+        "apply_blockers": 0,
+    }
 
 
 def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(

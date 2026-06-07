@@ -413,6 +413,7 @@ def test_requirements_discovery_uses_graph_and_persists_artifacts(
     assert payload["requirements"]["job_id"] == job.id
     workspace = asyncio.run(api_request(tmp_path, "GET", f"/api/jobs/{job.id}/workspace"))
     assert workspace.json()["requirements"]["required_documents"][0]["label"] == "CV"
+    assert workspace.json()["ai_quality_counters"]["blocked_requirements"] == 1
 
 
 def test_requirements_review_returns_404_when_missing(tmp_path: Path) -> None:
