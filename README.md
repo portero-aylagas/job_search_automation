@@ -271,6 +271,25 @@ To reset private local runtime state while keeping checked-in templates:
 make clean-local-state
 ```
 
+## Local Cleanup And Privacy
+
+The app stores private and generated local state on disk so you can inspect and
+review it. Normal app use does not delete this data automatically.
+
+Use `make clean-local-state` when you want to remove local private/generated
+state from this checkout. It removes:
+
+- `data/runtime/`, including saved job workspaces, uploaded CV/supporting
+  document copies, Karen transcripts, and Browser Use runtime state.
+- `data/candidate_profile.json`, which can contain CV-derived personal data.
+- Generated exports under `outputs/`, while keeping `outputs/.gitkeep`.
+- Verification and build outputs such as `reports/`, `playwright-report/`,
+  `test-results/`, and `dist/`.
+- Local Python/frontend caches.
+
+Tracked template files remain in place. Re-upload any CV or supporting
+documents after cleanup before continuing a workflow.
+
 ## Documentation
 
 | Document | Covers |
