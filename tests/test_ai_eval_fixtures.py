@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.app_workflow import get_application_package_blockers
+import pytest
+
+from src.app_workflow import get_application_package_blockers, validate_reviewed_apply_url
+from src.application_fill_plan import (
+    get_application_fill_plan_review_blockers,
+    mark_application_fill_plan_reviewed,
+)
 from src.application_package import apply_application_package_quality_checks
 from src.application_requirements import (
     discover_application_requirements,
@@ -20,13 +26,17 @@ from src.cv_extraction import (
     normalize_cv_extracted,
 )
 from src.job_intake import create_job_listing, validate_apply_url
+from src.job_workspace import get_apply_assistance_blockers
 from src.llm_job_extraction import (
+    ApplyUrlResolution,
     DynamicJobDetail,
     LLMExtractedJobDataResponse,
     normalize_extracted_job_data,
 )
 from src.schemas import (
     ApplicationArtifact,
+    ApplicationFillFieldValue,
+    ApplicationFillPlan,
     ApplicationFormField,
     ApplicationPackage,
     ApplicationPageSnapshot,
@@ -428,6 +438,99 @@ def test_generic_careers_fixture_blocks_before_extraction() -> None:
     )
 
 
+def test_generic_career_page_blocker_prevents_package_and_apply_assistance() -> None:
+    candidate_profile = complete_candidate_profile()
+    job = make_job(
+        source_url="https://example.com/jobs/automation-engineer",
+        apply_url="https://example.com/careers",
+    )
+    requirements = discover_application_requirements(
+        job,
+        page_content=fixture_html("generic_career_page.html"),
+        extractor=lambda _job, _snapshot: ApplicationRequirements(
+            job_id=job.id,
+            apply_url=job.apply_url,
+            source_url=job.source_url,
+            status="discovered",
+            job_preserving=True,
+        ),
+    )
+
+    assert requirements.status == "blocked"
+    assert get_application_package_blockers(candidate_profile, job, requirements) == [
+        "Resolve application requirements before generating application material."
+    ]
+    assert get_apply_assistance_blockers(job, requirements, None, None) == [
+        "Resolve reviewed application requirements before applying.",
+        "Generate the application package before applying.",
+        "Generate the application fill plan before applying.",
+    ]
+
+
+def test_missing_parsed_cv_blocks_package_generation_fixture() -> None:
+    candidate_profile = complete_candidate_profile()
+    candidate_profile.candidate_profile.source_documents.cv.parsed = False
+    job = make_job()
+    requirements = discovered_requirements(job, reviewed=True)
+
+    blockers = get_application_package_blockers(candidate_profile, job, requirements)
+
+    assert blockers == ["Parse the candidate CV before generating application material."]
+
+
+@pytest.mark.parametrize(
+    ("apply_url", "expected_error"),
+    [
+        ("", "Apply URL is required before the workflow can continue."),
+        (
+            "mailto:jobs@example.com",
+            "Apply URL must be a working http or https URL, not an email or note.",
+        ),
+    ],
+)
+def test_missing_or_contact_apply_url_blocks_review_fixture(
+    apply_url: str,
+    expected_error: str,
+) -> None:
+    with pytest.raises(ValueError, match=expected_error):
+        validate_apply_url(apply_url, "https://example.com/jobs/automation-engineer")
+
+
+def test_reviewed_apply_url_must_match_verified_job_preserving_resolution() -> None:
+    resolution = ApplyUrlResolution(
+        status="resolved",
+        apply_url="https://ats.example.com/apply/automation-engineer?job_id=12345",
+        confidence="high",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Apply URL must match the verified job-preserving application URL.",
+    ):
+        validate_reviewed_apply_url(
+            "https://ats.example.com/apply/other-role?job_id=99999",
+            "https://example.com/jobs/automation-engineer",
+            resolution,
+        )
+
+
+def test_apply_url_equal_to_source_job_page_is_rejected_fixture() -> None:
+    source_url = "https://example.com/jobs/automation-engineer"
+
+    with pytest.raises(
+        ValueError,
+        match="Apply URL must point to the application destination, not the job offer page.",
+    ):
+        create_job_listing(
+            title="Automation Engineer",
+            company="Example Co",
+            source_url=source_url,
+            apply_url=source_url,
+            description="Build workflow automation.",
+            now=datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc),
+        )
+
+
 def test_package_quality_fixture_flags_unsafe_generated_content() -> None:
     candidate_profile = complete_candidate_profile()
     job = make_job(
@@ -480,6 +583,77 @@ def test_package_quality_fixture_flags_unsafe_generated_content() -> None:
         "Generated answer for a sensitive or user-decision field."
     ]
     assert {artifact.status for artifact in checked.artifacts} == {"needs_review"}
+
+
+def test_fill_plan_required_blank_field_blocks_review_fixture() -> None:
+    fill_plan = ApplicationFillPlan(
+        job_id="job-20260601120000-example-co-automation-engineer",
+        apply_url="https://ats.example.com/apply/automation-engineer?job_id=12345",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="Notice period",
+                value="",
+                required=True,
+                source="application_package.form_answer",
+                confidence="medium",
+            )
+        ],
+    )
+
+    assert get_application_fill_plan_review_blockers(fill_plan) == [
+        "Provide values for required fields: Notice period."
+    ]
+    with pytest.raises(
+        ValueError,
+        match="Provide values for required fields: Notice period.",
+    ):
+        mark_application_fill_plan_reviewed(fill_plan)
+
+
+def test_browser_use_launch_blocked_before_review_gates_fixture() -> None:
+    candidate_profile = complete_candidate_profile()
+    job = make_job()
+    draft_requirements = discovered_requirements(job, reviewed=False)
+    draft_package = ApplicationPackage(
+        job_id=job.id,
+        status="draft",
+        artifacts=[
+            ApplicationArtifact(
+                id="application-summary",
+                type="application_summary",
+                label="Application Summary",
+                content="Draft summary.",
+            )
+        ],
+    )
+    draft_fill_plan = ApplicationFillPlan(
+        job_id=job.id,
+        apply_url=job.apply_url,
+        review_status="draft",
+        field_values=[
+            ApplicationFillFieldValue(
+                label="First name",
+                value="Erika",
+                required=True,
+                source="candidate_profile.cv_extracted.identity.first_name",
+                confidence="high",
+            )
+        ],
+    )
+
+    blockers = get_apply_assistance_blockers(
+        job,
+        draft_requirements,
+        draft_package,
+        draft_fill_plan,
+        candidate_profile=candidate_profile,
+    )
+
+    assert blockers == [
+        "Review the discovered application requirements.",
+        "Save the application package review before applying.",
+        "Review the application fill plan before applying.",
+    ]
 
 
 def test_workflow_blocker_fixture_prevents_package_generation() -> None:
