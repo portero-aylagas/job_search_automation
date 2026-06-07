@@ -24,7 +24,9 @@ state, validation, blockers, review gates, and final-submit protection under
 control.
 
 ```text
-candidate profile + job position -> validated application package -> automatic application via agentic internet browser
+candidate profile + job position
+    -> validated application package
+        -> automatic application via agentic internet browser
 ```
 
 ![Job Search Automation product flow](assets/product/images/karen_flow.png)
@@ -39,34 +41,46 @@ Click any thumbnail to open the matching full walkthrough GIF.
 | **Job Intake**<br>1. **Paste job URL** and **parse with AI** -> **review and confirm**.<br>2. **Save job**. | [![Job Intake walkthrough thumbnail](assets/product/thumbnails/02_job_intake_full.jpg)](assets/product/gifs/02_job_intake_full.gif) |
 | **Jobs Workflow**<br>1. **Discover requirements** -> **review and confirm**.<br>2. **Generate application package** -> **review and confirm**. | [![Jobs Workflow walkthrough thumbnail](assets/product/thumbnails/03_job_application_manual_full.jpg)](assets/product/gifs/03_job_application_manual_full.gif) |
 | **Agentic Navigation**<br>1. **Generate fill details** -> **review and confirm**.<br>2. **Launch Browser Use** -> **review before final submission**. | [![Agentic Navigation walkthrough thumbnail](assets/images/apply_job_short.gif)](assets/product/gifs/04_agentic_browser_navigation_full.gif) |
-| **Karen Automation**<br>1. **Ask Karen** and **grant permission**.<br>2. **Run workflow action** -> **review and confirm**.<br>3. **Complete blocked steps** yourself. | [![Karen Automation walkthrough thumbnail](assets/images/karen_applies_to_position.gif)](assets/product/gifs/05_karen_job_process_automatic.gif) |
-| **Karen Blocker Guidance**<br>1. **Ask Karen** why it is blocked -> **review missing data**.<br>2. **Add missing data**.<br>3. **Continue workflow**. | [![Karen Blocker Guidance walkthrough thumbnail](assets/images/karen_support_short.gif)](assets/product/gifs/07_karen_helping_process.gif) |
-| **Job Tracker**<br><br>![Job Tracker screenshot](assets/images/tracker_screenshot.png) | **LangSmith Monitoring**<br><br>![LangSmith Monitoring screenshot](docs/langsmith/screenshots/06-tab-monitoring-langsmith.png) |
+
+## Agent Karen Support
+
+Karen can help you move through the workflow by explaining what is ready, what is blocked, and what needs your review.
+With your permission, Karen can trigger the same workflow actions available in the UI while keeping human review gates in place.
+
+| Run permitted workflow steps | Explain blockers and next actions |
+| --- | --- |
+| <a href="assets/product/gifs/05_karen_job_process_automatic.gif"><img src="assets/images/karen_applies_to_position.gif" alt="Karen Automation walkthrough thumbnail" width="360"></a> | <a href="assets/product/gifs/07_karen_helping_process.gif"><img src="assets/images/karen_support_short.gif" alt="Karen Blocker Guidance walkthrough thumbnail" width="360"></a> |
+
+## Other features
+
+| Job tracker | Langsmith Monitoring |
+| --- | --- |
+| ![Job Tracker screenshot](assets/images/tracker_screenshot.png) | ![LangSmith Monitoring screenshot](docs/langsmith/screenshots/06-tab-monitoring-langsmith.png) |
 
 ## Product Flow
 
 ```mermaid
 flowchart LR
     User[Human user]
-    UI[React UI controls]
+    UI[React UI<br/>controls]
     Karen[Karen chat]
-    API[FastAPI adapter]
-    Controller[Permissioned workflow controller]
-    Services[Shared workflow services]
+    API[FastAPI<br/>adapter]
+    Controller[Permissioned<br/>workflow controller]
+    Services[Shared<br/>workflow services]
 
-    User -->|clicks buttons and edits forms| UI
-    User -->|asks Karen and grants permission| Karen
+    User -->|uses app| UI
+    User -->|grants permission| Karen
     UI --> API
     Karen --> Controller
     API --> Services
     Controller --> Services
 
-    Services --> Profile[Reviewed candidate profile]
-    Services --> Job[Reviewed job listing]
-    Services --> Requirements[Reviewed application requirements]
-    Services --> Package[Reviewed application package]
-    Services --> FillPlan[Reviewed fill plan]
-    Services --> Tracker[Application tracker]
+    Services --> Profile[Reviewed<br/>candidate profile]
+    Services --> Job[Reviewed<br/>job listing]
+    Services --> Requirements[Reviewed<br/>application requirements]
+    Services --> Package[Reviewed<br/>application package]
+    Services --> FillPlan[Reviewed<br/>fill plan]
+    Services --> Tracker[Application<br/>tracker]
 
     Profile --> Package
     Job --> Requirements
