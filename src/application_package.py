@@ -23,7 +23,7 @@ from src.application_package_storage import (
     update_tracker_for_application_package,
 )
 from src.application_package_traceability import attach_application_package_traceability
-from src.prompt_templates import get_prompt
+from src.prompt_templates import get_prompt, get_prompt_template_metadata
 from src.schemas import (
     AIWorkflowTrace,
     ApplicationPackage,
@@ -284,6 +284,10 @@ def generate_application_package_with_llm(
     missing_defaults = build_missing_information_defaults(candidate_profile, requirements)
     requirements_json = _to_json(requirements) if requirements else "Not discovered."
     workflow_trace: AIWorkflowTrace | None = None
+    prompt_metadata = get_prompt_template_metadata(
+        "application_package",
+        "generate_package",
+    )
 
     def capture_trace(trace: AIWorkflowTrace) -> None:
         nonlocal workflow_trace
@@ -315,6 +319,7 @@ def generate_application_package_with_llm(
         # This is the one workflow where some phrasing flexibility is useful.
         profile=llm_client.APPLICATION_PACKAGE_PROFILE,
         trace_sink=capture_trace,
+        **prompt_metadata,
     )
 
     payload = response.model_dump(mode="json")

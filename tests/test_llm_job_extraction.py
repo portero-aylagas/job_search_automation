@@ -94,7 +94,14 @@ def test_extract_job_data_uses_llm_safe_response_model(monkeypatch: pytest.Monke
     assert extracted.missing_or_uncertain == ["Salary not listed"]
     assert extracted.workflow_trace is not None
     assert extracted.workflow_trace.workflow_name == "job_extraction"
+    assert (
+        extracted.workflow_trace.prompt_template_name
+        == "llm_job_extraction.extract_job_data"
+    )
+    assert extracted.workflow_trace.prompt_template_hash
     assert extracted.workflow_trace.profile_name == "job_extraction"
+    assert "prompt_template_name" not in parse_calls[0]
+    assert "prompt_template_hash" not in parse_calls[0]
 
 
 def test_extract_job_data_normalizes_missing_fields(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from src import prompt_templates
-from src.prompt_templates import get_prompt
+from src.prompt_templates import get_prompt, get_prompt_template_metadata
 
 
 def test_get_prompt_preserves_braces_inside_variable_values() -> None:
@@ -57,3 +57,18 @@ def test_application_requirements_prompt_preserves_grouped_attachment_needs() ->
 
     assert "CV, cover letter, certificates, references" in rendered
     assert "separate CV, cover letter, certificate, and reference needs" in rendered
+
+
+def test_prompt_template_metadata_hashes_template_node_without_rendering_variables() -> None:
+    metadata = get_prompt_template_metadata("application_package", "generate_package")
+
+    assert metadata["prompt_template_name"] == "application_package.generate_package"
+    assert metadata["prompt_template_version"] is None
+    assert metadata["prompt_template_hash"]
+    assert metadata["prompt_template_hash"].startswith("sha256:")
+    assert "{manifest_json}" not in metadata["prompt_template_hash"]
+
+
+def test_prompt_template_metadata_reports_missing_template_path() -> None:
+    with pytest.raises(KeyError, match="Prompt template not found"):
+        get_prompt_template_metadata("missing", "template")

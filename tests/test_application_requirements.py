@@ -211,6 +211,11 @@ def test_llm_extractor_uses_llm_safe_response_model(monkeypatch: pytest.MonkeyPa
     assert requirements.required_documents[0].label == "CV"
     assert requirements.workflow_trace is not None
     assert requirements.workflow_trace.workflow_name == "application_requirements"
+    assert (
+        requirements.workflow_trace.prompt_template_name
+        == "application_requirements.extract_requirements"
+    )
+    assert requirements.workflow_trace.prompt_template_hash
 
 
 def test_llm_extractor_converts_output_to_persisted_requirements_model(
