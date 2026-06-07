@@ -24,7 +24,8 @@ state, validation, blockers, review gates, and final-submit protection under
 control.
 
 ```text
-candidate profile + job position -> validated application package -> automatic application via agentic internet browser
+candidate profile + job position -> validated application package
+-> automatic application via agentic internet browser
 ```
 
 ![Job Search Automation product flow](assets/product/images/karen_flow.png)
