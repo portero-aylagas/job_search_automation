@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationPackage,
     ApplicationRequirementFinding,
     ApplicationRequirements,
@@ -27,20 +28,56 @@ def attach_application_package_traceability(
     requirement_traces = _requirement_trace_entries(requirements)
 
     for artifact in traced_package.artifacts:
+        source_requirements = _matching_requirement_traces(
+            artifact.type,
+            artifact.source_prompt,
+            artifact.source_requirement,
+            requirement_traces,
+            requirements,
+        )
         metadata = dict(artifact.metadata)
         metadata["traceability"] = {
-            "source_requirements": _matching_requirement_traces(
-                artifact.type,
-                artifact.source_prompt,
-                artifact.source_requirement,
-                requirement_traces,
-                requirements,
-            ),
+            "source_requirements": source_requirements,
             "source_experience_units": selected_experience,
         }
+        provenance = _artifact_provenance(metadata)
+        provenance["workflow_trace"] = _workflow_trace_metadata(traced_package.workflow_trace)
+        provenance["source_requirements"] = source_requirements
+        provenance["source_experience_units"] = selected_experience
+        metadata["provenance"] = provenance
         artifact.metadata = metadata
 
     return traced_package
+
+
+def _artifact_provenance(metadata: dict[str, Any]) -> dict[str, Any]:
+    provenance = metadata.get("provenance")
+    if isinstance(provenance, dict):
+        return dict(provenance)
+    return {}
+
+
+def _workflow_trace_metadata(trace: AIWorkflowTrace | None) -> dict[str, Any] | None:
+    if trace is None:
+        return None
+
+    return {
+        "workflow_name": trace.workflow_name,
+        "operation": trace.operation,
+        "model": trace.model,
+        "profile_name": trace.profile_name,
+        "temperature": trace.temperature,
+        "max_output_tokens": trace.max_output_tokens,
+        "timeout_seconds": trace.timeout_seconds,
+        "max_retries": trace.max_retries,
+        "max_tool_calls": trace.max_tool_calls,
+        "truncation": trace.truncation,
+        "attempt_count": trace.attempt_count,
+        "duration_ms": trace.duration_ms,
+        "prompt_template_name": trace.prompt_template_name,
+        "prompt_template_version": trace.prompt_template_version,
+        "prompt_template_hash": trace.prompt_template_hash,
+    }
 
 
 def _selected_experience_trace(

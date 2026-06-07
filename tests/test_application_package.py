@@ -27,6 +27,7 @@ from src.job_intake import create_job_listing
 from src.paths import application_package_artifacts_dir
 from src.sample_data import get_sample_candidate_profile, get_sample_experience_units
 from src.schemas import (
+    AIWorkflowTrace,
     ApplicationArtifact,
     ApplicationFormField,
     ApplicationPackage,
@@ -188,6 +189,20 @@ def test_generate_application_package_with_llm_uses_creative_package_profile(
     assert parse_calls[0]["truncation"] == "disabled"
     assert package.workflow_trace is not None
     assert package.workflow_trace.workflow_name == "application_package"
+    assert (
+        package.workflow_trace.prompt_template_name
+        == "application_package.generate_package"
+    )
+    assert package.workflow_trace.prompt_template_hash
+    artifact_provenance = package.artifacts[0].metadata["provenance"]
+    assert artifact_provenance["workflow_trace"]["workflow_name"] == "application_package"
+    assert artifact_provenance["workflow_trace"]["model"]
+    assert artifact_provenance["workflow_trace"]["profile_name"] == "application_package"
+    assert (
+        artifact_provenance["workflow_trace"]["prompt_template_name"]
+        == "application_package.generate_package"
+    )
+    assert artifact_provenance["workflow_trace"]["prompt_template_hash"]
 
 
 def test_generate_application_package_reports_llm_error_without_fallback(
@@ -334,6 +349,102 @@ def test_application_package_adds_artifact_traceability_metadata() -> None:
     assert "Automated weekly KPI reporting" in (
         traceability["source_experience_units"][0]["evidence_points"][0]
     )
+    provenance = package.artifacts[0].metadata["provenance"]
+    assert provenance["workflow_trace"] is None
+    assert provenance["source_requirements"] == traceability["source_requirements"]
+    assert provenance["source_experience_units"] == traceability["source_experience_units"]
+
+
+def test_application_package_adds_artifact_workflow_provenance_metadata() -> None:
+    job = make_job()
+    workflow_trace = AIWorkflowTrace(
+        workflow_name="application_package",
+        operation="AI package generation",
+        model="gpt-5.4",
+        prompt_template_name="application_package.generate_package",
+        prompt_template_hash="sha256:abc123",
+        profile_name="application_package",
+        temperature=0.6,
+        max_output_tokens=9000,
+        timeout_seconds=90,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+        attempt_count=1,
+        duration_ms=42,
+    )
+
+    def fake_generator(candidate_profile, experience_units, received_job, requirements):
+        assert requirements is not None
+        return ApplicationPackage(
+            job_id=received_job.id,
+            workflow_trace=workflow_trace,
+            artifacts=[
+                ApplicationArtifact(
+                    id="cover-letter",
+                    type="cover_letter",
+                    label="Cover Letter",
+                    source_requirement="Cover letter",
+                    content="Dear hiring team, I am interested.",
+                )
+            ],
+            selected_experience_units=["exp-001"],
+        )
+
+    package = generate_application_package(
+        get_sample_candidate_profile(),
+        get_sample_experience_units(),
+        job,
+        make_requirements(job),
+        generator=fake_generator,
+    )
+
+    provenance = package.artifacts[0].metadata["provenance"]
+    assert provenance["workflow_trace"] == {
+        "workflow_name": "application_package",
+        "operation": "AI package generation",
+        "model": "gpt-5.4",
+        "profile_name": "application_package",
+        "temperature": 0.6,
+        "max_output_tokens": 9000,
+        "timeout_seconds": 90.0,
+        "max_retries": 2,
+        "max_tool_calls": None,
+        "truncation": "disabled",
+        "attempt_count": 1,
+        "duration_ms": 42,
+        "prompt_template_name": "application_package.generate_package",
+        "prompt_template_version": None,
+        "prompt_template_hash": "sha256:abc123",
+    }
+    assert provenance["source_requirements"] == [
+        {
+            "kind": "motivation_letter",
+            "label": "Cover letter",
+            "evidence": "Please upload a cover letter.",
+            "confidence": "high",
+        }
+    ]
+    assert provenance["source_experience_units"][0]["id"] == "exp-001"
+
+
+def test_legacy_application_package_without_artifact_metadata_still_loads() -> None:
+    package = ApplicationPackage.model_validate(
+        {
+            "job_id": "job-001",
+            "artifacts": [
+                {
+                    "id": "summary",
+                    "type": "application_summary",
+                    "label": "Application Summary",
+                    "content": "Legacy summary.",
+                }
+            ],
+        }
+    )
+
+    assert package.status == "draft"
+    assert package.workflow_trace is None
+    assert package.artifacts[0].metadata == {}
 
 
 def test_manual_artifact_edits_mark_artifacts_without_mutating_original() -> None:
@@ -519,6 +630,16 @@ def test_save_application_package_exports_cover_letter_artifact_file(
                 type="cover_letter",
                 label="Cover Letter Draft",
                 content="Dear hiring team,\n\nGenerated cover letter.",
+                metadata={
+                    "provenance": {
+                        "workflow_trace": {
+                            "model": "gpt-5.4",
+                            "profile_name": "application_package",
+                        },
+                        "source_requirements": [],
+                        "source_experience_units": [],
+                    }
+                },
             )
         ],
     )
@@ -533,6 +654,13 @@ def test_save_application_package_exports_cover_letter_artifact_file(
     assert reloaded.artifacts[0].metadata["generated_file_path"] == str(exported_path)
     assert reloaded.artifacts[0].metadata["generated_file_format"] == "pdf"
     assert reloaded.artifacts[0].metadata["generated_file_mime_type"] == "application/pdf"
+    assert reloaded.artifacts[0].metadata["provenance"]["workflow_trace"]["model"] == (
+        "gpt-5.4"
+    )
+    assert reloaded.artifacts[0].metadata["provenance"]["generated_file_path"] == str(
+        exported_path
+    )
+    assert reloaded.artifacts[0].metadata["provenance"]["generated_file_format"] == "pdf"
 
 
 def test_export_cover_letter_artifact_writes_to_selected_folder(tmp_path: Path) -> None:

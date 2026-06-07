@@ -47,7 +47,11 @@ from src.job_workspace import (
     get_fill_plan_generation_blockers,
 )
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
-from src.monitoring import LangSmithMonitoringError, langsmith_monitoring_summary
+from src.monitoring import (
+    LangSmithMonitoringError,
+    compute_ai_quality_counters,
+    langsmith_monitoring_summary,
+)
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationFillPlan,
@@ -528,6 +532,22 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
         fill_plan = load_application_fill_plan(app.state.base_dir, job.id)
         browser_use_log_dir = Path(app.state.base_dir) / RUNTIME_DATA_DIR / "browser_use"
         active_session = get_active_browser_use_session(browser_use_log_dir)
+        package_blockers = get_application_package_blockers(
+            candidate_profile,
+            job,
+            requirements,
+        )
+        fill_plan_generation_blockers = get_fill_plan_generation_blockers(
+            requirements,
+            package,
+        )
+        apply_blockers = get_apply_assistance_blockers(
+            job,
+            requirements,
+            package,
+            fill_plan,
+            candidate_profile=candidate_profile,
+        )
         return {
             "job": job.model_dump(mode="json"),
             "requirements": dump_optional(requirements),
@@ -535,22 +555,16 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
             "package_summary": build_application_package_summary(package) if package else None,
             "fill_plan": dump_optional(fill_plan),
             "fill_plan_review": build_fill_plan_review_payload(fill_plan),
-            "package_blockers": get_application_package_blockers(
-                candidate_profile,
-                job,
-                requirements,
-            ),
-            "fill_plan_generation_blockers": get_fill_plan_generation_blockers(
-                requirements,
-                package,
-            ),
-            "apply_blockers": get_apply_assistance_blockers(
-                job,
-                requirements,
-                package,
-                fill_plan,
-                candidate_profile=candidate_profile,
-            ),
+            "ai_quality_counters": compute_ai_quality_counters(
+                job=job,
+                requirements=requirements,
+                package=package,
+                fill_plan=fill_plan,
+                apply_blockers=apply_blockers,
+            ).model_dump(mode="json"),
+            "package_blockers": package_blockers,
+            "fill_plan_generation_blockers": fill_plan_generation_blockers,
+            "apply_blockers": apply_blockers,
             "active_browser_use_session": (
                 active_session.__dict__ if active_session is not None else None
             ),

@@ -102,6 +102,15 @@ def _export_artifact_pdf(
     metadata[f"{metadata_prefix}_file_path"] = str(artifact_path)
     metadata[f"{metadata_prefix}_file_format"] = "pdf"
     metadata[f"{metadata_prefix}_file_mime_type"] = "application/pdf"
+    provenance = metadata.get("provenance")
+    if isinstance(provenance, dict):
+        provenance = dict(provenance)
+    else:
+        provenance = {}
+    provenance[f"{metadata_prefix}_file_path"] = str(artifact_path)
+    provenance[f"{metadata_prefix}_file_format"] = "pdf"
+    provenance[f"{metadata_prefix}_file_mime_type"] = "application/pdf"
+    metadata["provenance"] = provenance
     artifact.metadata = metadata
     return artifact_path
 

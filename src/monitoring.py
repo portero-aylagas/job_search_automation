@@ -11,6 +11,14 @@ from urllib.parse import urlparse
 
 import requests
 
+from src.schemas import (
+    AIQualityCounters,
+    ApplicationFillPlan,
+    ApplicationPackage,
+    ApplicationRequirements,
+    JobListing,
+)
+
 CV_EXTRACTION_DASHBOARD_TITLE = "job-search-automation_cv-extraction"
 CV_CERTIFICATE_TRACE_NODE_NAMES = {
     "extract_cv_data",
@@ -21,6 +29,47 @@ CV_CERTIFICATE_TRACE_VIEW_LABEL = "CV & Certificates Extraction"
 
 class LangSmithMonitoringError(RuntimeError):
     """Raised when LangSmith monitoring data cannot be loaded."""
+
+
+def compute_ai_quality_counters(
+    *,
+    job: JobListing | None = None,
+    requirements: ApplicationRequirements | None = None,
+    package: ApplicationPackage | None = None,
+    fill_plan: ApplicationFillPlan | None = None,
+    apply_blockers: list[str] | None = None,
+) -> AIQualityCounters:
+    """Return deterministic quality counters from already-saved workflow models."""
+
+    counters = AIQualityCounters()
+    if package is not None:
+        counters.missing_information_count = len(package.missing_information)
+        for artifact in package.artifacts:
+            for finding in _artifact_quality_findings(artifact.metadata):
+                normalized = finding.casefold()
+                if "sensitive or user-decision" in normalized:
+                    counters.generated_sensitive_user_decision_answers += 1
+                if normalized.startswith(
+                    "claims experience with unsupported requirement:"
+                ):
+                    counters.unsupported_claim_findings += 1
+
+    if requirements is not None:
+        counters.missing_or_uncertain_requirements = len(requirements.missing_or_uncertain)
+        counters.low_confidence_requirements = _low_confidence_requirement_count(
+            requirements,
+        )
+        if requirements.status == "blocked" or not requirements.job_preserving:
+            counters.blocked_requirements = 1
+
+    if job is not None and _manual_apply_url_override(job):
+        counters.manual_apply_url_override = 1
+
+    if fill_plan is not None:
+        counters.blocked_apply_fields = len(fill_plan.blocked_fields)
+
+    counters.apply_blockers = len(apply_blockers or [])
+    return counters
 
 
 def langsmith_monitoring_summary(
@@ -129,6 +178,46 @@ def _cv_certificate_trace_filter() -> str:
     names = sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)
     clauses = ", ".join(f'eq(name, "{name}")' for name in names)
     return f"or({clauses})"
+
+
+def _artifact_quality_findings(metadata: dict[str, Any]) -> list[str]:
+    raw_findings = metadata.get("quality_findings", [])
+    if isinstance(raw_findings, str):
+        return [raw_findings.strip()] if raw_findings.strip() else []
+    if not isinstance(raw_findings, list):
+        return []
+    return [str(item).strip() for item in raw_findings if str(item).strip()]
+
+
+def _low_confidence_requirement_count(requirements: ApplicationRequirements) -> int:
+    count = 1 if requirements.confidence == "low" else 0
+    findings = [
+        *requirements.required_documents,
+        *requirements.upload_expectations,
+        *requirements.consent_requirements,
+        *requirements.privacy_login_ats_gates,
+        *requirements.deadlines,
+        *requirements.contact_or_fallback,
+    ]
+    if requirements.motivation_letter is not None:
+        findings.append(requirements.motivation_letter)
+    count += sum(1 for finding in findings if finding.confidence == "low")
+    count += sum(
+        1
+        for question in requirements.screening_questions
+        if question.confidence == "low"
+    )
+    count += sum(
+        1
+        for field in [*requirements.custom_form_fields, *requirements.profile_fields]
+        if field.confidence == "low"
+    )
+    return count
+
+
+def _manual_apply_url_override(job: JobListing) -> bool:
+    resolution = job.job_details.get("apply_url_resolution", {})
+    return isinstance(resolution, dict) and bool(resolution.get("manual_override"))
 
 
 def _cv_extraction_dashboard_url(

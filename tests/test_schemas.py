@@ -186,6 +186,47 @@ def test_supplemental_extraction_round_trip_includes_workflow_trace() -> None:
     assert reloaded == supplemental
 
 
+def test_workflow_trace_loads_legacy_json_without_prompt_metadata() -> None:
+    trace = AIWorkflowTrace.model_validate(
+        {
+            "workflow_name": "cv_extraction",
+            "operation": "AI CV extraction",
+            "model": "gpt-5.4",
+            "profile_name": "cv_extraction",
+            "temperature": 0.0,
+            "max_output_tokens": 4000,
+            "timeout_seconds": 60,
+            "max_retries": 2,
+            "retry_backoff_seconds": [1.0, 2.0],
+        }
+    )
+
+    assert trace.prompt_template_name is None
+    assert trace.prompt_template_version is None
+    assert trace.prompt_template_hash is None
+    assert trace.profile_name == "cv_extraction"
+
+
+def test_workflow_trace_round_trip_includes_prompt_metadata() -> None:
+    trace = AIWorkflowTrace(
+        workflow_name="application_package",
+        operation="AI package generation",
+        model="gpt-5.4",
+        prompt_template_name="application_package.generate_package",
+        prompt_template_hash="sha256:abc123",
+        profile_name="application_package",
+        temperature=0.6,
+        max_output_tokens=9000,
+        timeout_seconds=90,
+        max_retries=2,
+        retry_backoff_seconds=[1.0, 2.0],
+    )
+
+    reloaded = AIWorkflowTrace.model_validate(trace.model_dump(mode="json"))
+
+    assert reloaded == trace
+
+
 def test_candidate_preferences_coerces_legacy_strings() -> None:
     preferences = CandidatePreferences.model_validate(
         {
