@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes } from "react";
-import type { ApiRecord } from "../types";
+import type { ApiRecord, ApplicationFillPlanReviewRow, ApplicationRequirementsPayload, ApplicationRequirementFinding } from "../types";
 import { splitSelected, titleCase } from "../utils/format";
 
 type AiActionButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -73,7 +73,7 @@ export function CheckboxGroup({ title, options, values, onChange }: { title: str
   );
 }
 
-export function FillPlanInput({ row, value, onChange }: { row: ApiRecord; value: string; onChange: (value: string) => void }) {
+export function FillPlanInput({ row, value, onChange }: { row: ApplicationFillPlanReviewRow; value: string; onChange: (value: string) => void }) {
   const inputType = String(row.input_type || "").toLowerCase();
   const options = row.options || [];
   return (
@@ -123,12 +123,12 @@ export function DynamicDetails({ details }: { details: ApiRecord }) {
   );
 }
 
-export function KeyRequirements({ requirements }: { requirements: ApiRecord }) {
+export function KeyRequirements({ requirements }: { requirements: ApplicationRequirementsPayload }) {
   const items = [
-    ...(requirements.required_documents || []).map((item: ApiRecord) => item.label),
-    ...(requirements.upload_expectations || []).map((item: ApiRecord) => item.label),
+    ...(requirements.required_documents || []).map((item: ApplicationRequirementFinding) => item.label),
+    ...(requirements.upload_expectations || []).map((item: ApplicationRequirementFinding) => item.label),
     requirements.motivation_letter?.label,
-    ...(requirements.consent_requirements || []).filter((item: ApiRecord) => item.required).map((item: ApiRecord) => item.label)
+    ...(requirements.consent_requirements || []).filter((item: ApplicationRequirementFinding) => item.required).map((item: ApplicationRequirementFinding) => item.label)
   ].filter(Boolean);
   return <List title="Key Requirements" values={Array.from(new Set(items))} />;
 }

@@ -2,7 +2,7 @@ import { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPo
 import karenChatImage from "../../../../assets/ui/karen_office.png";
 import karenWorkingImage from "../../../../assets/ui/karen_working.gif";
 import { StatusMessage } from "../../shared/components";
-import type { ApiRecord } from "../../shared/types";
+import type { ApiRecord, JobIndexRecord, KarenActionLabels, KarenAgentPayload, KarenChatMessagePayload, KarenEventPayload } from "../../shared/types";
 import { formatTimestamp, titleCase } from "../../shared/utils/format";
 import { formatKarenBlockedEvent, formatKarenIntent, isBlockedKarenEvent, karenActionTarget, karenPanelWidthMax, karenPanelWidthMin, karenProgressSteps, latestWorkflowRunId, progressStepSymbol } from "./karenUtils";
 
@@ -21,8 +21,8 @@ export function KarenChatPanel({
   onResizeStart,
   onSendChat
 }: {
-  agent: ApiRecord | null;
-  records: ApiRecord[];
+  agent: KarenAgentPayload | null;
+  records: JobIndexRecord[];
   message: string;
   status: ApiRecord | null;
   width: number;
@@ -137,7 +137,7 @@ export function KarenChatPanel({
               <p>Ask about blockers, the next gate, or what is ready for the selected job.</p>
             </div>
           )}
-          {messages.map((item: ApiRecord, index: number) => (
+          {messages.map((item: KarenChatMessagePayload, index: number) => (
             <div className={`chat-message ${item.role === "user" ? "user" : "assistant"}`} key={`${item.timestamp}-${index}`}>
               <div className="chat-message-meta">
                 <strong>{item.role === "user" ? "You" : "Karen"}</strong>
@@ -191,8 +191,8 @@ function KarenProgress({
   events,
   isActive
 }: {
-  actionLabels: ApiRecord;
-  events: ApiRecord[];
+  actionLabels: KarenActionLabels;
+  events: KarenEventPayload[];
   isActive: boolean;
 }) {
   const latestRunId = latestWorkflowRunId(events);

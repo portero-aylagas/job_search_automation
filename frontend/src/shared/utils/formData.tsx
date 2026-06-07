@@ -1,4 +1,4 @@
-import type { ApiRecord } from "../types";
+import type { ApiRecord, ApplicationFormField, ApplicationRequirementFinding, ApplicationRequirementsPayload, ApplicationRequirementsReviewRequest, ApplicationScreeningQuestion } from "../types";
 
 export function textFields(labels: string[], keys: string[], form: ApiRecord, setForm: (updater: (current: ApiRecord) => ApiRecord) => void) {
   return labels.map((label, index) => {
@@ -26,8 +26,26 @@ export function updateDynamicField(index: number, value: string, setForm: (updat
   });
 }
 
-export function requirementsToForm(requirements: ApiRecord | null) {
-  if (!requirements) return {};
+export function requirementsToForm(requirements: ApplicationRequirementsPayload | null): ApplicationRequirementsReviewRequest {
+  if (!requirements) {
+    return {
+      job_preserving: false,
+      confidence: "medium",
+      blocked_reason: "",
+      required_documents_text: "",
+      upload_expectations_text: "",
+      motivation_label: "",
+      motivation_required: false,
+      profile_fields_text: "",
+      screening_questions_text: "",
+      custom_form_fields_text: "",
+      consent_requirements_text: "",
+      privacy_login_ats_gates_text: "",
+      deadlines_text: "",
+      contact_or_fallback_text: "",
+      missing_or_uncertain_text: ""
+    };
+  }
   return {
     job_preserving: !!requirements.job_preserving,
     confidence: requirements.confidence || "medium",
@@ -47,15 +65,15 @@ export function requirementsToForm(requirements: ApiRecord | null) {
   };
 }
 
-function formatFindings(items: ApiRecord[] = []) {
+function formatFindings(items: ApplicationRequirementFinding[] = []) {
   return items.map((item) => `- [${item.required ? "required" : "optional"}] ${item.label}`).join("\n");
 }
 
-function formatQuestions(items: ApiRecord[] = []) {
+function formatQuestions(items: ApplicationScreeningQuestion[] = []) {
   return items.map((item) => `- [${item.required ? "required" : "optional"}] ${item.question} | ${item.input_type || "text"}`).join("\n");
 }
 
-function formatFields(items: ApiRecord[] = []) {
+function formatFields(items: ApplicationFormField[] = []) {
   return items.map((item) => {
     const suffix = ` | ${item.input_type || "text"}${item.options?.length ? ` | ${item.options.join("; ")}` : ""}`;
     return `- [${item.required ? "required" : "optional"}] ${item.label}${suffix}`;

@@ -1,5 +1,5 @@
 import { progressStatus } from "../../app/workflowRefresh";
-import type { ApiRecord } from "../../shared/types";
+import type { ApiRecord, KarenActionLabels, KarenEventPayload } from "../../shared/types";
 import { titleCase } from "../../shared/utils/format";
 
 export const karenPanelWidthKey = "karenPanelWidth";
@@ -20,14 +20,14 @@ export function isActiveKarenRunStatus(status: string) {
   return ["queued", "running"].includes(status);
 }
 
-export function latestWorkflowRunId(events: ApiRecord[]) {
+export function latestWorkflowRunId(events: KarenEventPayload[]) {
   const event = [...events]
     .reverse()
     .find((item) => item.run_id || item.details?.workflow_run_id);
   return event?.run_id || event?.details?.workflow_run_id || "";
 }
 
-function shouldRefreshForKarenEvent(event: ApiRecord) {
+function shouldRefreshForKarenEvent(event: KarenEventPayload) {
   return (
     event.action &&
     (!event.event_type || event.event_type === "workflow_action") &&
@@ -36,12 +36,12 @@ function shouldRefreshForKarenEvent(event: ApiRecord) {
   );
 }
 
-function eventRefreshScopes(event: ApiRecord) {
+function eventRefreshScopes(event: KarenEventPayload) {
   const value = event.refresh_scopes || event.metadata?.refresh_scopes || event.details?.refresh_scopes || [];
   return Array.isArray(value) ? uniqueStrings(value.map(String)) : [];
 }
 
-function karenRefreshEventKey(event: ApiRecord) {
+function karenRefreshEventKey(event: KarenEventPayload) {
   const runId = event.run_id || event.details?.workflow_run_id || "run";
   const stepIndex = event.details?.step_index ?? "";
   const status = progressStatus(event);
@@ -57,24 +57,24 @@ function hasAnyRefreshScope(scopes: string[] = [], targets: string[]) {
   return targets.some((target) => scopes.includes(target));
 }
 
-export function isBlockedKarenEvent(event: ApiRecord) {
+export function isBlockedKarenEvent(event: KarenEventPayload) {
   if (event.status) {
     return ["blocked", "needs_input", "refused", "error"].includes(String(event.status));
   }
   return !["understood", "started", "done", "executed"].includes(String(event.result || ""));
 }
 
-export function eventActionLabel(event: ApiRecord, actionLabels: ApiRecord = {}) {
+export function eventActionLabel(event: KarenEventPayload, actionLabels: KarenActionLabels = {}) {
   return event.label || event.details?.action_label || actionLabels[event.action] || titleCase(String(event.action || ""));
 }
 
-export function formatKarenIntent(event: ApiRecord) {
+export function formatKarenIntent(event: KarenEventPayload) {
   const goal = titleCase(String(event.details?.goal || "workflow request"));
   const mode = event.details?.execution_mode ? `, ${titleCase(String(event.details.execution_mode))}` : "";
   return `${goal}${mode}`;
 }
 
-export function formatKarenBlockedEvent(event: ApiRecord, actionLabels: ApiRecord = {}) {
+export function formatKarenBlockedEvent(event: KarenEventPayload, actionLabels: KarenActionLabels = {}) {
   const blockers = Array.isArray(event.blockers) ? event.blockers.filter(Boolean) : [];
   const reason = blockers.length
     ? blockers.join("; ")
@@ -83,7 +83,7 @@ export function formatKarenBlockedEvent(event: ApiRecord, actionLabels: ApiRecor
   return `${eventActionLabel(event, actionLabels)}: ${reason}.${route}`.replace(/\.\./g, ".");
 }
 
-export function karenProgressSteps(events: ApiRecord[], actionLabels: ApiRecord = {}) {
+export function karenProgressSteps(events: KarenEventPayload[], actionLabels: KarenActionLabels = {}) {
   const steps: ApiRecord[] = [];
   const stepIndexes = new Map<string, number>();
   const progressEvents = events.filter((event) => (
@@ -113,7 +113,7 @@ export function karenProgressSteps(events: ApiRecord[], actionLabels: ApiRecord 
   return steps.slice(0, 8);
 }
 
-function karenStepKey(event: ApiRecord, fallbackIndex: number) {
+function karenStepKey(event: KarenEventPayload, fallbackIndex: number) {
   const runId = event.run_id || event.details?.workflow_run_id || "run";
   const stepIndex = event.details?.step_index ?? fallbackIndex;
   return `${runId}:${stepIndex}:${event.action}`;

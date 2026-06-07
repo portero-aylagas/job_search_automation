@@ -1,14 +1,14 @@
-import type { ApiRecord } from "../types";
+import type { ApiRecord, ApplicationArtifactPayload } from "../types";
 
 export function splitSelected(value: string) {
   return value.includes(";") ? value.split(";").map((item) => item.trim()).filter(Boolean) : value ? [value] : [];
 }
 
-export function orderArtifacts(artifacts: ApiRecord[]) {
+export function orderArtifacts(artifacts: ApplicationArtifactPayload[]) {
   return [...artifacts].sort((a, b) => Number(!isCoverLetter(a)) - Number(!isCoverLetter(b)));
 }
 
-export function isCoverLetter(artifact: ApiRecord) {
+export function isCoverLetter(artifact: ApplicationArtifactPayload) {
   return artifact.type === "cover_letter" || String(artifact.label || "").toLowerCase().includes("cover letter");
 }
 

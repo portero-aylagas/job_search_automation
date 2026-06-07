@@ -2,7 +2,22 @@ import { FormEvent, useEffect, useState } from "react";
 import { apiRequest } from "../../api";
 import { hasAnyRefreshScope } from "../../app/workflowRefresh";
 import { AiActionButton, Blockers, DynamicDetails, Field, FillPlanInput, KeyRequirements, List, SectionHeader, StatusBadge, StatusMessage, TextArea, Traceability } from "../../shared/components";
-import type { ApiRecord } from "../../shared/types";
+import type {
+  ApiRecord,
+  ApplicationArtifactPayload,
+  ApplicationFillPlanReviewRequest,
+  ApplicationFillPlanReviewRow,
+  ApplicationFillPlanUploadRow,
+  ApplicationPackageReviewRequest,
+  ApplicationRequirementsReviewRequest,
+  ConfidenceLevel,
+  JobIndexRecord,
+  JobListingPayload,
+  JobsIndexPayload,
+  JobWorkspacePayload,
+  KarenAgentPayload,
+  TrackerStatusOption
+} from "../../shared/types";
 import { action, runBusy } from "../../shared/utils/apiActions";
 import { requirementsToForm } from "../../shared/utils/formData";
 import { isCoverLetter, orderArtifacts, titleCase } from "../../shared/utils/format";
@@ -18,7 +33,7 @@ export function JobsPage({
   refreshScopes,
   refreshSignal
 }: {
-  agent: ApiRecord | null;
+  agent: KarenAgentPayload | null;
   onRefreshComplete: () => void;
   onNavigateToIntake: () => void;
   onSelectedJobChange: (jobId: string) => void;
@@ -27,16 +42,16 @@ export function JobsPage({
   refreshScopes: string[];
   refreshSignal: number;
 }) {
-  const [records, setRecords] = useState<ApiRecord[]>([]);
-  const [statusOptions, setStatusOptions] = useState<ApiRecord[]>([]);
+  const [records, setRecords] = useState<JobIndexRecord[]>([]);
+  const [statusOptions, setStatusOptions] = useState<TrackerStatusOption[]>([]);
   const [selectedJobId, setSelectedJobId] = useState("");
-  const [workspace, setWorkspace] = useState<ApiRecord | null>(null);
+  const [workspace, setWorkspace] = useState<JobWorkspacePayload | null>(null);
   const [message, setMessage] = useState<ApiRecord | null>(null);
   const [loadingWorkspace, setLoadingWorkspace] = useState(false);
 
   async function loadJobs(preferredJobId = selectedJobId) {
     try {
-      const payload = await apiRequest<ApiRecord>("/api/jobs");
+      const payload = await apiRequest<JobsIndexPayload>("/api/jobs");
       const nextRecords = payload.records || [];
       const nextJobId = chooseJobId(nextRecords, preferredJobId, selectedJobId);
       setRecords(nextRecords);
@@ -58,7 +73,7 @@ export function JobsPage({
   useEffect(() => {
     if (!selectedJobId) return;
     setLoadingWorkspace(true);
-    apiRequest<ApiRecord>(`/api/jobs/${selectedJobId}/workspace`)
+    apiRequest<JobWorkspacePayload>(`/api/jobs/${selectedJobId}/workspace`)
       .then(setWorkspace)
       .catch((error) => setMessage({ type: "error", text: error.message }))
       .finally(() => setLoadingWorkspace(false));
@@ -79,13 +94,13 @@ export function JobsPage({
 
     setLoadingWorkspace(true);
     try {
-      const jobsPayload = refreshJobs ? await apiRequest<ApiRecord>("/api/jobs") : null;
+      const jobsPayload = refreshJobs ? await apiRequest<JobsIndexPayload>("/api/jobs") : null;
       const nextRecords = jobsPayload ? jobsPayload.records || [] : records;
       const nextJobId = refreshJobs
         ? chooseJobId(nextRecords, preferredJobId, selectedJobId)
         : preferredJobId || selectedJobId;
       const workspacePayload = refreshWorkspace && nextJobId
-        ? await apiRequest<ApiRecord>(`/api/jobs/${nextJobId}/workspace`)
+        ? await apiRequest<JobWorkspacePayload>(`/api/jobs/${nextJobId}/workspace`)
         : workspace;
       if (jobsPayload) {
         setRecords(nextRecords);
@@ -105,8 +120,8 @@ export function JobsPage({
   async function reloadWorkspace() {
     if (!selectedJobId) return;
     const [workspacePayload, jobsPayload] = await Promise.all([
-      apiRequest<ApiRecord>(`/api/jobs/${selectedJobId}/workspace`),
-      apiRequest<ApiRecord>("/api/jobs")
+      apiRequest<JobWorkspacePayload>(`/api/jobs/${selectedJobId}/workspace`),
+      apiRequest<JobsIndexPayload>("/api/jobs")
     ]);
     setWorkspace(workspacePayload);
     setRecords(jobsPayload.records || []);
@@ -115,7 +130,7 @@ export function JobsPage({
   }
 
   async function reloadJobsAfterRemoval(messageText: string) {
-    const jobsPayload = await apiRequest<ApiRecord>("/api/jobs");
+    const jobsPayload = await apiRequest<JobsIndexPayload>("/api/jobs");
     const nextRecords = jobsPayload.records || [];
     setRecords(nextRecords);
     setStatusOptions(jobsPayload.status_options || []);
@@ -244,12 +259,12 @@ export function JobsPage({
 }
 
 type PanelProps = {
-  workspace: ApiRecord;
+  workspace: JobWorkspacePayload;
   setMessage: (message: ApiRecord | null) => void;
   reload: () => Promise<void> | void;
 };
 
-function JobSnapshot({ job }: { job: ApiRecord }) {
+function JobSnapshot({ job }: { job: JobListingPayload }) {
   return (
     <section className="panel" id="workflow-job">
       <SectionHeader title="Job Snapshot" summary={job.apply_url ? "Apply URL present" : "Apply URL missing"} />
@@ -268,7 +283,7 @@ function JobSnapshot({ job }: { job: ApiRecord }) {
   );
 }
 
-function WorkflowStepper({ workspace }: { workspace: ApiRecord }) {
+function WorkflowStepper({ workspace }: { workspace: JobWorkspacePayload }) {
   const steps = [
     { id: "workflow-profile", label: "Profile", ...profileStatus(workspace) },
     { id: "workflow-job", label: "Job", ...jobStatus(workspace) },
@@ -298,13 +313,13 @@ function JobManagement({
   busy,
   workspace
 }: {
-  agent: ApiRecord | null;
+  agent: KarenAgentPayload | null;
   onArchive: () => void;
   onDelete: () => void;
   busy: boolean;
-  workspace: ApiRecord;
+  workspace: JobWorkspacePayload;
 }) {
-  const state = agent?.state || {};
+  const state = agent?.state || { blockers: [], errors: [], next_allowed_actions: [], pending_gate: null };
   const blockers = [...(state.blockers || []), ...(state.errors || [])].filter(Boolean);
   const nextLabel = jobManagementNextLabel(workspace, state.next_allowed_actions || [], agent?.action_labels);
 
@@ -340,7 +355,7 @@ function JobManagement({
 
 function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
   const requirements = workspace.requirements;
-  const [form, setForm] = useState<ApiRecord>(() => requirementsToForm(requirements));
+  const [form, setForm] = useState<ApplicationRequirementsReviewRequest>(() => requirementsToForm(requirements));
   const [discovering, setDiscovering] = useState(false);
   const [savingReview, setSavingReview] = useState(false);
   useEffect(() => setForm(requirementsToForm(requirements)), [requirements?.job_id, requirements?.review_status]);
@@ -392,7 +407,7 @@ function RequirementsPanel({ workspace, setMessage, reload }: PanelProps) {
             {requirements.blocked_reason && <StatusMessage type="warning" text={requirements.blocked_reason} />}
             <KeyRequirements requirements={requirements} />
             <label className="check-row"><input type="checkbox" checked={!!form.job_preserving} onChange={(event) => setForm((current) => ({ ...current, job_preserving: event.target.checked }))} />Apply page matches this selected job</label>
-            <label>Overall confidence<select value={form.confidence} onChange={(event) => setForm((current) => ({ ...current, confidence: event.target.value }))}>{["low", "medium", "high"].map((value) => <option key={value}>{value}</option>)}</select></label>
+            <label>Overall confidence<select value={form.confidence} onChange={(event) => setForm((current) => ({ ...current, confidence: event.target.value as ConfidenceLevel }))}>{["low", "medium", "high"].map((value) => <option key={value}>{value}</option>)}</select></label>
             {[
               ["Blocked reason", "blocked_reason"],
               ["Required documents", "required_documents_text"],
@@ -436,7 +451,7 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
   const [exporting, setExporting] = useState(false);
   useEffect(() => {
     const next: Record<string, string> = {};
-    (packageData?.artifacts || []).forEach((artifact: ApiRecord) => {
+    (packageData?.artifacts || []).forEach((artifact: ApplicationArtifactPayload) => {
       next[artifact.id] = artifact.content || "";
     });
     setEdits(next);
@@ -457,7 +472,8 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
   async function saveReview(event: FormEvent) {
     event.preventDefault();
     await runBusy(setSavingReview, setMessage, async () => {
-      await action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", { edits_by_artifact_id: edits }, setMessage, reload);
+      const payload: ApplicationPackageReviewRequest = { edits_by_artifact_id: edits };
+      await action(`/api/jobs/${workspace.job.id}/package/review`, "PUT", payload, setMessage, reload);
     });
   }
 
@@ -495,7 +511,7 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
           <>
             <List title="Selected Experience Units" values={workspace.package_summary?.selected_experience_units || []} />
             <form onSubmit={saveReview}>
-              {orderArtifacts(packageData.artifacts || []).map((artifact: ApiRecord) => (
+              {orderArtifacts(packageData.artifacts || []).map((artifact: ApplicationArtifactPayload) => (
                 <details key={artifact.id} open={isCoverLetter(artifact)}>
                   <summary>{artifact.label}</summary>
                   {artifact.source_prompt && <p className="muted">Source prompt: {artifact.source_prompt}</p>}
@@ -539,17 +555,17 @@ function PackagePanel({ workspace, setMessage, reload }: PanelProps) {
 function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
   const fillPlan = workspace.fill_plan;
   const review = workspace.fill_plan_review;
-  const [values, setValues] = useState<ApiRecord>({});
-  const [uploads, setUploads] = useState<ApiRecord>({});
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [uploads, setUploads] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [savingReview, setSavingReview] = useState(false);
   useEffect(() => {
-    const nextValues: ApiRecord = {};
-    const nextUploads: ApiRecord = {};
-    [...(review?.required_rows || []), ...(review?.optional_rows || [])].forEach((row: ApiRecord) => {
+    const nextValues: Record<string, string> = {};
+    const nextUploads: Record<string, string> = {};
+    [...(review?.required_rows || []), ...(review?.optional_rows || [])].forEach((row: ApplicationFillPlanReviewRow) => {
       nextValues[row.edit_key] = row.value || "";
     });
-    (review?.upload_rows || []).forEach((row: ApiRecord) => {
+    (review?.upload_rows || []).forEach((row: ApplicationFillPlanUploadRow) => {
       nextUploads[row.edit_key] = row.file_path || "";
     });
     setValues(nextValues);
@@ -569,21 +585,22 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
 
   async function submitReview(event: FormEvent) {
     event.preventDefault();
-    const edited_values: ApiRecord = {};
-    const needs_answer_values_by_key: ApiRecord = {};
-    const blocked_values_by_key: ApiRecord = {};
-    [...(review?.required_rows || []), ...(review?.optional_rows || [])].forEach((row: ApiRecord) => {
+    const edited_values: Record<string, string> = {};
+    const needs_answer_values_by_key: Record<string, string> = {};
+    const blocked_values_by_key: Record<string, string> = {};
+    [...(review?.required_rows || []), ...(review?.optional_rows || [])].forEach((row: ApplicationFillPlanReviewRow) => {
       if (row.kind === "field") edited_values[row.edit_key] = values[row.edit_key] || "";
       if (row.kind === "needs") needs_answer_values_by_key[row.edit_key] = values[row.edit_key] || "";
       if (row.kind === "blocked") blocked_values_by_key[row.edit_key] = values[row.edit_key] || "";
     });
     await runBusy(setSavingReview, setMessage, async () => {
-      await action(`/api/jobs/${workspace.job.id}/fill-plan/review`, "PUT", {
+      const payload: ApplicationFillPlanReviewRequest = {
         edited_values,
         upload_paths_by_key: uploads,
         needs_answer_values_by_key,
         blocked_values_by_key
-      }, setMessage, reload);
+      };
+      await action(`/api/jobs/${workspace.job.id}/fill-plan/review`, "PUT", payload, setMessage, reload);
     });
   }
 
@@ -616,14 +633,14 @@ function FillPlanPanel({ workspace, setMessage, reload }: PanelProps) {
             <div className="workflow-subsection">
               <h3>Required fields</h3>
               {!review.required_rows?.length && <p className="muted">No required fields.</p>}
-              {review.required_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}
+              {review.required_rows?.map((row) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}
             </div>
             <div className="workflow-subsection">
               <h3>Uploads Sent To Browser</h3>
               {!review.upload_rows?.length && <p className="muted">No uploads sent to browser.</p>}
-              {review.upload_rows?.map((row: ApiRecord) => <label key={row.edit_key}>{row.label} file path<input value={uploads[row.edit_key] || ""} onChange={(event) => setUploads((current) => ({ ...current, [row.edit_key]: event.target.value }))} /></label>)}
+              {review.upload_rows?.map((row) => <label key={row.edit_key}>{row.label} file path<input value={uploads[row.edit_key] || ""} onChange={(event) => setUploads((current) => ({ ...current, [row.edit_key]: event.target.value }))} /></label>)}
             </div>
-            <details><summary>Optional or unclear</summary>{!review.optional_rows?.length && <p className="muted">No optional or unclear fields.</p>}{review.optional_rows?.map((row: ApiRecord) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}</details>
+            <details><summary>Optional or unclear</summary>{!review.optional_rows?.length && <p className="muted">No optional or unclear fields.</p>}{review.optional_rows?.map((row) => <FillPlanInput key={row.edit_key} row={row} value={values[row.edit_key] || ""} onChange={(value) => setValues((current) => ({ ...current, [row.edit_key]: value }))} />)}</details>
             <div className="actions">
               <AiActionButton
                 className="primary"
