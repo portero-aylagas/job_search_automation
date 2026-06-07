@@ -27,7 +27,10 @@ export async function apiRequest<T>(
     : {};
   if (!response.ok) {
     const detail = payload.detail || "Request failed.";
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    const message = typeof detail === "string"
+      ? detail
+      : detail.message || JSON.stringify(detail);
+    throw new Error(message);
   }
   if (!contentType.includes("application/json")) {
     throw new Error("API returned a non-JSON response. Check that the FastAPI server is running on 127.0.0.1:8001.");

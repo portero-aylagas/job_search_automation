@@ -342,7 +342,10 @@ def test_archived_job_cannot_run_workflow_actions(tmp_path: Path) -> None:
     ))
 
     assert response.status_code == 400
-    assert "Restore this archived job" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "workflow_error"
+    assert "Restore this archived job" in detail["message"]
+    assert detail["blockers"] == [detail["message"]]
 
 
 def test_permanent_delete_removes_job_outputs_index_and_job_scoped_karen_data(
@@ -427,7 +430,10 @@ def test_requirements_review_returns_404_when_missing(tmp_path: Path) -> None:
     ))
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Application requirements not found."
+    detail = response.json()["detail"]
+    assert detail["code"] == "workflow_error"
+    assert detail["message"] == "Application requirements not found."
+    assert detail["blockers"] == ["Application requirements not found."]
 
 
 def test_requirements_review_saves_reviewed_edits(tmp_path: Path) -> None:
@@ -460,7 +466,10 @@ def test_package_generation_returns_blockers_for_incomplete_prerequisites(
     ))
 
     assert response.status_code == 400
-    assert "Complete all package prerequisites" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "workflow_error"
+    assert "Complete all package prerequisites" in detail["message"]
+    assert detail["blockers"] == [detail["message"]]
 
 
 def test_package_generation_uses_fake_generator_for_happy_path(
@@ -513,6 +522,7 @@ def test_fill_plan_generation_and_review_enforce_gates(
         f"/api/jobs/{job.id}/fill-plan/generate",
     ))
     assert blocked.status_code == 400
+    assert blocked.json()["detail"]["code"] == "workflow_error"
 
     requirements = reviewed_requirements(job)
     package = ApplicationPackage(
@@ -577,7 +587,10 @@ def test_apply_route_blocks_until_reviews_are_complete(tmp_path: Path) -> None:
     response = asyncio.run(api_request(tmp_path, "POST", f"/api/jobs/{job.id}/apply"))
 
     assert response.status_code == 400
-    assert "Complete the required review steps" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "workflow_error"
+    assert "Complete the required review steps" in detail["message"]
+    assert detail["blockers"] == [detail["message"]]
 
 
 def test_apply_route_launches_browser_without_api_startup_wait(

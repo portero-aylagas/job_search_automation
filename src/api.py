@@ -226,6 +226,32 @@ class KarenChatRequest(BaseModel):
     session_id: str | None = None
 
 
+def service_error_detail(
+    exc: JobWorkflowServiceError | CandidateProfileServiceError,
+    *,
+    code: str,
+    blockers: list[str] | None = None,
+    field_errors: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Return the structured API error detail shape for service failures."""
+
+    message = str(exc)
+    detail: dict[str, object] = {
+        "code": code,
+        "message": message,
+        "blockers": blockers if blockers is not None else [message],
+    }
+    if field_errors:
+        detail["field_errors"] = field_errors
+    return detail
+
+
+def workflow_error_detail(exc: JobWorkflowServiceError) -> dict[str, object]:
+    """Return the structured error detail for workflow service blockers."""
+
+    return service_error_detail(exc, code="workflow_error")
+
+
 def create_app(base_dir: Path | str = BASE_DIR) -> FastAPI:
     """Create the FastAPI app bound to a repository base directory."""
 
@@ -578,7 +604,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
         try:
             requirements = discover_application_requirements(app.state.base_dir, job_id)
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "requirements": requirements.model_dump(mode="json"),
             "message": "Application requirements were saved for review.",
@@ -598,7 +624,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 **payload.model_dump(),
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         message = (
             "Requirements review saved."
             if reviewed.review_status == "reviewed"
@@ -619,7 +645,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 job_id,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "package": package.model_dump(mode="json"),
             "json_path": str(json_path),
@@ -638,7 +664,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 payload.edits_by_artifact_id,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "package": reviewed.model_dump(mode="json"),
             "json_path": str(json_path),
@@ -660,7 +686,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 payload.destination_folder,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "exported_path": str(exported_path),
             "json_path": str(json_path),
@@ -678,7 +704,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 job_id,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "fill_plan": fill_plan.model_dump(mode="json"),
             "fill_plan_review": build_fill_plan_review_payload(fill_plan),
@@ -700,7 +726,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 blocked_values_by_key=payload.blocked_values_by_key,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "fill_plan": reviewed.model_dump(mode="json"),
             "fill_plan_review": build_fill_plan_review_payload(reviewed),
@@ -718,7 +744,7 @@ def _register_job_workflow_routes(app: FastAPI) -> None:
                 startup_wait_seconds=API_BROWSER_USE_STARTUP_WAIT_SECONDS,
             )
         except JobWorkflowServiceError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=workflow_error_detail(exc)) from exc
         return {
             "url": result.url,
             "pid": result.pid,
