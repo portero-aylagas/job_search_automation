@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from src import llm_client
-from src.prompt_templates import get_prompt
+from src.prompt_templates import get_prompt, get_prompt_template_metadata
 from src.schemas import AIWorkflowTrace, ConfidenceLevel
 from src.url_validation import validate_source_url
 
@@ -106,6 +106,10 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
 
     normalized_url = validate_source_url(source_url)
     workflow_trace: AIWorkflowTrace | None = None
+    prompt_metadata = get_prompt_template_metadata(
+        "llm_job_extraction",
+        "extract_job_data",
+    )
 
     def capture_trace(trace: AIWorkflowTrace) -> None:
         nonlocal workflow_trace
@@ -134,6 +138,7 @@ def extract_job_data_from_url(source_url: str) -> ExtractedJobData:
         # Job extraction should describe what the source says, not invent missing fields.
         profile=llm_client.JOB_EXTRACTION_PROFILE,
         trace_sink=capture_trace,
+        **prompt_metadata,
     )
     extracted = normalize_extracted_job_data(response)
     extracted.workflow_trace = workflow_trace
@@ -150,6 +155,10 @@ def resolve_apply_url_from_url(
 
     normalized_url = validate_source_url(source_url)
     workflow_trace: AIWorkflowTrace | None = None
+    prompt_metadata = get_prompt_template_metadata(
+        "llm_job_extraction",
+        "resolve_apply_url",
+    )
 
     def capture_trace(trace: AIWorkflowTrace) -> None:
         nonlocal workflow_trace
@@ -180,6 +189,7 @@ def resolve_apply_url_from_url(
         # URL resolution is a verification task, so we keep it deterministic as well.
         profile=llm_client.APPLY_URL_RESOLUTION_PROFILE,
         trace_sink=capture_trace,
+        **prompt_metadata,
     )
     resolution = ApplyUrlResolution.model_validate(response.model_dump(mode="json"))
     resolution.workflow_trace = workflow_trace

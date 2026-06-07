@@ -93,6 +93,8 @@ def test_structured_response_emits_trace_metadata(monkeypatch: pytest.MonkeyPatc
         operation="Trace test",
         profile=profile,
         trace_sink=trace_payload.append,
+        prompt_template_name="example.workflow",
+        prompt_template_hash="sha256:abc123",
     )
 
     assert result == parsed_payload
@@ -101,6 +103,9 @@ def test_structured_response_emits_trace_metadata(monkeypatch: pytest.MonkeyPatc
     assert trace.workflow_name == "traceable_workflow"
     assert trace.operation == "Trace test"
     assert trace.model == llm_client.MODEL
+    assert trace.prompt_template_name == "example.workflow"
+    assert trace.prompt_template_version is None
+    assert trace.prompt_template_hash == "sha256:abc123"
     assert trace.profile_name == "traceable_workflow"
     assert trace.temperature == 0.2
     assert trace.max_output_tokens == 1234
@@ -196,6 +201,17 @@ def test_missing_api_key_fails_before_provider_construction(
         llm_client.get_openai_client()
 
     assert constructed == []
+
+
+def test_normal_tests_block_unmocked_provider_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+
+    with pytest.raises(AssertionError, match="Live OpenAI provider construction is blocked"):
+        llm_client.get_openai_client()
 
 
 def test_provider_client_disables_sdk_retries(monkeypatch: pytest.MonkeyPatch) -> None:

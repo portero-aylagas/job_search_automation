@@ -14,3 +14,6 @@ convention = "google"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "live_ai: explicit manual tests that may construct live AI provider clients; skipped unless --run-live-ai is supplied.",
+]

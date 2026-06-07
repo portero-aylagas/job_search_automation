@@ -122,6 +122,9 @@ class AIWorkflowTrace(BaseModel):
     workflow_name: str
     operation: str
     model: str
+    prompt_template_name: str | None = None
+    prompt_template_version: str | None = None
+    prompt_template_hash: str | None = None
     profile_name: str
     temperature: float
     max_output_tokens: int
@@ -882,6 +885,20 @@ class ApplicationFillPlan(BaseModel):
     @classmethod
     def _validate_job_id(cls, value: str) -> str:
         return _validate_storage_identifier(value, "Job ID")
+
+
+class AIQualityCounters(BaseModel):
+    """Deterministic counters derived from saved AI workflow artifacts."""
+
+    generated_sensitive_user_decision_answers: int = 0
+    unsupported_claim_findings: int = 0
+    missing_information_count: int = 0
+    missing_or_uncertain_requirements: int = 0
+    low_confidence_requirements: int = 0
+    manual_apply_url_override: int = 0
+    blocked_requirements: int = 0
+    blocked_apply_fields: int = 0
+    apply_blockers: int = 0
 
 
 class TrackerRecord(BaseModel):
