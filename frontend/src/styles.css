@@ -514,7 +514,7 @@ label {
 }
 
 .workflow-overview h2 {
-  margin: 0.15rem 0 0.9rem;
+  margin: 0.15rem 0 0.75rem;
 }
 
 .eyebrow {
@@ -526,25 +526,46 @@ label {
 }
 
 .workflow-stepper {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 0.5rem;
+  display: flex;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0.15rem;
   list-style: none;
 }
 
+.workflow-step {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
 .workflow-step a {
-  display: grid;
-  min-height: 4.25rem;
-  align-content: space-between;
-  gap: 0.35rem;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
   border: 1px solid #d8dee8;
-  border-radius: 6px;
+  border-radius: 999px;
   background: #fbfcfe;
   color: inherit;
-  padding: 0.55rem;
+  padding: 0.38rem 0.45rem 0.38rem 0.7rem;
   text-decoration: none;
+}
+
+.workflow-step a > span:first-child {
+  min-width: 0;
+  font-size: 0.88rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workflow-step .status-badge {
+  flex: 0 0 auto;
+  padding-inline: 0.45rem;
 }
 
 .workflow-step a:hover,
@@ -1081,7 +1102,7 @@ summary {
   }
 
   .workflow-stepper {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
   }
 
   .section-header {
