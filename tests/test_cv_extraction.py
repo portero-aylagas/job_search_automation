@@ -153,7 +153,11 @@ def test_extract_cv_data_with_llm_uploads_file_reference_to_structured_response(
     assert extracted.projects == ["Application workflow automation"]
     assert extracted.workflow_trace is not None
     assert extracted.workflow_trace.workflow_name == "cv_extraction"
+    assert extracted.workflow_trace.prompt_template_name == "cv_extraction.extract_cv_data"
+    assert extracted.workflow_trace.prompt_template_hash
     assert extracted.workflow_trace.profile_name == "cv_extraction"
+    assert "prompt_template_name" not in parse_calls[0]
+    assert "prompt_template_hash" not in parse_calls[0]
     assert parse_calls[0]["text_format"] is LLMCandidateCVExtractedResponse
     assert parse_calls[0]["text_format"] is not CandidateCVExtracted
     assert parse_calls[0]["temperature"] == 0.0

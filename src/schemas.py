@@ -122,6 +122,9 @@ class AIWorkflowTrace(BaseModel):
     workflow_name: str
     operation: str
     model: str
+    prompt_template_name: str | None = None
+    prompt_template_version: str | None = None
+    prompt_template_hash: str | None = None
     profile_name: str
     temperature: float
     max_output_tokens: int

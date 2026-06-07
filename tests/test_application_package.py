@@ -188,6 +188,11 @@ def test_generate_application_package_with_llm_uses_creative_package_profile(
     assert parse_calls[0]["truncation"] == "disabled"
     assert package.workflow_trace is not None
     assert package.workflow_trace.workflow_name == "application_package"
+    assert (
+        package.workflow_trace.prompt_template_name
+        == "application_package.generate_package"
+    )
+    assert package.workflow_trace.prompt_template_hash
 
 
 def test_generate_application_package_reports_llm_error_without_fallback(

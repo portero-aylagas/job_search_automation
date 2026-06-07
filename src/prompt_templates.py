@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -41,3 +43,51 @@ def get_prompt(*path: str, **variables: object) -> str:
         raise KeyError(
             f"Prompt template '{joined_path}' is missing variable '{missing_name}'"
         ) from exc
+
+
+def get_prompt_template_metadata(*path: str) -> dict[str, str | None]:
+    """Return stable trace metadata for a prompt template path."""
+    node: Any = load_prompt_templates()
+    joined_path = ".".join(path)
+
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError(f"Prompt template not found: {joined_path}")
+        node = node[key]
+
+    version = _prompt_template_version(node)
+    template_payload = _prompt_template_hash_payload(node)
+    encoded = json.dumps(
+        template_payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "prompt_template_name": joined_path,
+        "prompt_template_version": version,
+        "prompt_template_hash": f"sha256:{hashlib.sha256(encoded).hexdigest()}",
+    }
+
+
+def _prompt_template_version(node: object) -> str | None:
+    if not isinstance(node, dict):
+        return None
+    version = node.get("version")
+    if isinstance(version, str) and version.strip():
+        return version.strip()
+    return None
+
+
+def _prompt_template_hash_payload(node: object) -> object:
+    if isinstance(node, str):
+        return node
+    if isinstance(node, dict):
+        return {
+            str(key): _prompt_template_hash_payload(value)
+            for key, value in sorted(node.items())
+            if key != "version"
+        }
+    if isinstance(node, list):
+        return [_prompt_template_hash_payload(item) for item in node]
+    return node
