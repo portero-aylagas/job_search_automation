@@ -203,6 +203,17 @@ def test_missing_api_key_fails_before_provider_construction(
     assert constructed == []
 
 
+def test_normal_tests_block_unmocked_provider_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+
+    with pytest.raises(AssertionError, match="Live OpenAI provider construction is blocked"):
+        llm_client.get_openai_client()
+
+
 def test_provider_client_disables_sdk_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     constructed = []
 
