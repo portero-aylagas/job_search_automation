@@ -116,6 +116,12 @@ parallel implementation or bypass review gates.
 | No review-gate bypasses | Candidate data, job data, requirements, packages, and fill plans remain human-controlled. |
 | No LinkedIn scraping | The core workflow is independent of fragile or policy-sensitive scraping paths. |
 
+### Scope
+
+This project is intended to demonstrate controlled applied-AI workflow engineering: stateful agent orchestration, review gates, structured outputs, validation, permissioned browser automation, and regression-safe delivery.
+
+It is not presented as a production SaaS platform, ML research project, or frontend/UI showcase.
+
 ## Known Limitations
 
 Browser assistance is schema-dependent. It works on many job applications, but
@@ -321,4 +327,4 @@ This project is designed as a controlled local workflow, not as a multi-user Saa
 
 ---
 
-For quick technical review: this repository is best evaluated as Applied AI Integration / AI Workflow Engineering. It is the main implementation evidence for my approach to AI as an engineer and what I care about as an engineer, both described in the README and implemented here in the code. The focus is on the applied-AI workflow system, not frontend/UI polish or distributed-systems scale.
+For quick technical review: this repository is best evaluated as Applied AI Integration / AI Workflow Engineering. It is the main implementation evidence for my approach to AI as an engineer and what I care about as an engineer, both described in the README and implemented here in the code. The focus is the applied-AI workflow system; the web interface and local runtime are supporting surfaces.
