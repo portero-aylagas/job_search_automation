@@ -290,6 +290,21 @@ state from this checkout. It removes:
 Tracked template files remain in place. Re-upload any CV or supporting
 documents after cleanup before continuing a workflow.
 
+--- 
+
+## Production-readiness notes
+
+This project is designed as a controlled local workflow, not as a multi-user SaaS product. If extended toward production use, the main engineering changes would be:
+
+- replace local JSON storage with a database and migrations
+- add user/session isolation and stronger secret handling
+- add queueing and idempotent retries for long-running workflow steps
+- add structured audit logs for generated artifacts and review decisions
+- add prompt/eval regression fixtures for application-package quality
+- add cost, latency, and failure-rate monitoring for LLM/browser operations
+
+--- 
+
 ## Documentation
 
 | Document | Covers |
@@ -306,4 +321,4 @@ documents after cleanup before continuing a workflow.
 
 ---
 
-For quick technical review: this repository is best evaluated as Applied AI Integration / AI Workflow Engineering. It is the main implementation evidence for my approach to AI as an engineer and what I care about as an engineer, both described in the README and implemented here in the code.
+For quick technical review: this repository is best evaluated as Applied AI Integration / AI Workflow Engineering. It is the main implementation evidence for my approach to AI as an engineer and what I care about as an engineer, both described in the README and implemented here in the code. The focus is on the applied-AI workflow system, not frontend/UI polish or distributed-systems scale.
