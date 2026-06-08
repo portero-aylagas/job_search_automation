@@ -303,3 +303,7 @@ documents after cleanup before continuing a workflow.
 | [GDPR audit](docs/GDPR_Audit.md) | Privacy and data-handling review. |
 | [EU AI Act audit](docs/job_search_automation_eu_ai_act_audit.md) | AI risk and compliance notes. |
 | [LangSmith overview](docs/langsmith/langsmith_overview.md) | Tracing setup and observability screenshots. |
+
+---
+
+For quick technical review: this repository is best evaluated as Applied AI Integration / AI Workflow Engineering. It is the main implementation evidence for my approach to AI as an engineer and what I care about as an engineer, both described in the README and implemented here in the code.
