@@ -27,6 +27,7 @@ from src.agents.karen.tools import (
     execute_karen_tool,
     get_karen_tool_definition,
 )
+from src.observability import traceable
 from src.schemas import AgentChatMessage, AgentWorkflowEvent
 from src.services.karen_permission_service import grant_job_session_permission
 from src.workflow.workflow_executor import WorkflowRunResult, run_karen_workflow_goal
@@ -53,6 +54,15 @@ class KarenGraphState(TypedDict, total=False):
     inline_permission_granted: bool
 
 
+@traceable(
+    "Karen",
+    tags=("workflow:karen", "job-search-automation"),
+    metadata=lambda base_dir, **kwargs: {
+        "workflow_key": "karen",
+        "job_id": kwargs.get("selected_job_id") or "",
+        "source": "karen",
+    },
+)
 def process_karen_chat_turn(
     base_dir: Path | str,
     *,

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.app_workflow import load_candidate_profile, save_candidate_profile
 from src.candidate_profile import (
+    UPLOAD_TIMESTAMP_PREFIX_PATTERN,
     is_valid_email,
     merge_supplemental_extracted_data,
     normalize_candidate_profile_documents,
@@ -18,6 +19,7 @@ from src.cv_extraction import (
     save_uploaded_cv,
     save_uploaded_optional_document,
 )
+from src.observability import set_current_trace_metadata, traceable
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     CandidateCVExtracted,
@@ -96,7 +98,7 @@ def parse_uploaded_cv(
 
     saved_path = save_uploaded_cv(base_dir, filename, content)
     try:
-        extracted = run_cv_extraction_task(saved_path)
+        extracted = _run_cv_extraction_traced(saved_path)
     except Exception as exc:
         raise CandidateProfileServiceError(
             f"CV upload was saved to {saved_path}, but AI parsing failed: {exc}. "
@@ -112,6 +114,33 @@ def parse_uploaded_cv(
     normalized = normalize_candidate_profile_documents(profile)
     save_candidate_profile(base_dir, normalized)
     return normalized
+
+
+@traceable(
+    "Candidate Profile",
+    tags=("workflow:candidate_profile", "job-search-automation"),
+    metadata=lambda cv_path: {
+        "workflow_key": "candidate_profile",
+        "source": "candidate_profile",
+        "uploaded_cv_filename_stem": _uploaded_cv_filename_stem(cv_path),
+        "display_name": _candidate_profile_display_name(
+            filename_stem=_uploaded_cv_filename_stem(cv_path),
+        ),
+    },
+)
+def _run_cv_extraction_traced(cv_path: str | Path) -> CandidateCVExtracted:
+    """Run CV extraction inside a trace and update its display metadata."""
+
+    extracted = run_cv_extraction_task(cv_path)
+    set_current_trace_metadata(
+        {
+            "display_name": _candidate_profile_display_name(
+                extracted=extracted,
+                filename_stem=_uploaded_cv_filename_stem(cv_path),
+            )
+        }
+    )
+    return extracted
 
 
 def parse_uploaded_optional_document(
@@ -243,10 +272,47 @@ def load_or_extract_cv_data(
     if not file_path:
         return CandidateCVExtracted()
     ensure_runtime_candidate_file_exists(base_dir, file_path)
-    extracted = run_cv_extraction_task(file_path)
+    extracted = _run_cv_extraction_traced(file_path)
     source_cv.parsed = True
     source_cv.extracted_data = extracted
     return extracted.model_copy(deep=True)
+
+
+def _candidate_profile_display_name(
+    *,
+    extracted: CandidateCVExtracted | None = None,
+    filename_stem: str = "",
+) -> str:
+    """Return the candidate-profile trace display name."""
+
+    identity = extracted.identity if extracted is not None else None
+    full_name = identity.full_name.strip() if identity is not None else ""
+    if full_name:
+        return f"Candidate Profile: {full_name}"
+    split_name = (
+        " ".join(
+            item
+            for item in (
+                identity.first_name.strip() if identity is not None else "",
+                identity.last_name.strip() if identity is not None else "",
+            )
+            if item
+        )
+        if identity is not None
+        else ""
+    )
+    if split_name:
+        return f"Candidate Profile: {split_name}"
+    if filename_stem.strip():
+        return f"Candidate Profile: {filename_stem.strip()}"
+    return "Candidate Profile"
+
+
+def _uploaded_cv_filename_stem(cv_path: str | Path) -> str:
+    """Return a readable CV filename stem without runtime timestamp prefixes."""
+
+    stem = Path(cv_path).stem.strip()
+    return UPLOAD_TIMESTAMP_PREFIX_PATTERN.sub("", stem).strip()
 
 
 def load_or_extract_optional_document_data(

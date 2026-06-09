@@ -49,8 +49,10 @@ from src.job_workspace import (
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
 from src.monitoring import (
     LangSmithMonitoringError,
+    LangSmithProvisioningError,
     compute_ai_quality_counters,
     langsmith_monitoring_summary,
+    langsmith_provision_monitoring,
 )
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
@@ -295,6 +297,20 @@ def _register_core_routes(app: FastAPI) -> None:
             return langsmith_monitoring_summary(days=days)
         except LangSmithMonitoringError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/api/monitoring/langsmith/provision")
+    async def provision_langsmith_monitoring() -> dict[str, object]:
+        """Create or update LangSmith monitoring dashboards and trace links."""
+
+        try:
+            return langsmith_provision_monitoring()
+        except LangSmithProvisioningError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # pragma: no cover - exact SDK/API errors vary.
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not provision LangSmith monitoring: {exc}",
+            ) from exc
 
 
 def _register_candidate_profile_routes(app: FastAPI) -> None:

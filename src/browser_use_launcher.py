@@ -174,6 +174,7 @@ def open_apply_url_with_browser_use_fill_plan(
     requirements: ApplicationRequirements | None = None,
     package: ApplicationPackage | None = None,
     final_submit: bool = False,
+    trace_metadata: dict[str, object] | None = None,
 ) -> BrowserUseOpenResult:
     """Open an apply URL and start a Browser Use agent from a reviewed fill plan."""
 
@@ -202,6 +203,7 @@ def open_apply_url_with_browser_use_fill_plan(
             final_submit=final_submit,
         ),
         available_file_paths=upload_paths,
+        trace_metadata=trace_metadata,
     )
 
 
@@ -455,6 +457,7 @@ def _launch_browser_use_runner(
     startup_wait_seconds: float,
     agent_task: str | None,
     available_file_paths: list[Path] | None = None,
+    trace_metadata: dict[str, object] | None = None,
 ) -> BrowserUseOpenResult:
     target_log_dir = Path(log_dir)
     target_log_dir.mkdir(parents=True, exist_ok=True)
@@ -473,7 +476,7 @@ def _launch_browser_use_runner(
     log_path = target_log_dir / _build_log_filename(agent_task=agent_task is not None)
     ready_path = log_path.with_suffix(".ready")
     user_data_dir = target_log_dir / "sessions" / log_path.stem
-    browser_use_env = _browser_use_environment(target_log_dir)
+    browser_use_env = _browser_use_environment(target_log_dir, trace_metadata=trace_metadata)
     repo_root = Path(__file__).resolve().parents[1]
     command = [
         sys.executable,
@@ -679,11 +682,18 @@ def _build_log_filename(*, agent_task: bool = False) -> str:
     return f"browser-use-{purpose}-{timestamp}.log"
 
 
-def _browser_use_environment(runtime_dir: Path) -> dict[str, str]:
+def _browser_use_environment(
+    runtime_dir: Path,
+    *,
+    trace_metadata: dict[str, object] | None = None,
+) -> dict[str, str]:
     env = os.environ.copy()
     env["BROWSER_USE_CONFIG_DIR"] = str(runtime_dir / "config")
     env["XDG_CACHE_HOME"] = str(runtime_dir / "cache")
     env["PLAYWRIGHT_BROWSERS_PATH"] = str(runtime_dir / "playwright-browsers")
+    for key, value in (trace_metadata or {}).items():
+        if isinstance(value, (str, int, float, bool)) and str(key).strip():
+            env[f"JOB_SEARCH_TRACE_{str(key).upper()}"] = str(value)
     return env
 
 

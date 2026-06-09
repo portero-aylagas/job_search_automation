@@ -7,6 +7,7 @@ import { formatCost, formatDateTime, formatInteger, formatLatency, formatPercent
 export function MonitoringPage() {
   const [summary, setSummary] = useState<ApiRecord | null>(null);
   const [windowDays, setWindowDays] = useState(7);
+  const [provisioning, setProvisioning] = useState(false);
   const [message, setMessage] = useState<ApiRecord | null>({ type: "info", text: "Loading LangSmith monitoring..." });
 
   async function loadMonitoring(days = windowDays) {
@@ -21,6 +22,20 @@ export function MonitoringPage() {
     }
   }
 
+  async function provisionMonitoring() {
+    setProvisioning(true);
+    setMessage({ type: "info", text: "Provisioning LangSmith dashboards..." });
+    try {
+      const payload = await apiRequest<ApiRecord>("/api/monitoring/langsmith/provision", { method: "POST" });
+      setSummary((current) => mergeProvisionedLinks(current, payload));
+      setMessage({ type: "success", text: String(payload.message || "LangSmith dashboards provisioned.") });
+    } catch (error) {
+      setMessage({ type: "error", text: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setProvisioning(false);
+    }
+  }
+
   useEffect(() => {
     loadMonitoring(windowDays);
   }, [windowDays]);
@@ -28,10 +43,13 @@ export function MonitoringPage() {
   const totals = summary?.totals || {};
   const workflows = Array.isArray(summary?.workflows) ? summary.workflows : [];
   const extractionTraces = summary?.cv_certificate_traces || [];
+  const mainTraceViewUrl = String(summary?.main_trace_view_url || "");
   const traceViewLabel = String(summary?.trace_view_label || "CV & Certificates Extraction");
   const traceViewUrl = String(summary?.trace_view_url || "");
   const cvDashboardLabel = String(summary?.cv_extraction_dashboard_label || "job-search-automation_cv-extraction");
   const cvDashboardUrl = String(summary?.cv_extraction_dashboard_url || "");
+  const workflowCosts = Array.isArray(summary?.workflow_cost_distribution) ? summary.workflow_cost_distribution : [];
+  const jobCosts = Array.isArray(summary?.job_costs) ? summary.job_costs : [];
   const displayedWorkflows = workflows.length
     ? workflows
     : [{
@@ -76,14 +94,17 @@ export function MonitoringPage() {
             </div>
             {summary?.dashboard_url && (
               <a className="button-link primary" href={summary.dashboard_url} rel="noreferrer" target="_blank">
-                Open LangSmith Dashboard
+                Open Job Search Automation Tracker
               </a>
             )}
-            {cvDashboardUrl && (
-              <a className="button-link primary" href={cvDashboardUrl} rel="noreferrer" target="_blank">
-                Open {cvDashboardLabel}
+            {mainTraceViewUrl && (
+              <a className="button-link" href={mainTraceViewUrl} rel="noreferrer" target="_blank">
+                Open main traces
               </a>
             )}
+            <button disabled={provisioning} onClick={provisionMonitoring} type="button">
+              {provisioning ? "Provisioning..." : "Provision LangSmith dashboards"}
+            </button>
           </div>
         </div>
         <div className="grid three monitoring-metrics">
@@ -138,7 +159,7 @@ export function MonitoringPage() {
                         <span className="link-list">
                           {workflow.trace_view_url && <a href={workflow.trace_view_url} rel="noreferrer" target="_blank">Traces</a>}
                           {workflow.dashboard_url && <a href={workflow.dashboard_url} rel="noreferrer" target="_blank">Dashboard</a>}
-                          {!workflow.trace_view_url && !workflow.dashboard_url ? "Unavailable" : null}
+                          {workflow.link_status_reason && <span className="muted">{workflow.link_status_reason}</span>}
                         </span>
                       </td>
                     </tr>
@@ -146,6 +167,22 @@ export function MonitoringPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+      <section className="panel">
+        <div className="section-header">
+          <div>
+            <h2>Cost Breakdown</h2>
+            <p className="muted">LangSmith cost grouped by workflow and saved job metadata.</p>
+          </div>
+        </div>
+        {!summary?.configured ? (
+          <StatusMessage type="info" text="Configure LangSmith to show cost breakdowns." />
+        ) : (
+          <div className="cost-chart-grid">
+            <CostDonut title="Cost by workflow" items={workflowCosts} />
+            <CostDonut title="Cost by job position" items={jobCosts} />
           </div>
         )}
       </section>
@@ -176,6 +213,97 @@ export function MonitoringPage() {
   );
 }
 
+function mergeProvisionedLinks(summary: ApiRecord | null, provisioned: ApiRecord): ApiRecord {
+  const provisionedWorkflows = Array.isArray(provisioned.workflows) ? provisioned.workflows : [];
+  const linksByKey = new Map(
+    provisionedWorkflows.map((workflow: ApiRecord) => [String(workflow.key || ""), workflow])
+  );
+  const currentWorkflows = Array.isArray(summary?.workflows) ? summary.workflows : [];
+  const mergedWorkflows = currentWorkflows.length
+    ? currentWorkflows.map((workflow: ApiRecord) => {
+        const provisionedWorkflow = linksByKey.get(String(workflow.key || ""));
+        if (!provisionedWorkflow) {
+          return workflow;
+        }
+        return {
+          ...workflow,
+          dashboard_label: provisionedWorkflow.dashboard_label || workflow.dashboard_label,
+          dashboard_url: provisionedWorkflow.dashboard_url || workflow.dashboard_url,
+          trace_view_url: provisionedWorkflow.trace_view_url || workflow.trace_view_url,
+          link_status_reason: provisionedWorkflow.link_status_reason || ""
+        };
+      })
+    : provisionedWorkflows;
+  return {
+    ...(summary || {}),
+    configured: provisioned.configured ?? summary?.configured ?? true,
+    project_name: provisioned.project_name || summary?.project_name || "",
+    workflows: mergedWorkflows,
+    message: provisioned.message || summary?.message
+  };
+}
+
+function CostDonut({ title, items }: { title: string; items: ApiRecord[] }) {
+  const values = items.map((item) => Number(item.total_cost || 0));
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+
+  return (
+    <div className="cost-chart" aria-label={`${title} chart`}>
+      <h3>{title}</h3>
+      {items.length && total > 0 ? (
+        <div className="cost-chart-content">
+          <svg className="cost-donut" viewBox="0 0 120 120" role="img" aria-label={title}>
+            <circle className="cost-donut-track" cx="60" cy="60" r={radius} />
+            {items.map((item, index) => {
+              const value = Number(item.total_cost || 0);
+              const segment = (value / total) * circumference;
+              const dashOffset = offset;
+              offset += segment;
+              return (
+                <circle
+                  className={`cost-donut-segment segment-${index % 6}`}
+                  cx="60"
+                  cy="60"
+                  key={item.key || item.label || index}
+                  r={radius}
+                  strokeDasharray={`${segment} ${circumference - segment}`}
+                  strokeDashoffset={-dashOffset}
+                />
+              );
+            })}
+            <text x="60" y="57" textAnchor="middle">{formatCost(total)}</text>
+            <text className="cost-donut-caption" x="60" y="73" textAnchor="middle">total</text>
+          </svg>
+          <CostLegend items={items} total={total} />
+        </div>
+      ) : (
+        <StatusMessage type="info" text="No cost data available for this window." />
+      )}
+    </div>
+  );
+}
+
+function CostLegend({ items, total }: { items: ApiRecord[]; total: number }) {
+  return (
+    <ul className="cost-legend">
+      {items.map((item, index) => {
+        const cost = Number(item.total_cost || 0);
+        const percent = total > 0 ? cost / total : 0;
+        return (
+          <li key={item.key || item.label || index}>
+            <span className={`legend-swatch segment-${index % 6}`} />
+            <span className="legend-label">{String(item.label || "Unassigned")}</span>
+            <span className="legend-value">{formatCost(cost)} · {formatPercent(percent)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function RunsTable({ runs }: { runs: ApiRecord[] }) {
   return (
     <div className="table-wrap">
@@ -194,7 +322,14 @@ function RunsTable({ runs }: { runs: ApiRecord[] }) {
         <tbody>
           {runs.map((run: ApiRecord) => (
             <tr key={run.id || `${run.name}-${run.start_time}`}>
-              <td>{run.name || "Untitled run"}</td>
+              <td>
+                {run.name || "Untitled run"}
+                {run.metadata?.workflow_subcategory_label && (
+                  <span className="table-note">
+                    {String(run.metadata.workflow_subcategory_label)}
+                  </span>
+                )}
+              </td>
               <td>{run.run_type || "Unknown"}</td>
               <td>{formatDateTime(run.start_time)}</td>
               <td><StatusBadge status={run.status === "error" ? "blocked" : "complete"} label={titleCase(run.status || "unknown")} /></td>

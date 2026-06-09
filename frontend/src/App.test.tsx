@@ -87,7 +87,7 @@ describe("App workflow pages", () => {
     const pendingParse = new Promise<MockResponse>((resolve) => {
       resolveParse = resolve;
     });
-    mockFetch((url) => {
+    mockFetch((url, init) => {
       if (url.endsWith("/api/candidate-profile")) {
         return { body: { profile: candidateProfile(), options: {} } };
       }
@@ -1781,12 +1781,37 @@ describe("App workflow pages", () => {
   });
 
   it("shows LangSmith monitoring metrics and workflow trace views", async () => {
-    mockFetch((url) => {
+    mockFetch((url, init) => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
       }
       if (url.includes("/api/agent")) {
         return { body: agentState(1) };
+      }
+      if (url.endsWith("/api/monitoring/langsmith/provision") && init?.method === "POST") {
+        return {
+          body: {
+            configured: true,
+            project_name: "job-search-automation",
+            workflows: [
+              {
+                key: "candidate_profile",
+                label: "Candidate Profile",
+                dashboard_label: "job-search-automation_cv-extraction",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-cv",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=cv"
+              },
+              {
+                key: "jobs",
+                label: "Jobs",
+                dashboard_label: "job-search-automation_jobs",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-jobs",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=jobs"
+              }
+            ],
+            message: "LangSmith workflow dashboards and trace links were provisioned."
+          }
+        };
       }
       if (url.includes("/api/monitoring/langsmith")) {
         return {
@@ -1794,6 +1819,7 @@ describe("App workflow pages", () => {
             configured: true,
             project_name: "job-search-automation",
             dashboard_url: "https://smith.langchain.com/dashboards/1",
+            main_trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=main",
             trace_view_label: "CV & Certificates Extraction",
             trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=cv",
             cv_extraction_dashboard_label: "job-search-automation_cv-extraction",
@@ -1816,6 +1842,7 @@ describe("App workflow pages", () => {
                 trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=cv",
                 dashboard_label: "job-search-automation_cv-extraction",
                 dashboard_url: "https://smith.langchain.com/o/example/dashboards/cv",
+                link_status_reason: "",
                 totals: {
                   run_count: 2,
                   failed_run_count: 0,
@@ -1828,7 +1855,8 @@ describe("App workflow pages", () => {
                 recent_runs: [
                   {
                     id: "run-1",
-                    name: "cv_extraction",
+                    name: "Candidate Profile",
+                    raw_name: "LangGraph",
                     run_type: "chain",
                     start_time: "2026-06-03T10:00:00Z",
                     status: "complete",
@@ -1839,12 +1867,13 @@ describe("App workflow pages", () => {
                 ]
               },
               {
-                key: "requirements",
-                label: "Requirements",
-                description: "Application page interpretation and requirement extraction.",
+                key: "jobs",
+                label: "Jobs",
+                description: "Apply URL ranking, requirements, package generation, and field mapping.",
                 trace_view_url: "",
                 dashboard_label: "",
                 dashboard_url: "",
+                link_status_reason: "No dashboard configured",
                 totals: {
                   run_count: 1,
                   failed_run_count: 1,
@@ -1857,15 +1886,56 @@ describe("App workflow pages", () => {
                 recent_runs: [
                   {
                     id: "run-2",
-                    name: "application_requirements",
+                    name: "Requirements",
+                    raw_name: "LangGraph",
                     run_type: "chain",
                     start_time: "2026-06-03T10:05:00Z",
                     status: "error",
                     total_tokens: 900,
                     total_cost: 0.08,
+                    metadata: {
+                      workflow_key: "jobs",
+                      workflow_subcategory_key: "requirements",
+                      workflow_subcategory_label: "Requirements"
+                    },
                     url: "https://smith.langchain.com/r/run-2"
                   }
                 ]
+              }
+            ],
+            workflow_cost_distribution: [
+              {
+                key: "jobs",
+                label: "Jobs",
+                run_count: 2,
+                total_cost: 0.7,
+                total_tokens: 1900
+              },
+              {
+                key: "unassigned",
+                label: "Unassigned",
+                run_count: 1,
+                total_cost: 0.2,
+                total_tokens: 500
+              }
+            ],
+            job_costs: [
+              {
+                key: "job-1",
+                label: "Example Co / Automation Engineer",
+                run_count: 2,
+                total_cost: 0.7,
+                total_tokens: 1900,
+                job_id: "job-1",
+                job_title: "Automation Engineer",
+                company: "Example Co"
+              },
+              {
+                key: "unassigned",
+                label: "Unassigned",
+                run_count: 1,
+                total_cost: 0.2,
+                total_tokens: 500
               }
             ],
             cv_certificate_traces: [
@@ -1903,18 +1973,23 @@ describe("App workflow pages", () => {
     expect(await screen.findByRole("heading", { name: "Monitoring" })).toBeInTheDocument();
     expect(screen.getByText("Project: job-search-automation")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Workflow Health" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cost Breakdown" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Recent Workflow Runs" })).toBeInTheDocument();
     expect(screen.getAllByText("Candidate Profile").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("Requirements").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("cv_extraction")).toBeInTheDocument();
-    expect(screen.getByText("application_requirements")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open LangSmith Dashboard" })).toHaveAttribute(
+    expect(screen.getAllByText("Jobs").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("No dashboard configured")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cost by workflow" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cost by job position" })).toBeInTheDocument();
+    expect(screen.getByText("Example Co / Automation Engineer")).toBeInTheDocument();
+    expect(screen.getAllByText("Unassigned").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("link", { name: "Open Job Search Automation Tracker" })).toHaveAttribute(
       "href",
       "https://smith.langchain.com/dashboards/1"
     );
-    expect(screen.getByRole("link", { name: "Open job-search-automation_cv-extraction" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open main traces" })).toHaveAttribute(
       "href",
-      "https://smith.langchain.com/o/example/dashboards/cv"
+      "https://smith.langchain.com/o/example/projects/p/traces?view=main"
     );
     expect(screen.getByRole("link", { name: "Open traces" })).toHaveAttribute(
       "href",
@@ -1924,6 +1999,11 @@ describe("App workflow pages", () => {
       "href",
       "https://smith.langchain.com/r/run-1"
     );
+    await userEvent.click(screen.getByRole("button", { name: "Provision LangSmith dashboards" }));
+    expect(await screen.findByText("LangSmith workflow dashboards and trace links were provisioned.")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Dashboard" }).some((link) => (
+      link.getAttribute("href") === "https://smith.langchain.com/o/example/dashboards/provisioned-jobs"
+    ))).toBe(true);
   });
 
   it("shows setup guidance when LangSmith monitoring is not configured", async () => {
@@ -1940,6 +2020,7 @@ describe("App workflow pages", () => {
             configured: false,
             project_name: "",
             dashboard_url: "",
+            main_trace_view_url: "",
             trace_view_label: "CV & Certificates Extraction",
             trace_view_url: "",
             cv_extraction_dashboard_label: "job-search-automation_cv-extraction",
@@ -1962,6 +2043,7 @@ describe("App workflow pages", () => {
                 trace_view_url: "",
                 dashboard_label: "job-search-automation_cv-extraction",
                 dashboard_url: "",
+                link_status_reason: "No dashboard configured",
                 totals: {
                   run_count: 0,
                   failed_run_count: 0,
@@ -1975,6 +2057,8 @@ describe("App workflow pages", () => {
               }
             ],
             cv_certificate_traces: [],
+            workflow_cost_distribution: [],
+            job_costs: [],
             message: "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
           }
         };
@@ -1987,7 +2071,7 @@ describe("App workflow pages", () => {
     await userEvent.click(screen.getByRole("button", { name: "Monitoring" }));
 
     expect(await screen.findByText(/Set LANGSMITH_API_KEY/)).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Open LangSmith Dashboard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open Job Search Automation Tracker" })).not.toBeInTheDocument();
   });
 });
 

@@ -124,12 +124,14 @@ and groups recent runs by workflow:
 
 - Candidate Profile
 - Job Intake
-- Apply URL Ranking
-- Requirements
-- Application Package
-- Field Mapping
+- Jobs
 - Karen
 - Browser Automation
+
+The Jobs group includes apply URL ranking, requirements extraction,
+application package generation, and field mapping. New job-scoped traces store
+the specific step as `workflow_subcategory_key` and
+`workflow_subcategory_label` metadata.
 
 Useful metrics:
 

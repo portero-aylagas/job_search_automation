@@ -1,0 +1,11 @@
+model,experiment_id,experiment_name,score_key,average_score,average_latency_ms,estimated_cost_per_example,total_cost_usd,examples
+gpt-5.4,67fa2b7e-21e4-440c-ac65-ce3eaf7b79b1,cv-extraction-236c2889,cv_extraction_correctness,0.7184,23568.8260,0.0154,0.154025,10
+gpt-5.4,67fa2b7e-21e4-440c-ac65-ce3eaf7b79b1,cv-extraction-236c2889,cv_schema_validity,1.0000,23568.8260,0.0154,0.154025,10
+gpt-5.4,67fa2b7e-21e4-440c-ac65-ce3eaf7b79b1,cv-extraction-236c2889,llm_reference_judge,0.6560,23568.8260,0.0154,0.154025,10
+gpt-5.4,67fa2b7e-21e4-440c-ac65-ce3eaf7b79b1,cv-extraction-236c2889,reference_grounding,0.6264,23568.8260,0.0154,0.154025,10
+gpt-5.4,67fa2b7e-21e4-440c-ac65-ce3eaf7b79b1,cv-extraction-236c2889,supplemental_evidence_completeness,0.5000,23568.8260,0.0154,0.154025,10
+gpt-5.4-mini,0b530587-444c-4c1d-a3ef-3f1b661e40a7,cv-extraction-fe4b9c5d,cv_extraction_correctness,0.7743,19342.6280,0.0057,0.056878,10
+gpt-5.4-mini,0b530587-444c-4c1d-a3ef-3f1b661e40a7,cv-extraction-fe4b9c5d,cv_schema_validity,1.0000,19342.6280,0.0057,0.056878,10
+gpt-5.4-mini,0b530587-444c-4c1d-a3ef-3f1b661e40a7,cv-extraction-fe4b9c5d,llm_reference_judge,0.6520,19342.6280,0.0057,0.056878,10
+gpt-5.4-mini,0b530587-444c-4c1d-a3ef-3f1b661e40a7,cv-extraction-fe4b9c5d,reference_grounding,0.6923,19342.6280,0.0057,0.056878,10
+gpt-5.4-mini,0b530587-444c-4c1d-a3ef-3f1b661e40a7,cv-extraction-fe4b9c5d,supplemental_evidence_completeness,0.5000,19342.6280,0.0057,0.056878,10
