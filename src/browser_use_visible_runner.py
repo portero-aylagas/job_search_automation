@@ -228,9 +228,26 @@ def _build_traced_browser_use_chat_model(
     return llm
 
 
-@traceable("browser_use_apply_agent")
+@traceable(
+    "Browser Automation",
+    tags=("workflow:browser_automation", "job-search-automation"),
+    metadata=lambda agent, *, max_steps: _browser_use_trace_metadata(),
+)
 async def _run_browser_use_apply_agent(agent: object, *, max_steps: int) -> object:
     return await agent.run(max_steps=max_steps)
+
+
+def _browser_use_trace_metadata() -> dict[str, object]:
+    """Return safe Browser Use trace metadata propagated by the launcher."""
+
+    return {
+        "workflow_key": os.getenv("JOB_SEARCH_TRACE_WORKFLOW_KEY", "browser_automation"),
+        "job_id": os.getenv("JOB_SEARCH_TRACE_JOB_ID", ""),
+        "job_title": os.getenv("JOB_SEARCH_TRACE_JOB_TITLE", ""),
+        "company": os.getenv("JOB_SEARCH_TRACE_COMPANY", ""),
+        "display_name": os.getenv("JOB_SEARCH_TRACE_DISPLAY_NAME", ""),
+        "source": os.getenv("JOB_SEARCH_TRACE_SOURCE", "browser_use"),
+    }
 
 
 async def _close_existing_pages(browser: object) -> int:

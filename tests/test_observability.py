@@ -52,11 +52,11 @@ def test_wrap_openai_client_falls_back_when_langsmith_unavailable(monkeypatch) -
 
 
 def test_traceable_uses_named_langsmith_span_when_enabled(monkeypatch) -> None:
-    calls: list[tuple[str, str]] = []
+    calls: list[dict[str, object]] = []
     langsmith_module = ModuleType("langsmith")
 
-    def fake_traceable(*, name: str, run_type: str):
-        calls.append((name, run_type))
+    def fake_traceable(**kwargs):
+        calls.append(kwargs)
 
         def decorator(func):
             def wrapper(*args, **kwargs):
@@ -70,9 +70,21 @@ def test_traceable_uses_named_langsmith_span_when_enabled(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "langsmith", langsmith_module)
     monkeypatch.setattr("src.observability.langsmith_enabled", lambda: True)
 
-    @traceable("parent_span", run_type="chain")
-    def traced_function() -> str:
+    @traceable(
+        "parent_span",
+        run_type="chain",
+        tags=("workflow:test",),
+        metadata=lambda value: {"workflow_key": "test", "unsafe": {"nested": True}},
+    )
+    def traced_function(value: str) -> str:
         return "ok"
 
-    assert traced_function() == "ok"
-    assert calls == [("parent_span", "chain")]
+    assert traced_function("ignored") == "ok"
+    assert calls == [
+        {
+            "name": "parent_span",
+            "run_type": "chain",
+            "tags": ["workflow:test"],
+            "metadata": {"workflow_key": "test"},
+        }
+    ]

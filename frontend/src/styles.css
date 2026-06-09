@@ -615,6 +615,124 @@ label {
   align-content: center;
 }
 
+.cost-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.cost-chart {
+  border: 1px solid #d9e0ea;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.cost-chart h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.cost-chart-content {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.cost-donut {
+  width: 8.5rem;
+  height: 8.5rem;
+  transform: rotate(-90deg);
+}
+
+.cost-donut text {
+  fill: #1f2a44;
+  font-size: 0.82rem;
+  font-weight: 800;
+  transform: rotate(90deg);
+  transform-origin: 60px 60px;
+}
+
+.cost-donut .cost-donut-caption {
+  fill: #647085;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.cost-donut-track {
+  fill: none;
+  stroke: #edf1f7;
+  stroke-width: 16;
+}
+
+.cost-donut-segment {
+  fill: none;
+  stroke-width: 16;
+}
+
+.segment-0 {
+  stroke: #2563eb;
+  background: #2563eb;
+}
+
+.segment-1 {
+  stroke: #0f766e;
+  background: #0f766e;
+}
+
+.segment-2 {
+  stroke: #9333ea;
+  background: #9333ea;
+}
+
+.segment-3 {
+  stroke: #c2410c;
+  background: #c2410c;
+}
+
+.segment-4 {
+  stroke: #4d7c0f;
+  background: #4d7c0f;
+}
+
+.segment-5 {
+  stroke: #be123c;
+  background: #be123c;
+}
+
+.cost-legend {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cost-legend li {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.86rem;
+}
+
+.legend-swatch {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+}
+
+.legend-label {
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+
+.legend-value {
+  color: #647085;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -691,6 +809,31 @@ label {
 
 .table-wrap {
   overflow-x: auto;
+}
+
+.table-note {
+  display: block;
+  margin-top: 0.25rem;
+  color: #647085;
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.workflow-run-group {
+  margin-top: 1rem;
+}
+
+.subsection-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.subsection-header h3 {
+  margin: 0;
+  font-size: 1rem;
 }
 
 table {
@@ -1149,6 +1292,8 @@ summary {
 
   .grid,
   .grid.three,
+  .cost-chart-grid,
+  .cost-chart-content,
   .check-grid,
   .job-management-summary,
   .karen-context-summary,

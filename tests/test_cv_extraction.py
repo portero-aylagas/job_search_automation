@@ -20,6 +20,10 @@ from src.cv_extraction import (
     save_uploaded_optional_document,
 )
 from src.schemas import CandidateCVExtracted, CandidateCVIdentity, CandidateSupplementalExtracted
+from src.services.candidate_profile_service import (
+    _candidate_profile_display_name,
+    _uploaded_cv_filename_stem,
+)
 
 
 def test_run_cv_extraction_task_uses_agent_nodes(tmp_path: Path) -> None:
@@ -55,6 +59,38 @@ def test_run_cv_extraction_task_uses_agent_nodes(tmp_path: Path) -> None:
 
     assert calls == ["inspect_cv_document_agent", "extract_cv_data"]
     assert result == extracted
+
+
+def test_candidate_profile_trace_display_name_prefers_extracted_identity() -> None:
+    extracted = CandidateCVExtracted(
+        identity=CandidateCVIdentity(full_name="Taylor Rivera"),
+    )
+
+    assert (
+        _candidate_profile_display_name(
+            extracted=extracted,
+            filename_stem="Taylor-CV",
+        )
+        == "Candidate Profile: Taylor Rivera"
+    )
+
+
+def test_candidate_profile_trace_display_name_falls_back_to_filename() -> None:
+    extracted = CandidateCVExtracted(identity=CandidateCVIdentity())
+
+    assert (
+        _uploaded_cv_filename_stem(
+            "data/runtime/candidate_profile/20260609120000-Taylor-CV.pdf",
+        )
+        == "Taylor-CV"
+    )
+    assert (
+        _candidate_profile_display_name(
+            extracted=extracted,
+            filename_stem="Taylor-CV",
+        )
+        == "Candidate Profile: Taylor-CV"
+    )
 
 
 def test_save_uploaded_cv_rejects_empty_file(tmp_path: Path) -> None:

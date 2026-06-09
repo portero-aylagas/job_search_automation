@@ -57,11 +57,14 @@ from src.job_workspace import (
     mark_application_package_reviewed,
 )
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
+from src.observability import traceable
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationFillPlan,
     ApplicationPackage,
     ApplicationRequirements,
+    CandidateProfile,
+    ExperienceUnit,
     JobListing,
     TrackerRecord,
 )
@@ -104,9 +107,23 @@ def extract_job_url(source_url: str):
     """Extract job intake data and apply-link candidates from a source URL."""
 
     try:
-        return extract_job_intake_data(source_url)
+        return _extract_job_url_traced(source_url)
     except (RuntimeError, ValueError) as exc:
         raise JobWorkflowServiceError(str(exc)) from exc
+
+
+@traceable(
+    "Job Intake",
+    tags=("workflow:job_intake", "job-search-automation"),
+    metadata=lambda source_url: {
+        "workflow_key": "job_intake",
+        "source": "job_intake",
+    },
+)
+def _extract_job_url_traced(source_url: str):
+    """Extract job intake data inside a named LangSmith parent trace."""
+
+    return extract_job_intake_data(source_url)
 
 
 def save_reviewed_job(
@@ -209,13 +226,24 @@ def discover_application_requirements(
 
     job = require_job(base_dir, job_id)
     try:
-        discovery_state = run_requirements_discovery_graph(job)
+        discovery_state = _run_requirements_discovery_traced(job)
         requirements = discovery_state["requirements"]
         save_application_page_snapshot(base_dir, job.id, discovery_state["snapshot"])
         save_application_requirements(base_dir, requirements)
     except (RuntimeError, ValueError) as exc:
         raise JobWorkflowServiceError(str(exc)) from exc
     return requirements
+
+
+@traceable(
+    "Requirements",
+    tags=("workflow:jobs", "job-search-automation"),
+    metadata=lambda job: _job_trace_metadata("requirements", "Requirements", job),
+)
+def _run_requirements_discovery_traced(job: JobListing) -> dict[str, object]:
+    """Discover requirements inside a named LangSmith parent trace."""
+
+    return run_requirements_discovery_graph(job)
 
 
 def review_application_requirements(
@@ -253,7 +281,7 @@ def generate_reviewable_application_package(
             "Complete all package prerequisites before generating application material."
         )
     try:
-        package = generate_application_package(
+        package = _generate_application_package_traced(
             candidate_profile,
             load_experience_units(base_dir),
             job,
@@ -264,6 +292,24 @@ def generate_reviewable_application_package(
     except RuntimeError as exc:
         raise JobWorkflowServiceError(str(exc)) from exc
     return package, json_path, markdown_path
+
+
+@traceable(
+    "Application Package",
+    tags=("workflow:jobs", "job-search-automation"),
+    metadata=lambda candidate_profile, experience_units, job, requirements=None: (
+        _job_trace_metadata("application_package", "Application Package", job)
+    ),
+)
+def _generate_application_package_traced(
+    candidate_profile: CandidateProfile,
+    experience_units: list[ExperienceUnit],
+    job: JobListing,
+    requirements: ApplicationRequirements | None,
+) -> ApplicationPackage:
+    """Generate an application package inside a named LangSmith parent trace."""
+
+    return generate_application_package(candidate_profile, experience_units, job, requirements)
 
 
 def review_application_package(
@@ -322,11 +368,13 @@ def generate_reviewable_fill_plan(
     blockers = get_fill_plan_generation_blockers(requirements, package)
     if blockers or requirements is None or package is None:
         raise JobWorkflowServiceError("Complete fill plan prerequisites before generating.")
+    job = require_job(base_dir, job_id)
     try:
-        fill_plan = generate_application_fill_plan(
+        fill_plan = _generate_application_fill_plan_traced(
             load_candidate_profile(base_dir),
             requirements,
             package,
+            job,
             page_snapshot=load_application_page_snapshot(base_dir, job_id),
             semantic_mapper=map_application_fields_with_llm,
         )
@@ -334,6 +382,35 @@ def generate_reviewable_fill_plan(
     except RuntimeError as exc:
         raise JobWorkflowServiceError(str(exc)) from exc
     return fill_plan, saved_path
+
+
+@traceable(
+    "Field Mapping",
+    tags=("workflow:jobs", "job-search-automation"),
+    metadata=lambda candidate_profile, requirements, package, job, **kwargs: _job_trace_metadata(
+        "field_mapping",
+        "Field Mapping",
+        job,
+    ),
+)
+def _generate_application_fill_plan_traced(
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements,
+    package: ApplicationPackage,
+    job: JobListing,
+    *,
+    page_snapshot: object | None,
+    semantic_mapper: object | None,
+) -> ApplicationFillPlan:
+    """Generate a fill plan inside a named LangSmith parent trace."""
+
+    return generate_application_fill_plan(
+        candidate_profile,
+        requirements,
+        package,
+        page_snapshot=page_snapshot,
+        semantic_mapper=semantic_mapper,
+    )
 
 
 def review_fill_plan(
@@ -399,9 +476,10 @@ def launch_apply_assistance(
         )
     browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
     try:
-        result = open_apply_url_with_browser_use_fill_plan(
+        result = _launch_apply_assistance_traced(
             str(job.apply_url),
             fill_plan=fill_plan,
+            job=job,
             log_dir=browser_use_log_dir,
             startup_wait_seconds=startup_wait_seconds,
             candidate_profile=candidate_profile,
@@ -413,6 +491,42 @@ def launch_apply_assistance(
         raise JobWorkflowServiceError(str(exc)) from exc
     update_tracker_record(base_dir, job.id, status="agent_assistance_attempted")
     return result
+
+
+@traceable(
+    "Browser Automation",
+    tags=("workflow:browser_automation", "job-search-automation"),
+    metadata=lambda url, *, fill_plan, job, **kwargs: _job_trace_metadata(
+        "browser_automation",
+        "Browser Automation",
+        job,
+    ),
+)
+def _launch_apply_assistance_traced(
+    url: str,
+    *,
+    fill_plan: ApplicationFillPlan,
+    job: JobListing,
+    log_dir: Path,
+    startup_wait_seconds: float,
+    candidate_profile: CandidateProfile,
+    requirements: ApplicationRequirements | None,
+    package: ApplicationPackage | None,
+    final_submit: bool,
+) -> BrowserUseOpenResult:
+    """Launch Browser Use inside a named LangSmith parent trace."""
+
+    return open_apply_url_with_browser_use_fill_plan(
+        url,
+        fill_plan=fill_plan,
+        log_dir=log_dir,
+        startup_wait_seconds=startup_wait_seconds,
+        candidate_profile=candidate_profile,
+        requirements=requirements,
+        package=package,
+        final_submit=final_submit,
+        trace_metadata=_job_trace_metadata("browser_automation", "Browser Automation", job),
+    )
 
 
 def stop_active_browser_session(base_dir: Path | str) -> bool:
@@ -427,6 +541,47 @@ def kill_browser_processes(base_dir: Path | str) -> int:
 
     browser_use_log_dir = Path(base_dir) / RUNTIME_DATA_DIR / "browser_use"
     return stop_all_browser_use_processes(browser_use_log_dir)
+
+
+def _job_trace_metadata(
+    workflow_subcategory_key: str,
+    workflow_subcategory_label: str,
+    job: JobListing,
+) -> dict[str, object]:
+    """Return safe job metadata for LangSmith workflow grouping."""
+
+    metadata = {
+        "workflow_key": "jobs"
+        if workflow_subcategory_key
+        in {"apply_url_ranking", "requirements", "application_package", "field_mapping"}
+        else workflow_subcategory_key,
+        "job_id": job.id,
+        "job_title": job.title,
+        "company": job.company,
+        "source": "job_workflow",
+    }
+    if metadata["workflow_key"] == "jobs":
+        metadata["workflow_subcategory_key"] = workflow_subcategory_key
+        metadata["workflow_subcategory_label"] = workflow_subcategory_label
+    if workflow_subcategory_key == "browser_automation":
+        display_name = _browser_automation_display_name(job)
+        if display_name:
+            metadata["display_name"] = display_name
+    return metadata
+
+
+def _browser_automation_display_name(job: JobListing) -> str:
+    """Return a Browser Automation display name from saved job context."""
+
+    job_title = job.title.strip()
+    company = job.company.strip()
+    if company and job_title:
+        return f"Browser Automation: {company} / {job_title}"
+    if job_title:
+        return f"Browser Automation: {job_title}"
+    if job.id.strip():
+        return f"Browser Automation: {job.id.strip()}"
+    return "Browser Automation"
 
 
 def require_job(base_dir: Path | str, job_id: str) -> JobListing:

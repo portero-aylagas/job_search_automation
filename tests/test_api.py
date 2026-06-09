@@ -75,6 +75,34 @@ def test_langsmith_monitoring_endpoint_returns_summary(
     assert response.json()["totals"]["run_count"] == 3
 
 
+def test_langsmith_provision_endpoint_returns_links(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        "src.api.langsmith_provision_monitoring",
+        lambda: {
+            "configured": True,
+            "project_name": "job-search-automation",
+            "workflows": [
+                {
+                    "key": "candidate_profile",
+                    "dashboard_url": "https://smith.langchain.com/o/ws/dashboards/section",
+                    "trace_view_url": "https://smith.langchain.com/o/ws/projects/p/project/traces",
+                }
+            ],
+        },
+    )
+
+    response = asyncio.run(
+        api_request(tmp_path, "POST", "/api/monitoring/langsmith/provision")
+    )
+
+    assert response.status_code == 200
+    assert response.json()["workflows"][0]["key"] == "candidate_profile"
+    assert response.json()["workflows"][0]["dashboard_url"].endswith("/section")
+
+
 def test_candidate_profile_review_rejects_invalid_email(tmp_path: Path) -> None:
     profile = complete_candidate_profile()
     profile.candidate_profile.cv_extracted.identity.email = "not-an-email"

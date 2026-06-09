@@ -163,6 +163,12 @@ development. The app includes a Monitoring tab for observability context, while
 the detailed tracing notes live in
 [docs/langsmith/langsmith_overview.md](docs/langsmith/langsmith_overview.md).
 
+The Monitoring tab groups LangSmith activity by LLM workflow: candidate-profile
+extraction, job intake, grouped job workflows, Karen intent routing, and Browser
+Use automation when those traces are present in LangSmith. The grouped Jobs
+workflow keeps apply URL ranking, requirements extraction, application package
+generation, and field mapping as trace metadata for filtering.
+
 Optional LangSmith configuration:
 
 ```env
@@ -170,6 +176,7 @@ LANGSMITH_API_KEY=your_langsmith_api_key
 LANGSMITH_TRACING=true
 LANGSMITH_PROJECT=job-search-automation
 LANGSMITH_DASHBOARD_URL=https://smith.langchain.com/...
+LANGSMITH_MAIN_TRACES_URL=https://smith.langchain.com/...
 ```
 
 ## Tech Stack

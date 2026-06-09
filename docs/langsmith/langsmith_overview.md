@@ -93,10 +93,13 @@ Saved views isolate specific workflow activity.
 Examples:
 
 - CV extraction runs
+- job extraction runs
+- requirements extraction runs
+- application package generation runs
+- field mapping runs
 - failed runs
 - slow runs
 - expensive runs
-- application-generation runs
 - runs from a specific project or environment
 
 Value:
@@ -115,6 +118,20 @@ Value:
 ## 5. Dashboards and Monitoring
 
 Dashboards aggregate trace data across multiple runs.
+
+In the application, the React Monitoring tab reads LangSmith project activity
+and groups recent runs by workflow:
+
+- Candidate Profile
+- Job Intake
+- Jobs
+- Karen
+- Browser Automation
+
+The Jobs group includes apply URL ranking, requirements extraction,
+application package generation, and field mapping. New job-scoped traces store
+the specific step as `workflow_subcategory_key` and
+`workflow_subcategory_label` metadata.
 
 Useful metrics:
 
@@ -135,6 +152,9 @@ Value:
 - avoids manual inspection of every trace
 
 **Screenshot**
+
+The screenshot below is the original CV extraction custom dashboard example.
+The in-app Monitoring tab now uses the broader workflow grouping above.
 
 ![CV extraction monitoring dashboard](./screenshots/05-cv-monitoring-dashboard.png)
 
@@ -176,6 +196,10 @@ A dataset can contain:
 - job description examples
 - expected application answers
 - reference outputs
+
+Future LangSmith datasets should cover job extraction, requirements extraction,
+apply URL resolution, field mapping, application package grounding, and Karen
+intent classification once their fixture inputs and scoring criteria are stable.
 
 Value:
 

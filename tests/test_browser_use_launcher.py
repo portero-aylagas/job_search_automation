@@ -731,11 +731,11 @@ def test_browser_use_chat_model_wraps_internal_openai_client(
 
 
 def test_browser_use_agent_run_uses_named_trace(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[str, str]] = []
+    calls: list[dict[str, object]] = []
     langsmith_module = type(sys)("langsmith")
 
-    def fake_traceable(*, name: str, run_type: str):
-        calls.append((name, run_type))
+    def fake_traceable(**kwargs: object):
+        calls.append(kwargs)
 
         def decorator(func):
             async def wrapper(*args: object, **kwargs: object) -> object:
@@ -752,11 +752,32 @@ def test_browser_use_agent_run_uses_named_trace(monkeypatch: pytest.MonkeyPatch)
     langsmith_module.traceable = fake_traceable
     monkeypatch.setitem(sys.modules, "langsmith", langsmith_module)
     monkeypatch.setattr("src.observability.langsmith_enabled", lambda: True)
+    monkeypatch.setenv("JOB_SEARCH_TRACE_JOB_ID", "job-1")
+    monkeypatch.setenv("JOB_SEARCH_TRACE_JOB_TITLE", "Automation Engineer")
+    monkeypatch.setenv("JOB_SEARCH_TRACE_COMPANY", "Example Co")
+    monkeypatch.setenv(
+        "JOB_SEARCH_TRACE_DISPLAY_NAME",
+        "Browser Automation: Example Co / Automation Engineer",
+    )
 
     result = asyncio.run(_run_browser_use_apply_agent(FakeAgent(), max_steps=12))
 
     assert result == "ran:12"
-    assert calls == [("browser_use_apply_agent", "chain")]
+    assert calls == [
+        {
+            "name": "Browser Automation",
+            "run_type": "chain",
+            "tags": ["workflow:browser_automation", "job-search-automation"],
+            "metadata": {
+                "workflow_key": "browser_automation",
+                "job_id": "job-1",
+                "job_title": "Automation Engineer",
+                "company": "Example Co",
+                "display_name": "Browser Automation: Example Co / Automation Engineer",
+                "source": "browser_use",
+            },
+        }
+    ]
 
 
 def test_close_existing_pages_closes_tabs_before_navigation() -> None:
