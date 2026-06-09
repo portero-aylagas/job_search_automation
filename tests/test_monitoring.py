@@ -38,6 +38,17 @@ def test_langsmith_monitoring_returns_unconfigured_without_credentials(
     assert payload["trace_view_label"] == "CV & Certificates Extraction"
     assert payload["cv_extraction_dashboard_label"] == "job-search-automation_cv-extraction"
     assert payload["cv_extraction_dashboard_url"] == ""
+    assert [workflow["key"] for workflow in payload["workflows"]] == [
+        "candidate_profile",
+        "job_intake",
+        "apply_url_ranking",
+        "requirements",
+        "application_package",
+        "field_mapping",
+        "karen",
+        "browser_automation",
+    ]
+    assert payload["workflows"][0]["totals"]["run_count"] == 0
     assert payload["cv_certificate_traces"] == []
 
 
@@ -193,6 +204,22 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
         "latency_p50": 1.2,
         "latency_p99": 4.8,
     }
+    candidate_profile = payload["workflows"][0]
+    assert candidate_profile["key"] == "candidate_profile"
+    assert candidate_profile["label"] == "Candidate Profile"
+    assert candidate_profile["dashboard_label"] == "job-search-automation_cv-extraction"
+    assert (
+        candidate_profile["dashboard_url"]
+        == "https://smith.langchain.com/o/example/dashboards/cv"
+    )
+    assert (
+        candidate_profile["trace_view_url"]
+        == "https://smith.langchain.com/o/example/projects/p/traces?view=cv"
+    )
+    assert candidate_profile["totals"]["run_count"] == 12
+    assert len(candidate_profile["recent_runs"]) == 2
+    assert payload["workflows"][1]["key"] == "job_intake"
+    assert payload["workflows"][3]["key"] == "requirements"
     assert payload["cv_certificate_traces"] == [
         {
             "id": "run-1",
@@ -219,11 +246,17 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
             "url": "https://smith.langchain.com/r/run-2",
         }
     ]
-    assert client.stats_errors == [None, True]
-    assert client.list_project_name == "job-search-automation"
-    assert client.list_tree_filter == (
-        'or(eq(name, "extract_cv_data"), eq(name, "inspect_cv_document_agent"))'
+    assert client.stats_errors[:2] == [None, True]
+    assert all(
+        project_name == "job-search-automation"
+        for project_name in client.list_project_names
     )
+    assert client.list_tree_filters[0] == (
+        'or(eq(name, "cv_extraction"), eq(name, "extract_cv_data"), '
+        'eq(name, "inspect_cv_document_agent"), eq(name, "optional_document_extraction"))'
+    )
+    assert 'eq(name, "job_extraction")' in client.list_tree_filters[2]
+    assert 'eq(name, "application_requirements")' in client.list_tree_filters[4]
 
 
 def test_langsmith_monitoring_wraps_client_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,8 +317,8 @@ class FakeResponse:
 class FakeLangSmithClient:
     def __init__(self) -> None:
         self.stats_errors: list[bool | None] = []
-        self.list_project_name = ""
-        self.list_tree_filter = ""
+        self.list_project_names: list[str] = []
+        self.list_tree_filters: list[str] = []
 
     def get_run_stats(self, **kwargs: object) -> dict[str, object]:
         error = kwargs.get("error")
@@ -302,8 +335,8 @@ class FakeLangSmithClient:
         }
 
     def list_runs(self, **kwargs: object) -> list[SimpleNamespace]:
-        self.list_project_name = str(kwargs.get("project_name"))
-        self.list_tree_filter = str(kwargs.get("tree_filter"))
+        self.list_project_names.append(str(kwargs.get("project_name")))
+        self.list_tree_filters.append(str(kwargs.get("tree_filter")))
         return [
             SimpleNamespace(
                 id="run-1",

@@ -693,6 +693,31 @@ label {
   overflow-x: auto;
 }
 
+.table-note {
+  display: block;
+  margin-top: 0.25rem;
+  color: #647085;
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.workflow-run-group {
+  margin-top: 1rem;
+}
+
+.subsection-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.subsection-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

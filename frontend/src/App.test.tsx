@@ -1780,7 +1780,7 @@ describe("App workflow pages", () => {
     expect(screen.queryByRole("button", { name: "Agent Karen" })).not.toBeInTheDocument();
   });
 
-  it("shows LangSmith monitoring metrics and CV certificate trace view", async () => {
+  it("shows LangSmith monitoring metrics and workflow trace views", async () => {
     mockFetch((url) => {
       if (url.endsWith("/api/jobs")) {
         return { body: { records: [jobRecord()] } };
@@ -1808,6 +1808,66 @@ describe("App workflow pages", () => {
               latency_p50: 1.2,
               latency_p99: 4.8
             },
+            workflows: [
+              {
+                key: "candidate_profile",
+                label: "Candidate Profile",
+                description: "CV and optional supporting-document extraction.",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=cv",
+                dashboard_label: "job-search-automation_cv-extraction",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/cv",
+                totals: {
+                  run_count: 2,
+                  failed_run_count: 0,
+                  error_rate: 0,
+                  total_cost: 0.2,
+                  total_tokens: 650,
+                  latency_p50: 1.1,
+                  latency_p99: 2.4
+                },
+                recent_runs: [
+                  {
+                    id: "run-1",
+                    name: "cv_extraction",
+                    run_type: "chain",
+                    start_time: "2026-06-03T10:00:00Z",
+                    status: "complete",
+                    total_tokens: 400,
+                    total_cost: 0.12,
+                    url: "https://smith.langchain.com/r/run-1"
+                  }
+                ]
+              },
+              {
+                key: "requirements",
+                label: "Requirements",
+                description: "Application page interpretation and requirement extraction.",
+                trace_view_url: "",
+                dashboard_label: "",
+                dashboard_url: "",
+                totals: {
+                  run_count: 1,
+                  failed_run_count: 1,
+                  error_rate: 1,
+                  total_cost: 0.08,
+                  total_tokens: 900,
+                  latency_p50: 3.2,
+                  latency_p99: 3.2
+                },
+                recent_runs: [
+                  {
+                    id: "run-2",
+                    name: "application_requirements",
+                    run_type: "chain",
+                    start_time: "2026-06-03T10:05:00Z",
+                    status: "error",
+                    total_tokens: 900,
+                    total_cost: 0.08,
+                    url: "https://smith.langchain.com/r/run-2"
+                  }
+                ]
+              }
+            ],
             cv_certificate_traces: [
               {
                 id: "run-1",
@@ -1842,9 +1902,12 @@ describe("App workflow pages", () => {
 
     expect(await screen.findByRole("heading", { name: "Monitoring" })).toBeInTheDocument();
     expect(screen.getByText("Project: job-search-automation")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Recent Runs" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "CV & Certificates Extraction" })).toBeInTheDocument();
-    expect(screen.getAllByText("LangGraph")).toHaveLength(2);
+    expect(screen.getByRole("heading", { name: "Workflow Health" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recent Workflow Runs" })).toBeInTheDocument();
+    expect(screen.getAllByText("Candidate Profile").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Requirements").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("cv_extraction")).toBeInTheDocument();
+    expect(screen.getByText("application_requirements")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open LangSmith Dashboard" })).toHaveAttribute(
       "href",
       "https://smith.langchain.com/dashboards/1"
@@ -1853,7 +1916,7 @@ describe("App workflow pages", () => {
       "href",
       "https://smith.langchain.com/o/example/dashboards/cv"
     );
-    expect(screen.getByRole("link", { name: "Open Trace View" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Open traces" })).toHaveAttribute(
       "href",
       "https://smith.langchain.com/o/example/projects/p/traces?view=cv"
     );
@@ -1891,6 +1954,26 @@ describe("App workflow pages", () => {
               latency_p50: null,
               latency_p99: null
             },
+            workflows: [
+              {
+                key: "candidate_profile",
+                label: "Candidate Profile",
+                description: "CV and optional supporting-document extraction.",
+                trace_view_url: "",
+                dashboard_label: "job-search-automation_cv-extraction",
+                dashboard_url: "",
+                totals: {
+                  run_count: 0,
+                  failed_run_count: 0,
+                  error_rate: 0,
+                  total_cost: 0,
+                  total_tokens: 0,
+                  latency_p50: null,
+                  latency_p99: null
+                },
+                recent_runs: []
+              }
+            ],
             cv_certificate_traces: [],
             message: "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
           }

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -21,10 +22,85 @@ from src.schemas import (
 
 CV_EXTRACTION_DASHBOARD_TITLE = "job-search-automation_cv-extraction"
 CV_CERTIFICATE_TRACE_NODE_NAMES = {
+    "cv_extraction",
     "extract_cv_data",
     "inspect_cv_document_agent",
+    "optional_document_extraction",
 }
 CV_CERTIFICATE_TRACE_VIEW_LABEL = "CV & Certificates Extraction"
+
+
+@dataclass(frozen=True)
+class LangSmithWorkflow:
+    """LangSmith workflow group shown on the Monitoring page."""
+
+    key: str
+    label: str
+    description: str
+    node_names: tuple[str, ...]
+    dashboard_title: str = ""
+    trace_view_env: str = ""
+    dashboard_env: str = ""
+
+
+LANGSMITH_WORKFLOWS = (
+    LangSmithWorkflow(
+        key="candidate_profile",
+        label="Candidate Profile",
+        description="CV and optional supporting-document extraction.",
+        node_names=tuple(sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)),
+        dashboard_title=CV_EXTRACTION_DASHBOARD_TITLE,
+        trace_view_env="LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL",
+        dashboard_env="LANGSMITH_CV_EXTRACTION_DASHBOARD_URL",
+    ),
+    LangSmithWorkflow(
+        key="job_intake",
+        label="Job Intake",
+        description="Job posting extraction and apply-link resolution.",
+        node_names=(
+            "AI apply URL resolution",
+            "AI job extraction",
+            "apply_url_resolution",
+            "job_extraction",
+        ),
+    ),
+    LangSmithWorkflow(
+        key="apply_url_ranking",
+        label="Apply URL Ranking",
+        description="Fallback ranking for candidate apply links.",
+        node_names=("AI apply URL ranking", "apply_url_ranking"),
+    ),
+    LangSmithWorkflow(
+        key="requirements",
+        label="Requirements",
+        description="Application page interpretation and requirement extraction.",
+        node_names=("AI application requirements extraction", "application_requirements"),
+    ),
+    LangSmithWorkflow(
+        key="application_package",
+        label="Application Package",
+        description="Generated application package drafts.",
+        node_names=("AI package generation", "application_package"),
+    ),
+    LangSmithWorkflow(
+        key="field_mapping",
+        label="Field Mapping",
+        description="Application form field mapping and fill-plan generation.",
+        node_names=("AI application field mapping", "application_field_mapping"),
+    ),
+    LangSmithWorkflow(
+        key="karen",
+        label="Karen",
+        description="Agent intent classification and workflow routing.",
+        node_names=("Karen intent classification", "karen_intent"),
+    ),
+    LangSmithWorkflow(
+        key="browser_automation",
+        label="Browser Automation",
+        description="Browser Use apply-agent traces.",
+        node_names=("browser_use_apply_agent",),
+    ),
+)
 
 
 class LangSmithMonitoringError(RuntimeError):
@@ -112,6 +188,7 @@ def langsmith_monitoring_summary(
             "cv_extraction_dashboard_url": cv_extraction_dashboard_url,
             "window_days": window_days,
             "totals": _empty_totals(),
+            "workflows": _empty_workflow_summaries(),
             "cv_certificate_traces": [],
             "message": (
                 "Set LANGSMITH_API_KEY and LANGSMITH_PROJECT to load LangSmith monitoring."
@@ -152,6 +229,10 @@ def langsmith_monitoring_summary(
                 limit=50,
             )
         )
+        workflows = [
+            _workflow_summary(client, project_name, start_time, workflow)
+            for workflow in LANGSMITH_WORKFLOWS
+        ]
     except Exception as exc:  # pragma: no cover - exact SDK exceptions vary.
         raise LangSmithMonitoringError(f"Could not load LangSmith monitoring: {exc}") from exc
 
@@ -165,6 +246,7 @@ def langsmith_monitoring_summary(
         "cv_extraction_dashboard_url": cv_extraction_dashboard_url,
         "window_days": window_days,
         "totals": _totals_from_stats(stats, failed_stats),
+        "workflows": workflows,
         "cv_certificate_traces": [
             _run_summary(client, project_name, run)
             for run in extraction_runs
@@ -175,8 +257,16 @@ def langsmith_monitoring_summary(
 def _cv_certificate_trace_filter() -> str:
     """Return a LangSmith filter for the CV/certificate trace view."""
 
-    names = sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)
+    return _trace_filter(CV_CERTIFICATE_TRACE_NODE_NAMES)
+
+
+def _trace_filter(node_names: tuple[str, ...] | set[str]) -> str:
+    """Return a LangSmith tree filter matching any of the given run names."""
+
+    names = sorted(node_names)
     clauses = ", ".join(f'eq(name, "{name}")' for name in names)
+    if len(names) == 1:
+        return clauses
     return f"or({clauses})"
 
 
@@ -220,18 +310,136 @@ def _manual_apply_url_override(job: JobListing) -> bool:
     return isinstance(resolution, dict) and bool(resolution.get("manual_override"))
 
 
+def _empty_workflow_summaries() -> list[dict[str, Any]]:
+    """Return configured workflow metadata with empty metrics."""
+
+    return [
+        {
+            "key": workflow.key,
+            "label": workflow.label,
+            "description": workflow.description,
+            "trace_view_url": _workflow_trace_view_url(workflow, ""),
+            "dashboard_label": workflow.dashboard_title,
+            "dashboard_url": _workflow_dashboard_url(workflow, client_factory=None),
+            "totals": _empty_totals(),
+            "recent_runs": [],
+        }
+        for workflow in LANGSMITH_WORKFLOWS
+    ]
+
+
+def _workflow_summary(
+    client: Any,
+    project_name: str,
+    start_time: datetime,
+    workflow: LangSmithWorkflow,
+) -> dict[str, Any]:
+    """Return LangSmith stats and recent traces for one workflow group."""
+
+    tree_filter = _trace_filter(workflow.node_names)
+    stats = _workflow_run_stats(
+        client,
+        project_name=project_name,
+        start_time=start_time,
+        tree_filter=tree_filter,
+    )
+    failed_stats = _workflow_run_stats(
+        client,
+        project_name=project_name,
+        start_time=start_time,
+        tree_filter=tree_filter,
+        error=True,
+    )
+    runs = list(
+        client.list_runs(
+            project_name=project_name,
+            start_time=start_time,
+            is_root=True,
+            tree_filter=tree_filter,
+            select=[
+                "id",
+                "name",
+                "run_type",
+                "start_time",
+                "end_time",
+                "error",
+                "status",
+                "total_tokens",
+                "total_cost",
+            ],
+            limit=10,
+        )
+    )
+    return {
+        "key": workflow.key,
+        "label": workflow.label,
+        "description": workflow.description,
+        "trace_view_url": _workflow_trace_view_url(
+            workflow,
+            os.getenv("LANGSMITH_DASHBOARD_URL", ""),
+        ),
+        "dashboard_label": workflow.dashboard_title,
+        "dashboard_url": _workflow_dashboard_url(workflow, client_factory=None),
+        "totals": _totals_from_stats(stats, failed_stats),
+        "recent_runs": [_run_summary(client, project_name, run) for run in runs],
+    }
+
+
+def _workflow_run_stats(
+    client: Any,
+    *,
+    project_name: str,
+    start_time: datetime,
+    tree_filter: str,
+    error: bool | None = None,
+) -> dict[str, Any]:
+    """Load workflow-specific stats, falling back when SDKs lack tree filters."""
+
+    kwargs: dict[str, Any] = {
+        "project_names": [project_name],
+        "start_time": start_time.isoformat(),
+        "is_root": True,
+        "tree_filter": tree_filter,
+    }
+    if error is not None:
+        kwargs["error"] = error
+    try:
+        return client.get_run_stats(**kwargs)
+    except TypeError:
+        return _empty_totals()
+
+
+def _workflow_trace_view_url(workflow: LangSmithWorkflow, default_url: str) -> str:
+    """Return the configured trace view URL for a workflow."""
+
+    if workflow.trace_view_env:
+        return os.getenv(workflow.trace_view_env, "").strip() or default_url
+    return ""
+
+
+def _workflow_dashboard_url(
+    workflow: LangSmithWorkflow,
+    *,
+    client_factory: Callable[[], Any] | None,
+) -> str:
+    """Return a workflow-specific custom dashboard URL when configured."""
+
+    if workflow.dashboard_env:
+        configured_url = os.getenv(workflow.dashboard_env, "").strip()
+        if configured_url:
+            return configured_url
+    if not workflow.dashboard_title or client_factory is not None:
+        return ""
+    return _discover_custom_dashboard_url(workflow.dashboard_title)
+
+
 def _cv_extraction_dashboard_url(
     *,
     client_factory: Callable[[], Any] | None,
 ) -> str:
     """Return the configured or discoverable LangSmith CV extraction dashboard URL."""
 
-    configured_url = os.getenv("LANGSMITH_CV_EXTRACTION_DASHBOARD_URL", "").strip()
-    if configured_url:
-        return configured_url
-    if client_factory is not None:
-        return ""
-    return _discover_custom_dashboard_url(CV_EXTRACTION_DASHBOARD_TITLE)
+    return _workflow_dashboard_url(LANGSMITH_WORKFLOWS[0], client_factory=client_factory)
 
 
 def _discover_custom_dashboard_url(title: str) -> str:

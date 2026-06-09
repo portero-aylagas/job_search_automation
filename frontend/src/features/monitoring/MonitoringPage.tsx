@@ -26,11 +26,25 @@ export function MonitoringPage() {
   }, [windowDays]);
 
   const totals = summary?.totals || {};
+  const workflows = Array.isArray(summary?.workflows) ? summary.workflows : [];
   const extractionTraces = summary?.cv_certificate_traces || [];
   const traceViewLabel = String(summary?.trace_view_label || "CV & Certificates Extraction");
   const traceViewUrl = String(summary?.trace_view_url || "");
   const cvDashboardLabel = String(summary?.cv_extraction_dashboard_label || "job-search-automation_cv-extraction");
   const cvDashboardUrl = String(summary?.cv_extraction_dashboard_url || "");
+  const displayedWorkflows = workflows.length
+    ? workflows
+    : [{
+        key: "candidate_profile",
+        label: traceViewLabel,
+        description: "CV and certificate extraction.",
+        trace_view_url: traceViewUrl,
+        dashboard_label: cvDashboardLabel,
+        dashboard_url: cvDashboardUrl,
+        totals,
+        recent_runs: extractionTraces
+      }];
+  const workflowsWithRuns = displayedWorkflows.filter((workflow: ApiRecord) => (workflow.recent_runs || []).length);
 
   return (
     <>
@@ -84,56 +98,119 @@ export function MonitoringPage() {
       <section className="panel">
         <div className="section-header">
           <div>
-            <h2>{traceViewLabel}</h2>
-            <p className="muted">LangSmith traces for CV and certificate extraction.</p>
+            <h2>Workflow Health</h2>
+            <p className="muted">LLM workflow activity grouped by application step.</p>
           </div>
-          {traceViewUrl && (
-            <a className="button-link primary" href={traceViewUrl} rel="noreferrer" target="_blank">
-              Open Trace View
-            </a>
-          )}
         </div>
         {!summary?.configured ? (
-          <StatusMessage type="info" text={`Configure LangSmith to show ${traceViewLabel}.`} />
-        ) : !extractionTraces.length ? (
-          <StatusMessage type="info" text={`No ${traceViewLabel} traces found in the last ${summary.window_days || windowDays} day${(summary.window_days || windowDays) === 1 ? "" : "s"}.`} />
+          <StatusMessage type="info" text="Configure LangSmith to show workflow-level monitoring." />
         ) : (
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Started</th>
-                  <th>Status</th>
+                  <th>Workflow</th>
+                  <th>Runs</th>
+                  <th>Failed</th>
+                  <th>Error rate</th>
                   <th>Tokens</th>
                   <th>Cost</th>
-                  <th>Trace</th>
+                  <th>Latency p50 / p99</th>
+                  <th>Links</th>
                 </tr>
               </thead>
               <tbody>
-                {extractionTraces.map((run: ApiRecord) => (
-                  <tr key={run.id || `${run.name}-${run.start_time}`}>
-                    <td>{run.name || "Untitled run"}</td>
-                    <td>{run.run_type || "Unknown"}</td>
-                    <td>{formatDateTime(run.start_time)}</td>
-                    <td><StatusBadge status={run.status === "error" ? "blocked" : "complete"} label={titleCase(run.status || "unknown")} /></td>
-                    <td>{formatInteger(run.total_tokens)}</td>
-                    <td>{formatCost(run.total_cost)}</td>
-                    <td>
-                      {run.url ? (
-                        <a href={run.url} rel="noreferrer" target="_blank">Open</a>
-                      ) : (
-                        "Unavailable"
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {displayedWorkflows.map((workflow: ApiRecord) => {
+                  const workflowTotals = workflow.totals || {};
+                  return (
+                    <tr key={workflow.key || workflow.label}>
+                      <td>
+                        <strong>{workflow.label || "Workflow"}</strong>
+                        {workflow.description && <span className="table-note">{workflow.description}</span>}
+                      </td>
+                      <td>{formatInteger(workflowTotals.run_count)}</td>
+                      <td>{formatInteger(workflowTotals.failed_run_count)}</td>
+                      <td>{formatPercent(workflowTotals.error_rate)}</td>
+                      <td>{formatInteger(workflowTotals.total_tokens)}</td>
+                      <td>{formatCost(workflowTotals.total_cost)}</td>
+                      <td>{`${formatLatency(workflowTotals.latency_p50)} / ${formatLatency(workflowTotals.latency_p99)}`}</td>
+                      <td>
+                        <span className="link-list">
+                          {workflow.trace_view_url && <a href={workflow.trace_view_url} rel="noreferrer" target="_blank">Traces</a>}
+                          {workflow.dashboard_url && <a href={workflow.dashboard_url} rel="noreferrer" target="_blank">Dashboard</a>}
+                          {!workflow.trace_view_url && !workflow.dashboard_url ? "Unavailable" : null}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </section>
+      <section className="panel">
+        <div className="section-header">
+          <div>
+            <h2>Recent Workflow Runs</h2>
+            <p className="muted">Recent LangSmith traces by workflow.</p>
+          </div>
+        </div>
+        {!summary?.configured ? (
+          <StatusMessage type="info" text="Configure LangSmith to show recent workflow traces." />
+        ) : !workflowsWithRuns.length ? (
+          <StatusMessage type="info" text={`No workflow traces found in the last ${summary.window_days || windowDays} day${(summary.window_days || windowDays) === 1 ? "" : "s"}.`} />
+        ) : (
+          workflowsWithRuns.map((workflow: ApiRecord) => (
+            <div className="workflow-run-group" key={workflow.key || workflow.label}>
+              <div className="subsection-header">
+                <h3>{workflow.label || "Workflow"}</h3>
+                {workflow.trace_view_url && <a href={workflow.trace_view_url} rel="noreferrer" target="_blank">Open traces</a>}
+              </div>
+              <RunsTable runs={workflow.recent_runs || []} />
+            </div>
+          ))
+        )}
+      </section>
     </>
+  );
+}
+
+function RunsTable({ runs }: { runs: ApiRecord[] }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Started</th>
+            <th>Status</th>
+            <th>Tokens</th>
+            <th>Cost</th>
+            <th>Trace</th>
+          </tr>
+        </thead>
+        <tbody>
+          {runs.map((run: ApiRecord) => (
+            <tr key={run.id || `${run.name}-${run.start_time}`}>
+              <td>{run.name || "Untitled run"}</td>
+              <td>{run.run_type || "Unknown"}</td>
+              <td>{formatDateTime(run.start_time)}</td>
+              <td><StatusBadge status={run.status === "error" ? "blocked" : "complete"} label={titleCase(run.status || "unknown")} /></td>
+              <td>{formatInteger(run.total_tokens)}</td>
+              <td>{formatCost(run.total_cost)}</td>
+              <td>
+                {run.url ? (
+                  <a href={run.url} rel="noreferrer" target="_blank">Open</a>
+                ) : (
+                  "Unavailable"
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

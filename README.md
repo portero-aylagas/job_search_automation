@@ -163,6 +163,11 @@ development. The app includes a Monitoring tab for observability context, while
 the detailed tracing notes live in
 [docs/langsmith/langsmith_overview.md](docs/langsmith/langsmith_overview.md).
 
+The Monitoring tab groups LangSmith activity by LLM workflow: candidate-profile
+extraction, job intake, apply URL ranking, requirements extraction, application
+package generation, field mapping, Karen intent routing, and Browser Use
+automation when those traces are present in LangSmith.
+
 Optional LangSmith configuration:
 
 ```env
