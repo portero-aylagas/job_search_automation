@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.agent_chat import load_agent_chat_messages
-from src.agents.karen.graph import process_karen_chat_turn
+from src.agents.karen.graph import _karen_trace_display_name, process_karen_chat_turn
 from src.agents.karen.policy import PermissionLevel
 from src.agents.karen.state import KarenContext, KarenIntentResponse
 from src.app_workflow import load_jobs_index, save_candidate_profile
@@ -77,6 +77,13 @@ def static_intent(intent: KarenIntentResponse):
         return intent
 
     return classify
+
+
+def test_karen_trace_display_name_includes_page_and_job() -> None:
+    assert (
+        _karen_trace_display_name(current_page="Jobs", selected_job_id="job-123")
+        == "Karen: Jobs / job-123"
+    )
 
 
 def test_karen_explains_app_without_tool_execution(tmp_path: Path) -> None:

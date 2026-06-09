@@ -27,7 +27,8 @@ from src.agents.karen.tools import (
     execute_karen_tool,
     get_karen_tool_definition,
 )
-from src.observability import traceable
+from src.app_workflow import load_normalized_job
+from src.observability import set_current_trace_metadata, traceable
 from src.schemas import AgentChatMessage, AgentWorkflowEvent
 from src.services.karen_permission_service import grant_job_session_permission
 from src.workflow.workflow_executor import WorkflowRunResult, run_karen_workflow_goal
@@ -61,6 +62,10 @@ class KarenGraphState(TypedDict, total=False):
         "workflow_key": "karen",
         "job_id": kwargs.get("selected_job_id") or "",
         "source": "karen",
+        "display_name": _karen_trace_display_name(
+            current_page=str(kwargs.get("current_page") or ""),
+            selected_job_id=str(kwargs.get("selected_job_id") or ""),
+        ),
     },
 )
 def process_karen_chat_turn(
@@ -92,6 +97,29 @@ def process_karen_chat_turn(
         tool_result=result.get("tool_result"),
         context=result["context"],
     )
+
+
+def _karen_trace_display_name(
+    *,
+    current_page: str,
+    selected_job_id: str,
+    title: str = "",
+    company: str = "",
+) -> str:
+    """Return a readable LangSmith display name for one Karen chat turn."""
+
+    page = current_page.strip()
+    job_id = selected_job_id.strip()
+    job_title = title.strip()
+    company_name = company.strip()
+    job_label = " / ".join(item for item in (company_name, job_title) if item) or job_id
+    if job_label and page:
+        return f"Karen: {page} / {job_label}"
+    if job_label:
+        return f"Karen: {job_label}"
+    if page:
+        return f"Karen: {page}"
+    return "Karen"
 
 
 def build_karen_graph():
@@ -181,7 +209,33 @@ def _build_context_node(state: KarenGraphState) -> KarenGraphState:
         selected_job_id=state.get("selected_job_id"),
         session_id=state.get("session_id"),
     )
+    set_current_trace_metadata(_karen_trace_metadata(state["base_dir"], context))
     return {"context": context}
+
+
+def _karen_trace_metadata(base_dir: Path, context: KarenContext) -> dict[str, object]:
+    """Return display metadata for the active Karen trace."""
+
+    metadata: dict[str, object] = {
+        "current_page": context.current_page,
+        "page": context.current_page,
+        "job_id": context.selected_job_id or "",
+    }
+    job = (
+        load_normalized_job(base_dir, context.selected_job_id)
+        if context.selected_job_id
+        else None
+    )
+    if job is not None:
+        metadata["job_title"] = job.title
+        metadata["company"] = job.company
+    metadata["display_name"] = _karen_trace_display_name(
+        current_page=context.current_page,
+        selected_job_id=context.selected_job_id or "",
+        title=str(metadata.get("job_title") or ""),
+        company=str(metadata.get("company") or ""),
+    )
+    return metadata
 
 
 def _persist_user_node(state: KarenGraphState) -> KarenGraphState:

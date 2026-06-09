@@ -7,9 +7,11 @@ import pytest
 
 from src.job_intake import create_job_listing
 from src.monitoring import (
+    LANGSMITH_WORKFLOWS,
     LangSmithMonitoringError,
     LangSmithProvisioningError,
     _discover_custom_dashboard_url,
+    _display_run_name,
     compute_ai_quality_counters,
     langsmith_monitoring_summary,
     langsmith_provision_monitoring,
@@ -181,6 +183,22 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
         "LANGSMITH_CV_EXTRACTION_DASHBOARD_URL",
         "https://smith.langchain.com/o/example/dashboards/cv",
     )
+    monkeypatch.setenv(
+        "LANGSMITH_JOB_INTAKE_DASHBOARD_URL",
+        "https://smith.langchain.com/o/example/dashboards/job-intake",
+    )
+    monkeypatch.setenv(
+        "LANGSMITH_JOBS_DASHBOARD_URL",
+        "https://smith.langchain.com/o/example/dashboards/jobs",
+    )
+    monkeypatch.setenv(
+        "LANGSMITH_KAREN_DASHBOARD_URL",
+        "https://smith.langchain.com/o/example/dashboards/karen",
+    )
+    monkeypatch.setenv(
+        "LANGSMITH_BROWSER_AUTOMATION_DASHBOARD_URL",
+        "https://smith.langchain.com/o/example/dashboards/browser",
+    )
     client = FakeLangSmithClient()
 
     payload = langsmith_monitoring_summary(days=7, client_factory=lambda: client)
@@ -228,16 +246,30 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
     assert len(candidate_profile["recent_runs"]) == 2
     assert candidate_profile["recent_runs"][0]["name"] == "Candidate Profile"
     assert payload["workflows"][1]["key"] == "job_intake"
+    assert payload["workflows"][1]["dashboard_label"] == "job-search-automation_job-intake"
+    assert (
+        payload["workflows"][1]["dashboard_url"]
+        == "https://smith.langchain.com/o/example/dashboards/job-intake"
+    )
     assert payload["workflows"][2]["key"] == "jobs"
     assert payload["workflows"][2]["label"] == "Jobs"
-    assert payload["workflows"][2]["recent_runs"][0]["name"] == "Jobs"
+    assert payload["workflows"][2]["recent_runs"][0]["name"] == "Requirements"
+    assert payload["workflows"][2]["dashboard_label"] == "job-search-automation_jobs"
+    assert (
+        payload["workflows"][2]["dashboard_url"]
+        == "https://smith.langchain.com/o/example/dashboards/jobs"
+    )
     assert payload["workflows"][2]["recent_runs"][0]["metadata"][
         "workflow_subcategory_key"
     ] == "requirements"
     assert payload["workflows"][2]["recent_runs"][0]["metadata"][
         "workflow_subcategory_label"
     ] == "Requirements"
-    assert payload["workflows"][2]["link_status_reason"] == "No dashboard configured"
+    assert payload["workflows"][2]["link_status_reason"] == "No trace view configured"
+    assert payload["workflows"][3]["dashboard_label"] == "job-search-automation_karen"
+    assert payload["workflows"][4]["dashboard_label"] == (
+        "job-search-automation_browser-automation"
+    )
     assert payload["workflow_cost_distribution"] == [
         {
             "key": "jobs",
@@ -314,7 +346,8 @@ def test_langsmith_monitoring_normalizes_stats_and_extraction_traces(
         for project_name in client.list_project_names
     )
     assert client.list_tree_filters[0] == (
-        'or(eq(name, "cv_extraction"), eq(name, "extract_cv_data"), '
+        'or(eq(name, "Candidate Profile"), eq(name, "cv_extraction"), '
+        'eq(name, "extract_cv_data"), '
         'eq(name, "inspect_cv_document_agent"), eq(name, "optional_document_extraction"))'
     )
     assert client.list_limits[-1] == 100
@@ -368,6 +401,98 @@ def test_langsmith_monitoring_discovers_custom_dashboard_url(
     )
 
 
+def test_langsmith_monitoring_rediscovers_workflow_links_without_env_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "job-search-automation")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    for workflow in LANGSMITH_WORKFLOWS:
+        monkeypatch.delenv(workflow.trace_view_env, raising=False)
+        monkeypatch.delenv(workflow.dashboard_env, raising=False)
+    monkeypatch.setattr("src.monitoring._default_langsmith_client", FakeLangSmithClient)
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/workspaces"):
+            return FakeResponse([{"id": "workspace-1", "is_deleted": False}])
+        if url.endswith("/sessions"):
+            return FakeResponse([{"id": "project-1", "name": "job-search-automation"}])
+        if url.endswith("/charts/section"):
+            return FakeResponse(
+                [
+                    {"title": workflow.dashboard_title, "id": f"section-{workflow.key}"}
+                    for workflow in LANGSMITH_WORKFLOWS
+                ]
+            )
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr("src.monitoring.requests.get", fake_get)
+
+    payload = langsmith_monitoring_summary(days=7)
+
+    for workflow in payload["workflows"]:
+        assert workflow["dashboard_url"].startswith(
+            "https://smith.langchain.com/o/workspace-1/dashboards/section-"
+        )
+        assert workflow["trace_view_url"].startswith(
+            "https://smith.langchain.com/o/workspace-1/projects/p/project-1?"
+        )
+        assert workflow["link_status_reason"] == ""
+
+
+def test_langsmith_monitoring_link_discovery_failures_do_not_block_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "job-search-automation")
+    monkeypatch.setattr("src.monitoring._default_langsmith_client", FakeLangSmithClient)
+
+    def broken_get(url: str, **kwargs: object) -> FakeResponse:
+        raise RuntimeError("link API unavailable")
+
+    monkeypatch.setattr("src.monitoring.requests.get", broken_get)
+
+    payload = langsmith_monitoring_summary(days=7)
+
+    assert payload["configured"] is True
+    assert payload["totals"]["run_count"] == 12
+    assert payload["workflows"][0]["link_status_reason"] == (
+        "Could not discover LangSmith links"
+    )
+
+
+def test_workflow_display_names_use_metadata() -> None:
+    assert _display_run_name(
+        "LangGraph",
+        {
+            "workflow_key": "job_intake",
+            "company": "Example Co",
+            "job_title": "Automation Engineer",
+        },
+        LANGSMITH_WORKFLOWS[1],
+    ) == "Job Intake: Example Co / Automation Engineer"
+    assert _display_run_name(
+        "LangGraph",
+        {
+            "workflow_key": "jobs",
+            "workflow_subcategory_label": "Field Mapping",
+            "company": "Example Co",
+            "job_title": "Automation Engineer",
+        },
+        LANGSMITH_WORKFLOWS[2],
+    ) == "Field Mapping: Example Co / Automation Engineer"
+    assert _display_run_name(
+        "LangGraph",
+        {
+            "workflow_key": "karen",
+            "page": "Jobs",
+            "company": "Example Co",
+            "job_title": "Automation Engineer",
+        },
+        LANGSMITH_WORKFLOWS[3],
+    ) == "Karen: Jobs / Example Co / Automation Engineer"
+
+
 def test_langsmith_provision_monitoring_creates_workflow_links(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -392,16 +517,27 @@ def test_langsmith_provision_monitoring_creates_workflow_links(
     assert candidate_profile["dashboard_url"] == (
         "https://smith.langchain.com/o/workspace-1/dashboards/section-1"
     )
-    assert "/projects/p/project-1/traces?" in candidate_profile["trace_view_url"]
+    assert "/projects/p/project-1?" in candidate_profile["trace_view_url"]
     assert "cv_extraction" in candidate_profile["trace_view_url"]
-    assert len(candidate_profile["chart_ids"]) == 3
+    assert len(candidate_profile["chart_ids"]) == 6
     assert client.created_chart_payloads[0]["section_id"] == "section-1"
-    assert client.created_chart_payloads[0]["filter"]["project_names"] == [
-        "job-search-automation"
+    assert client.created_chart_payloads[0]["chart_type"] == "line"
+    assert client.created_chart_payloads[0]["series"][0]["filters"]["session"] == [
+        "project-1"
     ]
     assert any(
         payload["title"] == "Jobs errors"
-        and "application_requirements" in payload["filter"]["tree_filter"]
+        and "application_requirements" in payload["series"][0]["filters"]["tree_filter"]
+        for payload in client.created_chart_payloads
+    )
+    assert any(
+        payload["title"] == "Job Intake runs"
+        and "job_extraction" in payload["series"][0]["filters"]["tree_filter"]
+        for payload in client.created_chart_payloads
+    )
+    assert any(
+        payload["title"] == "Karen runs"
+        and "karen_intent" in payload["series"][0]["filters"]["tree_filter"]
         for payload in client.created_chart_payloads
     )
 
@@ -416,11 +552,51 @@ def test_langsmith_provision_monitoring_requires_credentials(
         langsmith_provision_monitoring(http_client=FakeProvisionHttpClient())
 
 
+def test_langsmith_provision_monitoring_loads_project_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.delenv("LANGSMITH_PROJECT", raising=False)
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    monkeypatch.setattr("src.monitoring.load_project_environment", lambda: monkeypatch.setenv(
+        "LANGSMITH_PROJECT",
+        "job-search-automation",
+    ))
+
+    payload = langsmith_provision_monitoring(http_client=FakeProvisionHttpClient())
+
+    assert payload["configured"] is True
+    assert payload["project_name"] == "job-search-automation"
+
+
+def test_langsmith_provision_monitoring_handles_unlistable_charts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "job-search-automation")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+    client = FakeProvisionHttpClient(chart_list_status=405)
+
+    payload = langsmith_provision_monitoring(http_client=client)
+
+    assert payload["configured"] is True
+    assert len(payload["workflows"][0]["chart_ids"]) == 6
+
+    client_404 = FakeProvisionHttpClient(chart_list_status=404)
+    payload_404 = langsmith_provision_monitoring(http_client=client_404)
+    assert len(payload_404["workflows"][0]["chart_ids"]) == 6
+
+
 class FakeResponse:
-    def __init__(self, payload: object) -> None:
+    def __init__(self, payload: object, *, status_code: int = 200) -> None:
         self.payload = payload
+        self.status_code = status_code
 
     def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.HTTPError(f"{self.status_code} error")
         return None
 
     def json(self) -> object:
@@ -568,8 +744,9 @@ class BrokenLangSmithClient:
 
 
 class FakeProvisionHttpClient:
-    def __init__(self) -> None:
+    def __init__(self, *, chart_list_status: int = 200) -> None:
         self.created_chart_payloads: list[dict[str, object]] = []
+        self.chart_list_status = chart_list_status
 
     def get(self, url: str, **kwargs: object) -> FakeResponse:
         if url.endswith("/workspaces"):
@@ -579,13 +756,19 @@ class FakeProvisionHttpClient:
         if url.endswith("/charts/section"):
             return FakeResponse([])
         if url.endswith("/charts"):
+            if self.chart_list_status != 200:
+                return FakeResponse([], status_code=self.chart_list_status)
             return FakeResponse([])
         raise AssertionError(f"Unexpected GET URL: {url}")
 
     def post(self, url: str, **kwargs: object) -> FakeResponse:
+        if "/charts/section/" in url:
+            if self.chart_list_status != 200:
+                return FakeResponse({}, status_code=self.chart_list_status)
+            return FakeResponse({"id": url.rsplit("/", 1)[-1], "charts": []})
         if url.endswith("/charts/section"):
             return FakeResponse({"id": "section-1", "title": kwargs["json"]["title"]})
-        if url.endswith("/charts"):
+        if url.endswith("/charts/create"):
             payload = kwargs["json"]
             self.created_chart_payloads.append(payload)
             return FakeResponse({"id": f"chart-{len(self.created_chart_payloads)}"})

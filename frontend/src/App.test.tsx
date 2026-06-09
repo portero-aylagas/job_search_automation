@@ -1807,6 +1807,27 @@ describe("App workflow pages", () => {
                 dashboard_label: "job-search-automation_jobs",
                 dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-jobs",
                 trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=jobs"
+              },
+              {
+                key: "job_intake",
+                label: "Job Intake",
+                dashboard_label: "job-search-automation_job-intake",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-job-intake",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=job-intake"
+              },
+              {
+                key: "karen",
+                label: "Karen",
+                dashboard_label: "job-search-automation_karen",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-karen",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=karen"
+              },
+              {
+                key: "browser_automation",
+                label: "Browser Automation",
+                dashboard_label: "job-search-automation_browser-automation",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/provisioned-browser",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/project/traces?filter=browser"
               }
             ],
             message: "LangSmith workflow dashboards and trace links were provisioned."
@@ -1901,6 +1922,99 @@ describe("App workflow pages", () => {
                     url: "https://smith.langchain.com/r/run-2"
                   }
                 ]
+              },
+              {
+                key: "job_intake",
+                label: "Job Intake",
+                description: "Job posting extraction and apply-link resolution.",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=job-intake",
+                dashboard_label: "job-search-automation_job-intake",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/job-intake",
+                link_status_reason: "",
+                totals: {
+                  run_count: 1,
+                  failed_run_count: 0,
+                  error_rate: 0,
+                  total_cost: 0.05,
+                  total_tokens: 300,
+                  latency_p50: 1.8,
+                  latency_p99: 1.8
+                },
+                recent_runs: [
+                  {
+                    id: "run-3",
+                    name: "Job Intake: https://example.com/jobs/1",
+                    raw_name: "Job Intake",
+                    run_type: "chain",
+                    start_time: "2026-06-03T10:10:00Z",
+                    status: "complete",
+                    total_tokens: 300,
+                    total_cost: 0.05,
+                    url: "https://smith.langchain.com/r/run-3"
+                  }
+                ]
+              },
+              {
+                key: "karen",
+                label: "Karen",
+                description: "Agent intent classification and workflow routing.",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=karen",
+                dashboard_label: "job-search-automation_karen",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/karen",
+                link_status_reason: "",
+                totals: {
+                  run_count: 1,
+                  failed_run_count: 0,
+                  error_rate: 0,
+                  total_cost: 0.03,
+                  total_tokens: 120,
+                  latency_p50: 0.8,
+                  latency_p99: 0.8
+                },
+                recent_runs: [
+                  {
+                    id: "run-4",
+                    name: "Karen: Jobs / Example Co / Automation Engineer",
+                    raw_name: "Karen",
+                    run_type: "chain",
+                    start_time: "2026-06-03T10:15:00Z",
+                    status: "complete",
+                    total_tokens: 120,
+                    total_cost: 0.03,
+                    url: "https://smith.langchain.com/r/run-4"
+                  }
+                ]
+              },
+              {
+                key: "browser_automation",
+                label: "Browser Automation",
+                description: "Browser Use apply-agent traces.",
+                trace_view_url: "https://smith.langchain.com/o/example/projects/p/traces?view=browser",
+                dashboard_label: "job-search-automation_browser-automation",
+                dashboard_url: "https://smith.langchain.com/o/example/dashboards/browser",
+                link_status_reason: "",
+                totals: {
+                  run_count: 1,
+                  failed_run_count: 0,
+                  error_rate: 0,
+                  total_cost: 0.04,
+                  total_tokens: 80,
+                  latency_p50: 2.2,
+                  latency_p99: 2.2
+                },
+                recent_runs: [
+                  {
+                    id: "run-5",
+                    name: "Browser Automation: Example Co / Automation Engineer",
+                    raw_name: "Browser Automation",
+                    run_type: "chain",
+                    start_time: "2026-06-03T10:20:00Z",
+                    status: "complete",
+                    total_tokens: 80,
+                    total_cost: 0.04,
+                    url: "https://smith.langchain.com/r/run-5"
+                  }
+                ]
               }
             ],
             workflow_cost_distribution: [
@@ -1991,10 +2105,13 @@ describe("App workflow pages", () => {
       "href",
       "https://smith.langchain.com/o/example/projects/p/traces?view=main"
     );
-    expect(screen.getByRole("link", { name: "Open traces" })).toHaveAttribute(
+    expect(screen.getAllByRole("link", { name: "Open traces" })[0]).toHaveAttribute(
       "href",
       "https://smith.langchain.com/o/example/projects/p/traces?view=cv"
     );
+    expect(screen.getAllByText("Job Intake").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Karen").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Browser Automation").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByRole("link", { name: "Open" })[0]).toHaveAttribute(
       "href",
       "https://smith.langchain.com/r/run-1"
