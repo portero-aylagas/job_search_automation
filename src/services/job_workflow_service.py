@@ -57,7 +57,7 @@ from src.job_workspace import (
     mark_application_package_reviewed,
 )
 from src.llm_job_extraction import ApplyUrlResolution, ExtractedJobData
-from src.observability import traceable
+from src.observability import set_current_trace_metadata, traceable
 from src.paths import RUNTIME_DATA_DIR
 from src.schemas import (
     ApplicationFillPlan,
@@ -118,12 +118,26 @@ def extract_job_url(source_url: str):
     metadata=lambda source_url: {
         "workflow_key": "job_intake",
         "source": "job_intake",
+        "display_name": _job_intake_display_name(source_url),
     },
 )
 def _extract_job_url_traced(source_url: str):
     """Extract job intake data inside a named LangSmith parent trace."""
 
-    return extract_job_intake_data(source_url)
+    result = extract_job_intake_data(source_url)
+    set_current_trace_metadata(
+        {
+            "display_name": _job_intake_display_name(
+                source_url,
+                title=result.extracted.title,
+                company=result.extracted.company,
+            ),
+            "source_url": source_url,
+            "job_title": result.extracted.title,
+            "company": result.extracted.company,
+        }
+    )
+    return result
 
 
 def save_reviewed_job(
@@ -563,11 +577,49 @@ def _job_trace_metadata(
     if metadata["workflow_key"] == "jobs":
         metadata["workflow_subcategory_key"] = workflow_subcategory_key
         metadata["workflow_subcategory_label"] = workflow_subcategory_label
+        display_name = _job_workflow_display_name(workflow_subcategory_label, job)
+        if display_name:
+            metadata["display_name"] = display_name
     if workflow_subcategory_key == "browser_automation":
         display_name = _browser_automation_display_name(job)
         if display_name:
             metadata["display_name"] = display_name
     return metadata
+
+
+def _job_intake_display_name(
+    source_url: str,
+    *,
+    title: str = "",
+    company: str = "",
+) -> str:
+    """Return a readable Job Intake trace name from the submitted URL."""
+
+    job_title = title.strip()
+    company_name = company.strip()
+    if company_name or job_title:
+        return "Job Intake: " + " / ".join(
+            item for item in (company_name, job_title) if item
+        )
+    normalized_url = source_url.strip()
+    if normalized_url:
+        return f"Job Intake: {normalized_url}"
+    return "Job Intake"
+
+
+def _job_workflow_display_name(workflow_label: str, job: JobListing) -> str:
+    """Return a job-scoped workflow trace display name."""
+
+    job_title = job.title.strip()
+    company = job.company.strip()
+    prefix = workflow_label.strip() or "Jobs"
+    if company and job_title:
+        return f"{prefix}: {company} / {job_title}"
+    if job_title:
+        return f"{prefix}: {job_title}"
+    if job.id.strip():
+        return f"{prefix}: {job.id.strip()}"
+    return prefix
 
 
 def _browser_automation_display_name(job: JobListing) -> str:

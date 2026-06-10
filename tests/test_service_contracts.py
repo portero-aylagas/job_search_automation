@@ -92,6 +92,20 @@ def complete_candidate_profile() -> CandidateProfile:
     )
 
 
+def test_job_workflow_trace_metadata_uses_job_scoped_display_names() -> None:
+    job = make_job()
+
+    assert job_service._job_intake_display_name("https://example.com/jobs/1") == (
+        "Job Intake: https://example.com/jobs/1"
+    )
+
+    metadata = job_service._job_trace_metadata("requirements", "Requirements", job)
+    assert metadata["workflow_key"] == "jobs"
+    assert metadata["workflow_subcategory_key"] == "requirements"
+    assert metadata["workflow_subcategory_label"] == "Requirements"
+    assert metadata["display_name"] == "Requirements: Example Co / Automation Engineer"
+
+
 def test_discover_application_requirements_service_persists_mocked_outputs(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

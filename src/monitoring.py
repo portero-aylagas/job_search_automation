@@ -12,6 +12,7 @@ from urllib.parse import quote, urlencode, urlparse
 
 import requests
 
+from src.config import load_project_environment
 from src.schemas import (
     AIQualityCounters,
     ApplicationFillPlan,
@@ -21,6 +22,10 @@ from src.schemas import (
 )
 
 CV_EXTRACTION_DASHBOARD_TITLE = "job-search-automation_cv-extraction"
+JOB_INTAKE_DASHBOARD_TITLE = "job-search-automation_job-intake"
+JOBS_DASHBOARD_TITLE = "job-search-automation_jobs"
+KAREN_DASHBOARD_TITLE = "job-search-automation_karen"
+BROWSER_AUTOMATION_DASHBOARD_TITLE = "job-search-automation_browser-automation"
 CV_CERTIFICATE_TRACE_NODE_NAMES = {
     "cv_extraction",
     "extract_cv_data",
@@ -56,6 +61,7 @@ class LangSmithWorkflow:
     label: str
     description: str
     node_names: tuple[str, ...]
+    root_names: tuple[str, ...] = ()
     dashboard_title: str = ""
     trace_view_env: str = ""
     dashboard_env: str = ""
@@ -67,6 +73,7 @@ LANGSMITH_WORKFLOWS = (
         label="Candidate Profile",
         description="CV and optional supporting-document extraction.",
         node_names=tuple(sorted(CV_CERTIFICATE_TRACE_NODE_NAMES)),
+        root_names=("Candidate Profile",),
         dashboard_title=CV_EXTRACTION_DASHBOARD_TITLE,
         trace_view_env="LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL",
         dashboard_env="LANGSMITH_CV_EXTRACTION_DASHBOARD_URL",
@@ -78,27 +85,44 @@ LANGSMITH_WORKFLOWS = (
         node_names=(
             "AI apply URL resolution",
             "AI job extraction",
+            "Job Intake",
             "apply_url_resolution",
             "job_extraction",
         ),
+        root_names=("Job Intake",),
+        dashboard_title=JOB_INTAKE_DASHBOARD_TITLE,
+        trace_view_env="LANGSMITH_JOB_INTAKE_TRACE_VIEW_URL",
+        dashboard_env="LANGSMITH_JOB_INTAKE_DASHBOARD_URL",
     ),
     LangSmithWorkflow(
         key="jobs",
         label="Jobs",
         description="Apply URL ranking, requirements, package generation, and field mapping.",
         node_names=JOB_WORKFLOW_NODE_NAMES,
+        root_names=("Application Field Mapping", "Application Package", "Requirements"),
+        dashboard_title=JOBS_DASHBOARD_TITLE,
+        trace_view_env="LANGSMITH_JOBS_TRACE_VIEW_URL",
+        dashboard_env="LANGSMITH_JOBS_DASHBOARD_URL",
     ),
     LangSmithWorkflow(
         key="karen",
         label="Karen",
         description="Agent intent classification and workflow routing.",
-        node_names=("Karen intent classification", "karen_intent"),
+        node_names=("Karen", "Karen intent classification", "karen_intent"),
+        root_names=("Karen",),
+        dashboard_title=KAREN_DASHBOARD_TITLE,
+        trace_view_env="LANGSMITH_KAREN_TRACE_VIEW_URL",
+        dashboard_env="LANGSMITH_KAREN_DASHBOARD_URL",
     ),
     LangSmithWorkflow(
         key="browser_automation",
         label="Browser Automation",
         description="Browser Use apply-agent traces.",
-        node_names=("browser_use_apply_agent",),
+        node_names=("Browser Automation", "browser_use_apply_agent"),
+        root_names=("Browser Automation",),
+        dashboard_title=BROWSER_AUTOMATION_DASHBOARD_TITLE,
+        trace_view_env="LANGSMITH_BROWSER_AUTOMATION_TRACE_VIEW_URL",
+        dashboard_env="LANGSMITH_BROWSER_AUTOMATION_DASHBOARD_URL",
     ),
 )
 
@@ -163,6 +187,7 @@ def langsmith_provision_monitoring(
     does not mutate LangSmith resources.
     """
 
+    load_project_environment()
     api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
     project_name = os.getenv("LANGSMITH_PROJECT", "").strip()
     if not api_key or not project_name:
@@ -191,6 +216,7 @@ def langsmith_provision_monitoring(
             section_id,
             workflow,
             project_name,
+            project_id,
             http_client=http_client,
         )
         trace_view_url = _workflow_project_trace_url(
@@ -238,6 +264,7 @@ def langsmith_monitoring_summary(
         LangSmithMonitoringError: If LangSmith is configured but the API request fails.
     """
 
+    load_project_environment()
     project_name = os.getenv("LANGSMITH_PROJECT", "").strip()
     dashboard_url = os.getenv("LANGSMITH_DASHBOARD_URL", "").strip()
     main_trace_view_url = os.getenv("LANGSMITH_MAIN_TRACES_URL", "").strip()
@@ -245,12 +272,12 @@ def langsmith_monitoring_summary(
         os.getenv("LANGSMITH_CV_CERTIFICATES_TRACE_VIEW_URL", "").strip()
         or dashboard_url
     )
-    cv_extraction_dashboard_url = _cv_extraction_dashboard_url(
-        client_factory=client_factory,
-    )
     window_days = _window_days(days)
 
     if not os.getenv("LANGSMITH_API_KEY") or not project_name:
+        cv_extraction_dashboard_url = _cv_extraction_dashboard_url(
+            client_factory=client_factory,
+        )
         return {
             "configured": False,
             "project_name": project_name,
@@ -272,6 +299,15 @@ def langsmith_monitoring_summary(
         }
 
     start_time = datetime.now(UTC) - timedelta(days=window_days)
+    discovered_links = (
+        _discover_workflow_links(project_name) if client_factory is None else {}
+    )
+    cv_extraction_links = _workflow_links_from_env(
+        LANGSMITH_WORKFLOWS[0],
+        discovered=discovered_links.get("candidate_profile"),
+    )
+    cv_extraction_dashboard_url = cv_extraction_links.get("dashboard_url", "")
+    trace_view_url = cv_extraction_links.get("trace_view_url", "") or trace_view_url
     try:
         client = client_factory() if client_factory is not None else _default_langsmith_client()
         stats = client.get_run_stats(
@@ -308,7 +344,13 @@ def langsmith_monitoring_summary(
             )
         )
         workflows = [
-            _workflow_summary(client, project_name, start_time, workflow)
+            _workflow_summary(
+                client,
+                project_name,
+                start_time,
+                workflow,
+                links=discovered_links.get(workflow.key),
+            )
             for workflow in LANGSMITH_WORKFLOWS
         ]
         cost_runs = list(
@@ -354,7 +396,13 @@ def langsmith_monitoring_summary(
 def _cv_certificate_trace_filter() -> str:
     """Return a LangSmith filter for the CV/certificate trace view."""
 
-    return _trace_filter(CV_CERTIFICATE_TRACE_NODE_NAMES)
+    return _trace_filter(_workflow_filter_names(LANGSMITH_WORKFLOWS[0]))
+
+
+def _workflow_filter_names(workflow: LangSmithWorkflow) -> tuple[str, ...]:
+    """Return all root and child run names that identify a workflow."""
+
+    return tuple(sorted({*workflow.node_names, *workflow.root_names}))
 
 
 def _trace_filter(node_names: tuple[str, ...] | set[str]) -> str:
@@ -411,22 +459,33 @@ def _empty_workflow_summaries() -> list[dict[str, Any]]:
     """Return configured workflow metadata with empty metrics."""
 
     return [
-        {
-            "key": workflow.key,
-            "label": workflow.label,
-            "description": workflow.description,
-            "trace_view_url": _workflow_trace_view_url(workflow, ""),
-            "dashboard_label": workflow.dashboard_title,
-            "dashboard_url": _workflow_dashboard_url(workflow, client_factory=None),
-            "link_status_reason": _workflow_link_status_reason(
-                _workflow_trace_view_url(workflow, ""),
-                _workflow_dashboard_url(workflow, client_factory=None),
-            ),
-            "totals": _empty_totals(),
-            "recent_runs": [],
-        }
+        _empty_workflow_summary(workflow, _workflow_links_from_env(workflow))
         for workflow in LANGSMITH_WORKFLOWS
     ]
+
+
+def _empty_workflow_summary(
+    workflow: LangSmithWorkflow,
+    links: dict[str, str],
+) -> dict[str, Any]:
+    """Return one workflow row with no metrics."""
+
+    trace_view_url = links.get("trace_view_url", "")
+    dashboard_url = links.get("dashboard_url", "")
+    link_status_reason = links.get("link_status_reason", "")
+    if not link_status_reason:
+        link_status_reason = _workflow_link_status_reason(trace_view_url, dashboard_url)
+    return {
+        "key": workflow.key,
+        "label": workflow.label,
+        "description": workflow.description,
+        "trace_view_url": trace_view_url,
+        "dashboard_label": workflow.dashboard_title,
+        "dashboard_url": dashboard_url,
+        "link_status_reason": link_status_reason,
+        "totals": _empty_totals(),
+        "recent_runs": [],
+    }
 
 
 def _workflow_summary(
@@ -434,10 +493,11 @@ def _workflow_summary(
     project_name: str,
     start_time: datetime,
     workflow: LangSmithWorkflow,
+    links: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Return LangSmith stats and recent traces for one workflow group."""
 
-    tree_filter = _trace_filter(workflow.node_names)
+    tree_filter = _trace_filter(_workflow_filter_names(workflow))
     stats = _workflow_run_stats(
         client,
         project_name=project_name,
@@ -473,23 +533,20 @@ def _workflow_summary(
             limit=10,
         )
     )
+    resolved_links = _workflow_links_from_env(workflow, discovered=links)
+    trace_view_url = resolved_links.get("trace_view_url", "")
+    dashboard_url = resolved_links.get("dashboard_url", "")
+    link_status_reason = resolved_links.get("link_status_reason", "")
+    if not link_status_reason:
+        link_status_reason = _workflow_link_status_reason(trace_view_url, dashboard_url)
     return {
         "key": workflow.key,
         "label": workflow.label,
         "description": workflow.description,
-        "trace_view_url": _workflow_trace_view_url(
-            workflow,
-            os.getenv("LANGSMITH_DASHBOARD_URL", ""),
-        ),
+        "trace_view_url": trace_view_url,
         "dashboard_label": workflow.dashboard_title,
-        "dashboard_url": _workflow_dashboard_url(workflow, client_factory=None),
-        "link_status_reason": _workflow_link_status_reason(
-            _workflow_trace_view_url(
-                workflow,
-                os.getenv("LANGSMITH_DASHBOARD_URL", ""),
-            ),
-            _workflow_dashboard_url(workflow, client_factory=None),
-        ),
+        "dashboard_url": dashboard_url,
+        "link_status_reason": link_status_reason,
         "totals": _totals_from_stats(stats, failed_stats),
         "recent_runs": [_run_summary(client, project_name, run, workflow=workflow) for run in runs],
     }
@@ -539,6 +596,31 @@ def _workflow_trace_view_url(workflow: LangSmithWorkflow, default_url: str) -> s
     return ""
 
 
+def _workflow_links_from_env(
+    workflow: LangSmithWorkflow,
+    *,
+    discovered: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Return workflow links with environment overrides taking precedence."""
+
+    discovered = discovered or {}
+    trace_view_url = _workflow_trace_view_url(
+        workflow,
+        discovered.get("trace_view_url", ""),
+    )
+    dashboard_url = discovered.get("dashboard_url", "")
+    if workflow.dashboard_env:
+        dashboard_url = os.getenv(workflow.dashboard_env, "").strip() or dashboard_url
+    link_status_reason = discovered.get("link_status_reason", "")
+    if link_status_reason and (trace_view_url or dashboard_url):
+        link_status_reason = ""
+    return {
+        "trace_view_url": trace_view_url,
+        "dashboard_url": dashboard_url,
+        "link_status_reason": link_status_reason,
+    }
+
+
 def _workflow_dashboard_url(
     workflow: LangSmithWorkflow,
     *,
@@ -564,6 +646,77 @@ def _cv_extraction_dashboard_url(
     return _workflow_dashboard_url(LANGSMITH_WORKFLOWS[0], client_factory=client_factory)
 
 
+def _discover_workflow_links(project_name: str) -> dict[str, dict[str, str]]:
+    """Discover dashboard and filtered trace URLs from LangSmith resources."""
+
+    api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
+    if not api_key or not project_name:
+        return {}
+
+    endpoint = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com").strip()
+    api_base = endpoint.rstrip("/")
+    headers = {"x-api-key": api_key}
+    try:
+        workspace_id = _active_workspace_id(api_base, headers, http_client=requests)
+        project_id = _project_id(api_base, headers, project_name, http_client=requests)
+        sections = _dashboard_sections_by_title(api_base, headers, http_client=requests)
+    except Exception:
+        return {
+            workflow.key: {
+                "trace_view_url": "",
+                "dashboard_url": "",
+                "link_status_reason": "Could not discover LangSmith links",
+            }
+            for workflow in LANGSMITH_WORKFLOWS
+        }
+
+    links: dict[str, dict[str, str]] = {}
+    for workflow in LANGSMITH_WORKFLOWS:
+        section_id = sections.get(workflow.dashboard_title, "")
+        links[workflow.key] = {
+            "trace_view_url": _workflow_project_trace_url(
+                api_base,
+                workspace_id=workspace_id,
+                project_id=project_id,
+                workflow=workflow,
+            ),
+            "dashboard_url": _dashboard_url(api_base, workspace_id, section_id),
+            "link_status_reason": "",
+        }
+    return links
+
+
+def _dashboard_sections_by_title(
+    api_base: str,
+    headers: dict[str, str],
+    *,
+    http_client: Any,
+) -> dict[str, str]:
+    """Return LangSmith chart section IDs keyed by exact section title."""
+
+    titles = [workflow.dashboard_title for workflow in LANGSMITH_WORKFLOWS]
+    response = http_client.get(
+        f"{api_base}/api/v1/charts/section",
+        headers=headers,
+        params={"title_contains": "job-search-automation", "limit": 100},
+        timeout=10,
+    )
+    response.raise_for_status()
+    sections = response.json()
+    if not isinstance(sections, list):
+        return {}
+    title_set = set(titles)
+    discovered: dict[str, str] = {}
+    for section in sections:
+        if not isinstance(section, dict):
+            continue
+        title = str(section.get("title") or "").strip()
+        section_id = str(section.get("id") or "").strip()
+        if title in title_set and section_id:
+            discovered[title] = section_id
+    return discovered
+
+
 def _discover_custom_dashboard_url(title: str) -> str:
     """Look up one LangSmith custom chart section URL by exact title."""
 
@@ -576,7 +729,7 @@ def _discover_custom_dashboard_url(title: str) -> str:
     headers = {"x-api-key": api_key}
     try:
         sections_response = requests.get(
-            f"{api_base}/charts/section",
+            f"{api_base}/api/v1/charts/section",
             headers=headers,
             params={"title_contains": title, "limit": 10},
             timeout=10,
@@ -691,7 +844,7 @@ def _upsert_dashboard_section(
     http_client: Any,
 ) -> dict[str, Any]:
     response = http_client.get(
-        f"{api_base}/charts/section",
+        f"{api_base}/api/v1/charts/section",
         headers=headers,
         params={"title_contains": title, "limit": 10},
         timeout=10,
@@ -711,7 +864,7 @@ def _upsert_dashboard_section(
             section_id = str(section.get("id", "")).strip()
             if section_id:
                 patch_response = http_client.patch(
-                    f"{api_base}/charts/section/{section_id}",
+                    f"{api_base}/api/v1/charts/section/{section_id}",
                     headers=headers,
                     json={"title": title},
                     timeout=10,
@@ -721,7 +874,7 @@ def _upsert_dashboard_section(
                 return patched if isinstance(patched, dict) else section
 
     create_response = http_client.post(
-        f"{api_base}/charts/section",
+        f"{api_base}/api/v1/charts/section",
         headers=headers,
         json={"title": title},
         timeout=10,
@@ -739,6 +892,7 @@ def _upsert_workflow_charts(
     section_id: str,
     workflow: LangSmithWorkflow,
     project_name: str,
+    project_id: str,
     *,
     http_client: Any,
 ) -> list[str]:
@@ -749,7 +903,7 @@ def _upsert_workflow_charts(
         section_id,
         http_client=http_client,
     )
-    for chart in _workflow_chart_payloads(workflow, project_name):
+    for chart in _workflow_chart_payloads(workflow, project_name, project_id):
         payload = {**chart, "section_id": section_id}
         existing = next(
             (
@@ -762,14 +916,14 @@ def _upsert_workflow_charts(
         chart_id = str(existing.get("id", "")).strip() if existing else ""
         if chart_id:
             response = http_client.patch(
-                f"{api_base}/charts/{chart_id}",
+                f"{api_base}/api/v1/charts/{chart_id}",
                 headers=headers,
                 json=payload,
                 timeout=10,
             )
         else:
             response = http_client.post(
-                f"{api_base}/charts",
+                f"{api_base}/api/v1/charts/create",
                 headers=headers,
                 json=payload,
                 timeout=10,
@@ -788,46 +942,57 @@ def _dashboard_section_charts(
     *,
     http_client: Any,
 ) -> list[dict[str, Any]]:
-    response = http_client.get(
-        f"{api_base}/charts",
+    response = http_client.post(
+        f"{api_base}/api/v1/charts/section/{section_id}",
         headers=headers,
-        params={"section_id": section_id, "limit": 100},
+        json={"omit_data": True},
         timeout=10,
     )
+    if getattr(response, "status_code", None) in {404, 405}:
+        return []
     response.raise_for_status()
-    charts = response.json()
+    section = response.json()
+    if not isinstance(section, dict):
+        return []
+    charts = section.get("charts", [])
     return charts if isinstance(charts, list) else []
 
 
 def _workflow_chart_payloads(
     workflow: LangSmithWorkflow,
     project_name: str,
+    project_id: str,
 ) -> list[dict[str, Any]]:
-    tree_filter = _trace_filter(workflow.node_names)
-    base_filter = {
-        "project_names": [project_name],
-        "is_root": True,
+    tree_filter = _trace_filter(_workflow_filter_names(workflow))
+    base_filters = {
+        "session": [project_id],
         "tree_filter": tree_filter,
     }
+    metrics = [
+        ("runs", "run_count"),
+        ("cost", "total_cost"),
+        ("tokens", "total_tokens"),
+        ("errors", "error_rate"),
+        ("latency p50", "latency_p50"),
+        ("latency p99", "latency_p99"),
+    ]
     return [
         {
-            "title": f"{workflow.label} runs",
-            "chart_type": "timeseries",
-            "metric": "run_count",
-            "filter": base_filter,
-        },
-        {
-            "title": f"{workflow.label} cost",
-            "chart_type": "timeseries",
-            "metric": "total_cost",
-            "filter": base_filter,
-        },
-        {
-            "title": f"{workflow.label} errors",
-            "chart_type": "timeseries",
-            "metric": "error_rate",
-            "filter": base_filter,
-        },
+            "title": f"{workflow.label} {suffix}",
+            "chart_type": "line",
+            "series": [
+                {
+                    "name": workflow.label,
+                    "metric": metric,
+                    "filters": base_filters,
+                }
+            ],
+            "metadata": {
+                "project_name": project_name,
+                "workflow_key": workflow.key,
+            },
+        }
+        for suffix, metric in metrics
     ]
 
 
@@ -852,10 +1017,10 @@ def _workflow_project_trace_url(
 ) -> str:
     if not workspace_id or not project_id:
         return ""
-    query = urlencode({"filter": _trace_filter(workflow.node_names)})
+    query = urlencode({"filter": _trace_filter(_workflow_filter_names(workflow))})
     return (
-        f"{_langsmith_web_base_url(api_base)}/o/{workspace_id}/projects/p/"
-        f"{quote(project_id)}/traces?{query}"
+        f"{_langsmith_web_base_url(api_base)}/o/{workspace_id}/projects/p/{quote(project_id)}"
+        f"?{query}"
     )
 
 
@@ -973,12 +1138,59 @@ def _display_run_name(
     if normalized_name not in GENERIC_ROOT_NAMES:
         return raw_name
     if workflow is not None:
-        return workflow.label
+        return _metadata_display_name_for_workflow(workflow, metadata)
     workflow_key = _visible_workflow_key(str(metadata.get("workflow_key") or "").strip())
     matched_workflow = _workflow_by_key(workflow_key)
     if matched_workflow is not None:
-        return matched_workflow.label
+        return _metadata_display_name_for_workflow(matched_workflow, metadata)
     return raw_name
+
+
+def _metadata_display_name_for_workflow(
+    workflow: LangSmithWorkflow,
+    metadata: dict[str, Any],
+) -> str:
+    """Build a readable run name from workflow metadata."""
+
+    if workflow.key == "job_intake":
+        source_url = str(metadata.get("source_url") or metadata.get("url") or "").strip()
+        title = str(metadata.get("job_title") or metadata.get("title") or "").strip()
+        company = str(metadata.get("company") or "").strip()
+        if company or title:
+            return "Job Intake: " + " / ".join(item for item in (company, title) if item)
+        if source_url:
+            return f"Job Intake: {source_url}"
+    if workflow.key == "jobs":
+        step = str(
+            metadata.get("workflow_subcategory_label")
+            or JOB_WORKFLOW_SUBCATEGORIES.get(str(metadata.get("workflow_subcategory_key") or ""))
+            or "Jobs"
+        ).strip()
+        title = str(metadata.get("job_title") or metadata.get("title") or "").strip()
+        company = str(metadata.get("company") or "").strip()
+        job_id = str(metadata.get("job_id") or "").strip()
+        job_label = " / ".join(item for item in (company, title) if item) or job_id
+        return f"{step}: {job_label}" if job_label else step
+    if workflow.key == "karen":
+        page = str(metadata.get("page") or metadata.get("current_page") or "").strip()
+        title = str(metadata.get("job_title") or metadata.get("title") or "").strip()
+        company = str(metadata.get("company") or "").strip()
+        job_id = str(metadata.get("job_id") or "").strip()
+        job_label = " / ".join(item for item in (company, title) if item) or job_id
+        if page and job_label:
+            return f"Karen: {page} / {job_label}"
+        if page:
+            return f"Karen: {page}"
+        if job_label:
+            return f"Karen: {job_label}"
+    if workflow.key == "browser_automation":
+        title = str(metadata.get("job_title") or metadata.get("title") or "").strip()
+        company = str(metadata.get("company") or "").strip()
+        job_id = str(metadata.get("job_id") or "").strip()
+        job_label = " / ".join(item for item in (company, title) if item) or job_id
+        if job_label:
+            return f"Browser Automation: {job_label}"
+    return workflow.label
 
 
 def _workflow_by_key(workflow_key: str) -> LangSmithWorkflow | None:
@@ -1041,7 +1253,7 @@ def _workflow_key_for_run(run: Any) -> str:
             return _visible_workflow_key(tag.removeprefix("workflow:"))
     run_name = str(_attr(run, "name", "") or "")
     for workflow in LANGSMITH_WORKFLOWS:
-        if run_name in workflow.node_names or run_name == workflow.label:
+        if run_name in _workflow_filter_names(workflow) or run_name == workflow.label:
             return workflow.key
     return ""
 

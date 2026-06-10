@@ -58,6 +58,40 @@ LANGSMITH_TRACING=true \
 python -m evaluation.cv_eval.run_evaluation
 ```
 
+Provision workspace-level evaluator resources and dataset rules:
+
+```bash
+LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com \
+LANGSMITH_API_KEY="$LANGSMITH_API_KEY" \
+python -m evaluation.cv_eval.provision_evaluators provision
+```
+
+The default prompt-backed LLM evaluator uses the workspace prompt repo
+`cv-extraction-reference-judge`. Override it with
+`CV_EVAL_LLM_PROMPT_REPO_HANDLE` only when intentionally using a different
+LangSmith prompt.
+
+Backfill the published baseline and comparison experiments:
+
+```bash
+LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com \
+LANGSMITH_API_KEY="$LANGSMITH_API_KEY" \
+python -m evaluation.cv_eval.provision_evaluators backfill
+```
+
+The backfill command first writes a timestamped backup of matching existing
+feedback rows to `/tmp/cv_eval_langsmith_feedback_backup_<timestamp>.json`,
+then deletes only the five canonical CV extraction feedback keys before
+triggering the LangSmith dataset evaluator rules for each experiment.
+
+Verify evaluator resources, dataset rules, and feedback row coverage:
+
+```bash
+LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com \
+LANGSMITH_API_KEY="$LANGSMITH_API_KEY" \
+python -m evaluation.cv_eval.provision_evaluators verify
+```
+
 ## File Map
 
 | Path | Purpose |
@@ -68,6 +102,7 @@ python -m evaluation.cv_eval.run_evaluation
 | `docs/langsmith/evaluation/src/target_function.py` | Traceable target function that reuses the app CV extraction workflow. |
 | `docs/langsmith/evaluation/src/evaluators.py` | Correctness, supplemental-evidence, schema, grounding, and optional LLM judge evaluators. |
 | `docs/langsmith/evaluation/src/run_evaluation.py` | Runs LangSmith evaluation and exports evaluator rows. |
+| `docs/langsmith/evaluation/src/provision_evaluators.py` | Provisions workspace-level LangSmith evaluator resources, attaches dataset rules, backs up/replaces old feedback, and triggers backfills. |
 | `docs/langsmith/evaluation/results/langsmith_experiment.md` | Dataset and experiment links, aggregate scores, and review notes. |
 | `docs/langsmith/evaluation/results/evaluation_results.csv` | Exported evaluator rows. |
 | `docs/langsmith/evaluation/results/custom_evaluator_comparison.csv` | Per-case comparison between correctness and supplemental evidence scores. |
