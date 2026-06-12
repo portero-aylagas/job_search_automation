@@ -124,7 +124,7 @@ submission gates.
 Start FastAPI:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
+python -m uvicorn src.api:app --host 127.0.0.1 --port 8001 --reload
 ```
 
 Start Vite:
@@ -156,7 +156,7 @@ than requiring a seed profile file.
 Use:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" make verify
+make verify
 ```
 
 This runs Python linting, Python compile checks, pytest, frontend typecheck,

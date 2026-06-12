@@ -110,7 +110,7 @@ Definition of done:
 
 Tasks:
 
-- standardize local execution on `./.conda`
+- standardize local execution around declared Python dependencies
 - document the safe project improvement skill as development support
 - add a minimal verification command
 - add a basic GitHub Actions CI workflow if time allows

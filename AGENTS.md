@@ -72,16 +72,18 @@ Keep the remote branch available after merge unless the user explicitly asks to 
 
 Small docs-only changes may be pushed directly to `main`.
 
-Use the repository-local Python environment for local commands:
+Use an activated Python environment with `requirements.txt` installed for local commands.
+The README documents `.venv` as the default setup; Conda or another environment
+manager is also fine when it provides the same dependencies.
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH"
+python -m pip install -r requirements.txt
 ```
 
 Before pushing code or opening a pull request, run:
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" make verify
+make verify
 ```
 
 ## Skills Boundary

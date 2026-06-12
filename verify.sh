@@ -1,13 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PYTHON="${PYTHON:-python3}"
+
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "Python interpreter not found: $PYTHON" >&2
+    echo "Set PYTHON to a valid interpreter, or install python3." >&2
+    exit 127
+fi
+
+"$PYTHON" -m ruff --version >/dev/null 2>&1 || {
+    echo "ruff is required. Install Python dependencies with: $PYTHON -m pip install -r requirements.txt" >&2
+    exit 127
+}
+
+"$PYTHON" -m pytest --version >/dev/null 2>&1 || {
+    echo "pytest is required. Install Python dependencies with: $PYTHON -m pip install -r requirements.txt" >&2
+    exit 127
+}
+
 mkdir -p reports
 
-ruff check .
+"$PYTHON" -m ruff check .
 
-python scripts/report_large_files.py
+"$PYTHON" scripts/report_large_files.py
 
-python - <<'PY'
+"$PYTHON" - <<'PY'
 from pathlib import Path
 import compileall
 
@@ -23,7 +41,7 @@ else:
 PY
 
 if find tests -type f \( -name 'test_*.py' -o -name '*_test.py' \) 2>/dev/null | grep -q .; then
-    pytest --junitxml=reports/pytest.xml
+    "$PYTHON" -m pytest --junitxml=reports/pytest.xml
 else
     echo "No tests found; skipping pytest."
 fi

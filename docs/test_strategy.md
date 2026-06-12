@@ -108,10 +108,12 @@ Do not mock simple deterministic domain logic just to make assertions shorter.
 
 ## Verification
 
-Use the repository-local Python environment for Python verification:
+Use an activated Python environment with `requirements.txt` installed for
+Python verification. The README documents `.venv` as the default local setup,
+but Conda or another environment manager works too.
 
 ```bash
-PATH="$PWD/.conda/bin:$PATH" make verify
+make verify
 ```
 
 `make verify` runs:
@@ -124,8 +126,8 @@ PATH="$PWD/.conda/bin:$PATH" make verify
 6. Vite production build
 7. Playwright smoke tests
 
-Python dependencies live in the repo-local Conda environment. Frontend and
-browser test dependencies live in `package.json` and `package-lock.json`.
+Python dependencies live in `requirements.txt`. Frontend and browser test
+dependencies live in `package.json` and `package-lock.json`.
 
 ## Reports And Artifacts
 
