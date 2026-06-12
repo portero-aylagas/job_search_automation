@@ -38,9 +38,8 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          python -m venv .conda
-          ./.conda/bin/python -m pip install --upgrade pip
-          ./.conda/bin/python -m pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
       - name: Install frontend dependencies
         run: npm ci
@@ -49,7 +48,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run verification
-        run: PATH="$PWD/.conda/bin:$PATH" make verify
+        run: make verify
 
       - name: Upload test reports and browser artifacts
         if: always()
